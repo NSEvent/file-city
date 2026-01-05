@@ -9,7 +9,7 @@ final class Camera {
     var aspect: Float = 1.0
 
     func zoom(delta: Float) {
-        distance = max(10, min(200, distance - delta * 20))
+        distance = max(10, min(1000, distance - delta * 20))
     }
 
     func pan(deltaX: Float, deltaY: Float) {
@@ -28,7 +28,7 @@ final class Camera {
     }
 
     func projectionMatrix() -> simd_float4x4 {
-        perspective(fovY: 0.75, aspect: aspect, near: 0.1, far: 500)
+        perspective(fovY: 0.75, aspect: aspect, near: 0.1, far: 2000)
     }
 
     private func lookAt(eye: SIMD3<Float>, target: SIMD3<Float>, up: SIMD3<Float>) -> simd_float4x4 {
