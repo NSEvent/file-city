@@ -76,6 +76,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             instanceBuffer = nil
             return
         }
+        camera.target = centerOf(blocks: blocks)
         instanceBuffer = device.makeBuffer(bytes: instances, length: MemoryLayout<VoxelInstance>.stride * instances.count, options: [])
     }
 
@@ -154,5 +155,21 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             + quad(v1, v5, v6, v2, pX)
             + quad(v4, v5, v1, v0, nY)
             + quad(v3, v2, v6, v7, pY)
+    }
+
+    private func centerOf(blocks: [CityBlock]) -> SIMD3<Float> {
+        var minX: Float = .greatestFiniteMagnitude
+        var maxX: Float = -.greatestFiniteMagnitude
+        var minZ: Float = .greatestFiniteMagnitude
+        var maxZ: Float = -.greatestFiniteMagnitude
+
+        for block in blocks {
+            minX = min(minX, block.position.x)
+            maxX = max(maxX, block.position.x)
+            minZ = min(minZ, block.position.z)
+            maxZ = max(maxZ, block.position.z)
+        }
+
+        return SIMD3<Float>((minX + maxX) * 0.5, 0, (minZ + maxZ) * 0.5)
     }
 }
