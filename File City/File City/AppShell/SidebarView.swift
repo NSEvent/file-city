@@ -9,6 +9,10 @@ struct SidebarView: View {
                 Button("Choose Folder") {
                     appState.chooseRoot()
                 }
+                Button("Parent Folder") {
+                    appState.goToParent()
+                }
+                .disabled(!appState.canGoToParent())
                 if let url = appState.rootURL {
                     Text(url.path)
                         .font(.caption)

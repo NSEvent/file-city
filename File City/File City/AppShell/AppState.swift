@@ -11,6 +11,7 @@ final class AppState: ObservableObject {
     @Published var searchResults: [URL] = []
     @Published var selectedURL: URL?
     @Published var selectedFocusNodeID: UUID?
+    @Published var hoveredURL: URL?
 
     private let scanner = DirectoryScanner()
     private let mapper = CityMapper()
@@ -18,8 +19,17 @@ final class AppState: ObservableObject {
     private let pinStore = PinStore()
     private let rescanSubject = PassthroughSubject<Void, Never>()
     private var focusNodeIDByURL: [URL: UUID] = [:]
+    private var nodeByID: [UUID: FileNode] = [:]
+    private var nodeByURL: [URL: FileNode] = [:]
     private var watcher: FSEventsWatcher?
     private var cancellables: Set<AnyCancellable> = []
+    private let sizeFormatter = ByteCountFormatter()
+    private let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
 
     init() {
         $searchQuery
@@ -35,6 +45,12 @@ final class AppState: ObservableObject {
                 self?.scanRoot()
             }
             .store(in: &cancellables)
+
+        if let defaultRoot = defaultRootURL() {
+            rootURL = defaultRoot
+            scanRoot()
+            startWatchingRoot()
+        }
     }
 
     func chooseRoot() {
@@ -60,12 +76,16 @@ final class AppState: ObservableObject {
                 searchIndex.indexNode(result.root)
                 blocks = mapper.map(root: result.root, rules: .default, pinStore: pinStore)
                 focusNodeIDByURL = buildFocusMap(root: result.root)
+                nodeByID = buildNodeIDMap(root: result.root)
+                nodeByURL = buildNodeURLMap(root: result.root)
                 selectedFocusNodeID = selectedURL.flatMap { focusNodeIDByURL[$0] }
             } catch {
                 nodeCount = 0
                 blocks = []
                 searchResults = []
                 focusNodeIDByURL = [:]
+                nodeByID = [:]
+                nodeByURL = [:]
                 selectedFocusNodeID = nil
             }
         }
@@ -93,6 +113,8 @@ final class AppState: ObservableObject {
                 searchIndex.indexNode(result.root)
                 blocks = mapper.map(root: result.root, rules: .default, pinStore: pinStore)
                 focusNodeIDByURL = buildFocusMap(root: result.root)
+                nodeByID = buildNodeIDMap(root: result.root)
+                nodeByURL = buildNodeURLMap(root: result.root)
                 selectedFocusNodeID = selectedURL.flatMap { focusNodeIDByURL[$0] }
             }
         }
@@ -101,6 +123,50 @@ final class AppState: ObservableObject {
     func focus(_ url: URL) {
         selectedURL = url
         selectedFocusNodeID = focusNodeIDByURL[url]
+    }
+
+    func enter(_ url: URL) {
+        focus(url)
+        guard isDirectory(url) else { return }
+        rootURL = url
+        hoveredURL = nil
+        selectedURL = nil
+        selectedFocusNodeID = nil
+        scanRoot()
+        startWatchingRoot()
+    }
+
+    func goToParent() {
+        guard let parent = parentURL() else { return }
+        rootURL = parent
+        hoveredURL = nil
+        selectedURL = nil
+        selectedFocusNodeID = nil
+        scanRoot()
+        startWatchingRoot()
+    }
+
+    func canGoToParent() -> Bool {
+        parentURL() != nil
+    }
+
+    func url(for nodeID: UUID) -> URL? {
+        nodeByID[nodeID]?.url
+    }
+
+    func infoLines(for url: URL) -> [String] {
+        guard let node = nodeByURL[url] else {
+            return [url.lastPathComponent, url.path]
+        }
+        let kind = displayType(node.type)
+        let sizeText = sizeFormatter.string(fromByteCount: node.sizeBytes)
+        let modifiedText = dateFormatter.string(from: node.modifiedAt)
+        return [
+            node.name,
+            "\(kind) • \(sizeText)",
+            "Modified \(modifiedText)",
+            node.url.path
+        ]
     }
 
     func actionContainerURL() -> URL? {
@@ -219,6 +285,58 @@ final class AppState: ObservableObject {
         for child in node.children {
             indexFocusURLs(node: child, focusID: focusID, map: &map)
         }
+    }
+
+    private func buildNodeIDMap(root: FileNode) -> [UUID: FileNode] {
+        var map: [UUID: FileNode] = [:]
+        indexNodeIDMap(node: root, map: &map)
+        return map
+    }
+
+    private func buildNodeURLMap(root: FileNode) -> [URL: FileNode] {
+        var map: [URL: FileNode] = [:]
+        indexNodeURLMap(node: root, map: &map)
+        return map
+    }
+
+    private func indexNodeIDMap(node: FileNode, map: inout [UUID: FileNode]) {
+        map[node.id] = node
+        for child in node.children {
+            indexNodeIDMap(node: child, map: &map)
+        }
+    }
+
+    private func indexNodeURLMap(node: FileNode, map: inout [URL: FileNode]) {
+        map[node.url] = node
+        for child in node.children {
+            indexNodeURLMap(node: child, map: &map)
+        }
+    }
+
+    private func displayType(_ type: FileNode.NodeType) -> String {
+        switch type {
+        case .file:
+            return "File"
+        case .folder:
+            return "Folder"
+        case .symlink:
+            return "Symlink"
+        }
+    }
+
+    private func parentURL() -> URL? {
+        guard let rootURL else { return nil }
+        let parent = rootURL.deletingLastPathComponent()
+        return parent.path == rootURL.path ? nil : parent
+    }
+
+    private func defaultRootURL() -> URL? {
+        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("projects", isDirectory: true)
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
+            return url
+        }
+        return nil
     }
 
     private func isDirectory(_ url: URL) -> Bool {

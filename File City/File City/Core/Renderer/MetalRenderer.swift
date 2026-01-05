@@ -10,6 +10,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private let cubeVertexBuffer: MTLBuffer
     private var instanceBuffer: MTLBuffer?
     private var instanceCount: Int = 0
+    private var blocks: [CityBlock] = []
     let camera = Camera()
 
     struct Vertex {
@@ -63,6 +64,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     }
 
     func updateInstances(blocks: [CityBlock], selectedNodeID: UUID?) {
+        self.blocks = blocks
         let instances = blocks.map { block in
             VoxelInstance(
                 position: SIMD3<Float>(block.position.x, block.position.y, block.position.z),
@@ -107,6 +109,41 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         encoder?.endEncoding()
         commandBuffer.present(drawable)
         commandBuffer.commit()
+    }
+
+    func pickBlock(at point: CGPoint, in size: CGSize) -> CityBlock? {
+        guard size.width > 1, size.height > 1, !blocks.isEmpty else { return nil }
+        let viewMatrix = camera.viewMatrix()
+        let projectionMatrix = camera.projectionMatrix()
+        let threshold: Float = 30
+        var bestBlock: CityBlock?
+        var bestDistance = threshold * threshold
+        var bestDepth: Float = .greatestFiniteMagnitude
+
+        for block in blocks {
+            let center = SIMD3<Float>(
+                block.position.x + Float(block.footprint.x) * 0.5,
+                Float(block.height) * 0.5,
+                block.position.z + Float(block.footprint.y) * 0.5
+            )
+            let worldPosition = SIMD4<Float>(center.x, center.y, center.z, 1)
+            let clip = projectionMatrix * viewMatrix * worldPosition
+            if clip.w <= 0 { continue }
+            let ndc = SIMD3<Float>(clip.x / clip.w, clip.y / clip.w, clip.z / clip.w)
+            if ndc.x < -1 || ndc.x > 1 || ndc.y < -1 || ndc.y > 1 { continue }
+            let screenX = (ndc.x * 0.5 + 0.5) * Float(size.width)
+            let screenY = (1 - (ndc.y * 0.5 + 0.5)) * Float(size.height)
+            let dx = Float(point.x) - screenX
+            let dy = Float(point.y) - screenY
+            let distance = dx * dx + dy * dy
+            if distance < bestDistance || (distance == bestDistance && ndc.z < bestDepth) {
+                bestDistance = distance
+                bestDepth = ndc.z
+                bestBlock = block
+            }
+        }
+
+        return bestBlock
     }
 
     private static func vertexDescriptor() -> MTLVertexDescriptor {
