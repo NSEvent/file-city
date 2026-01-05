@@ -15,13 +15,14 @@ final class CityMapper {
             let x = Float(col) * spacing
             let z = Float(row) * spacing
             let height = heightFor(node: node, maxHeight: rules.maxBuildingHeight, minHeight: max(4, rules.minBlockSize))
+            let footprint = footprintFor(node: node, rules: rules)
             let materialID = materialFor(node: node)
             let pinned = pinStore.isPinned(pathHash: PinStore.pathHash(node.url))
             let block = CityBlock(
                 id: UUID(),
                 nodeID: node.id,
                 position: SIMD3<Float>(x, 0, z),
-                footprint: SIMD2<Int32>(Int32(rules.minBlockSize), Int32(rules.minBlockSize)),
+                footprint: footprint,
                 height: Int32(height),
                 materialID: Int32(materialID),
                 isPinned: pinned
@@ -38,6 +39,11 @@ final class CityMapper {
         }
         let base = max(1.0, log10(Double(max(node.sizeBytes, 1))))
         return min(maxHeight, Int(base * 8.0))
+    }
+
+    private func footprintFor(node: FileNode, rules: LayoutRules) -> SIMD2<Int32> {
+        let size = node.type == .file ? rules.maxBlockSize : rules.minBlockSize
+        return SIMD2<Int32>(Int32(size), Int32(size))
     }
 
     private func materialFor(node: FileNode) -> Int {
