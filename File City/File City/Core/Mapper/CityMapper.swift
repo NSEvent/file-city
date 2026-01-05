@@ -39,7 +39,17 @@ final class CityMapper {
 
     private func materialFor(node: FileNode) -> Int {
         var hasher = Hasher()
-        hasher.combine(node.url.pathExtension.lowercased())
-        return abs(hasher.finalize() % 12)
+        switch node.type {
+        case .folder:
+            hasher.combine(node.name.lowercased())
+            return abs(hasher.finalize() % 4)
+        case .symlink:
+            hasher.combine(node.name.lowercased())
+            return 11
+        case .file:
+            hasher.combine(node.url.pathExtension.lowercased())
+            let index = abs(hasher.finalize() % 8)
+            return 4 + index
+        }
     }
 }

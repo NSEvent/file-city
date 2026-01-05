@@ -11,7 +11,7 @@ struct MetalCityView: NSViewRepresentable {
     func makeNSView(context: Context) -> MTKView {
         let view = CityMTKView()
         view.preferredFramesPerSecond = 60
-        view.clearColor = MTLClearColor(red: 0.08, green: 0.1, blue: 0.12, alpha: 1.0)
+        view.clearColor = MTLClearColor(red: 0.68, green: 0.78, blue: 0.86, alpha: 1.0)
         view.colorPixelFormat = .bgra8Unorm
         view.depthStencilPixelFormat = .depth32Float
         view.isPaused = false
