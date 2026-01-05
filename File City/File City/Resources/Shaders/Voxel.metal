@@ -33,16 +33,46 @@ struct VertexOut {
     float hover;
 };
 
+float random(float2 p) {
+    return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
+}
+
 vertex VertexOut vertex_main(VertexIn in [[stage_in]],
                              const device InstanceData *instances [[buffer(1)]],
                              constant Uniforms &uniforms [[buffer(2)]],
                              uint instanceID [[instance_id]]) {
     InstanceData instance = instances[instanceID];
     float3 local = in.position;
-    if (local.y > 0.0) {
-        float ridge = 1.0 - (abs(local.x) / 0.5);
-        local.y += ridge * 0.35;
+    
+    // Apply random roof shapes to directory buildings (narrower than 10.0)
+    // Only affect the top vertices (local.y > 0.0)
+    if (instance.scale.x < 10.0 && instance.scale.y > 5.0 && local.y > 0.0) {
+        float rnd = random(instance.position.xz + float2(instanceID % 100, instanceID / 100)); 
+        int type = int(rnd * 5.0); // 0..4
+        
+        if (type == 0) {
+            // Tapered Spire
+            local.x *= 0.4;
+            local.z *= 0.4;
+            local.y += 0.5; // Add height
+        } else if (type == 1) {
+            // Pyramid Point
+            local.x = 0.0;
+            local.z = 0.0;
+            local.y += 0.5;
+        } else if (type == 2) {
+            // Slant X
+            local.y += local.x * 1.5;
+        } else if (type == 3) {
+            // Slant Z
+            local.y += local.z * 1.5;
+        } 
+        // type 4 is Flat (default)
     }
+    
+    // Original Ridge Logic (disabled/replaced by above)
+    // if (local.y > 0.0) { ... }
+
     float3 scaled = local * instance.scale;
     float3 world = scaled + instance.position;
     VertexOut out;
