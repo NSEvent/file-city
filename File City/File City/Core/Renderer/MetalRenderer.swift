@@ -1,13 +1,16 @@
 import Metal
 import MetalKit
 import simd
+import CryptoKit
 
 final class MetalRenderer: NSObject, MTKViewDelegate {
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
     private let pipelineState: MTLRenderPipelineState
     private let depthState: MTLDepthStencilState
+    private let samplerState: MTLSamplerState
     private let cubeVertexBuffer: MTLBuffer
+    private var textureArray: MTLTexture?
     private var instanceBuffer: MTLBuffer?
     private var instanceCount: Int = 0
     private var blocks: [CityBlock] = []
@@ -16,6 +19,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     struct Vertex {
         let position: SIMD3<Float>
         let normal: SIMD3<Float>
+        let uv: SIMD2<Float>
     }
 
     struct Uniforms {
@@ -51,6 +55,17 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             return nil
         }
         self.depthState = depthState
+        
+        let samplerDescriptor = MTLSamplerDescriptor()
+        samplerDescriptor.minFilter = .linear
+        samplerDescriptor.magFilter = .linear
+        samplerDescriptor.mipFilter = .linear
+        samplerDescriptor.sAddressMode = .repeat
+        samplerDescriptor.tAddressMode = .repeat
+        guard let samplerState = device.makeSamplerState(descriptor: samplerDescriptor) else {
+            return nil
+        }
+        self.samplerState = samplerState
 
         let cubeVertices = MetalRenderer.buildCubeVertices()
         guard let cubeVertexBuffer = device.makeBuffer(bytes: cubeVertices, length: MemoryLayout<Vertex>.stride * cubeVertices.count, options: []) else {
@@ -59,8 +74,50 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         self.cubeVertexBuffer = cubeVertexBuffer
 
         super.init()
+        loadTextures()
         view.device = device
         view.delegate = self
+    }
+
+    private func loadTextures() {
+        var sourceTextures: [MTLTexture] = []
+        let textureCount = 16
+        
+        for i in 0..<textureCount {
+            // Use a deterministic seed for each slot
+            let seed = "Style \(i)" 
+            if let tex = TextureGenerator.generateTexture(device: device, seed: seed) {
+                sourceTextures.append(tex)
+            }
+        }
+        
+        guard !sourceTextures.isEmpty, let first = sourceTextures.first else { return }
+        
+        let descriptor = MTLTextureDescriptor()
+        descriptor.textureType = .type2DArray
+        descriptor.pixelFormat = first.pixelFormat
+        descriptor.width = first.width
+        descriptor.height = first.height
+        descriptor.arrayLength = sourceTextures.count
+        descriptor.usage = .shaderRead
+        
+        guard let arrayTex = device.makeTexture(descriptor: descriptor) else { return }
+        
+        guard let commandBuffer = commandQueue.makeCommandBuffer(),
+              let blitEncoder = commandBuffer.makeBlitCommandEncoder() else { return }
+              
+        for (i, tex) in sourceTextures.enumerated() {
+            blitEncoder.copy(from: tex, sourceSlice: 0, sourceLevel: 0,
+                             sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+                             sourceSize: MTLSize(width: tex.width, height: tex.height, depth: 1),
+                             to: arrayTex, destinationSlice: i, destinationLevel: 0,
+                             destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0))
+        }
+        
+        blitEncoder.endEncoding()
+        commandBuffer.commit()
+        
+        self.textureArray = arrayTex
     }
 
     func updateInstances(blocks: [CityBlock], selectedNodeID: UUID?, hoveredNodeID: UUID?) {
@@ -73,7 +130,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 materialID: UInt32(block.materialID),
                 highlight: block.nodeID == selectedNodeID ? 1.0 : 0.0,
                 hover: block.nodeID == hoveredNodeID ? 1.0 : 0.0,
-                _pad2: 0
+                textureIndex: block.textureIndex
             )
         }
         instanceCount = instances.count
@@ -106,6 +163,11 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
         var uniforms = Uniforms(viewProjection: camera.projectionMatrix() * camera.viewMatrix())
         encoder?.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 2)
+        
+        if let textureArray = textureArray {
+            encoder?.setFragmentTexture(textureArray, index: 0)
+        }
+        encoder?.setFragmentSamplerState(samplerState, index: 0)
 
         if instanceCount > 0 {
             encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 36, instanceCount: instanceCount)
@@ -187,6 +249,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         descriptor.attributes[1].format = .float3
         descriptor.attributes[1].offset = MemoryLayout<SIMD3<Float>>.stride
         descriptor.attributes[1].bufferIndex = 0
+        descriptor.attributes[2].format = .float2
+        descriptor.attributes[2].offset = MemoryLayout<SIMD3<Float>>.stride * 2
+        descriptor.attributes[2].bufferIndex = 0
         descriptor.layouts[0].stride = MemoryLayout<Vertex>.stride
         return descriptor
     }
@@ -202,12 +267,12 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
         func quad(_ a: SIMD3<Float>, _ b: SIMD3<Float>, _ c: SIMD3<Float>, _ d: SIMD3<Float>, _ n: SIMD3<Float>) -> [Vertex] {
             [
-                Vertex(position: a, normal: n),
-                Vertex(position: b, normal: n),
-                Vertex(position: c, normal: n),
-                Vertex(position: a, normal: n),
-                Vertex(position: c, normal: n),
-                Vertex(position: d, normal: n),
+                Vertex(position: a, normal: n, uv: SIMD2<Float>(0, 1)),
+                Vertex(position: b, normal: n, uv: SIMD2<Float>(1, 1)),
+                Vertex(position: c, normal: n, uv: SIMD2<Float>(1, 0)),
+                Vertex(position: a, normal: n, uv: SIMD2<Float>(0, 1)),
+                Vertex(position: c, normal: n, uv: SIMD2<Float>(1, 0)),
+                Vertex(position: d, normal: n, uv: SIMD2<Float>(0, 0)),
             ]
         }
 

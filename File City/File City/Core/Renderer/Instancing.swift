@@ -9,5 +9,5 @@ struct VoxelInstance {
     var materialID: UInt32
     var highlight: Float = 0
     var hover: Float = 0
-    var _pad2: UInt32 = 0
+    var textureIndex: Int32 = -1
 }

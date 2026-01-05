@@ -4,6 +4,7 @@ using namespace metal;
 struct VertexIn {
     float3 position [[attribute(0)]];
     float3 normal [[attribute(1)]];
+    float2 uv [[attribute(2)]];
 };
 
 struct InstanceData {
@@ -14,7 +15,7 @@ struct InstanceData {
     uint materialID;
     float highlight;
     float hover;
-    uint pad2;
+    int textureIndex;
 };
 
 struct Uniforms {
@@ -24,7 +25,9 @@ struct Uniforms {
 struct VertexOut {
     float4 position [[position]];
     float3 normal;
-    uint materialID;
+    float2 uv;
+    int textureIndex [[flat]];
+    uint materialID [[flat]];
     float highlight;
     float hover;
 };
@@ -44,13 +47,17 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
     VertexOut out;
     out.position = uniforms.viewProjection * float4(world, 1.0);
     out.normal = in.normal;
+    out.uv = in.uv;
+    out.textureIndex = instance.textureIndex;
     out.materialID = instance.materialID;
     out.highlight = instance.highlight;
     out.hover = instance.hover;
     return out;
 }
 
-fragment float4 fragment_main(VertexOut in [[stage_in]]) {
+fragment float4 fragment_main(VertexOut in [[stage_in]],
+                              texture2d_array<float> textures [[texture(0)]],
+                              sampler textureSampler [[sampler(0)]]) {
     float shade = saturate(dot(normalize(in.normal), float3(0.4, 0.85, 0.2)));
     float3 palette[12] = {
         float3(0.55, 0.7, 0.62),
@@ -66,7 +73,19 @@ fragment float4 fragment_main(VertexOut in [[stage_in]]) {
         float3(0.5, 0.52, 0.6),
         float3(0.78, 0.82, 0.64),
     };
+    
     float3 baseColor = palette[in.materialID % 12];
+    
+    // Sample texture if index is valid (>= 0)
+    if (in.textureIndex >= 0) {
+        // Simple planar mapping or just use UVs passed from vertex
+        // For now, let's use the UVs.
+        float4 texColor = textures.sample(textureSampler, in.uv, uint(in.textureIndex));
+        // DEBUG: Ignore alpha, force blend to verify texture presence
+        // If texture is black/invisible, we will know.
+        baseColor = texColor.rgb; 
+    }
+    
     float bands = floor(shade * 3.0) / 3.0;
     float light = 0.4 + 0.6 * bands;
     float3 roofColor = baseColor * 0.75 + float3(0.08, 0.1, 0.12);

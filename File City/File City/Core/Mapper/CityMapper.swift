@@ -25,12 +25,24 @@ final class CityMapper {
                 footprint: footprint,
                 height: Int32(height),
                 materialID: Int32(materialID),
+                textureIndex: textureIndexFor(node: node),
                 isPinned: pinned
             )
             blocks.append(block)
         }
 
         return blocks
+    }
+
+    private func textureIndexFor(node: FileNode) -> Int32 {
+        // Only texturize folders (buildings)
+        guard node.type == .folder else { return -1 }
+        
+        // Hash the name to pick a consistent texture from the palette of 16
+        var hasher = Hasher()
+        hasher.combine(node.name)
+        let hash = abs(hasher.finalize())
+        return Int32(hash % 16)
     }
 
     private func heightFor(node: FileNode, maxHeight: Int, minHeight: Int) -> Int {
