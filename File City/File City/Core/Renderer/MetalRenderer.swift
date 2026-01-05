@@ -64,6 +64,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     }
 
     func updateInstances(blocks: [CityBlock], selectedNodeID: UUID?, hoveredNodeID: UUID?) {
+        let blocksChanged = blocks != self.blocks
         self.blocks = blocks
         let instances = blocks.map { block in
             VoxelInstance(
@@ -80,7 +81,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             instanceBuffer = nil
             return
         }
-        camera.target = centerOf(blocks: blocks)
+        if blocksChanged {
+            camera.target = centerOf(blocks: blocks)
+        }
         instanceBuffer = device.makeBuffer(bytes: instances, length: MemoryLayout<VoxelInstance>.stride * instances.count, options: [])
     }
 
