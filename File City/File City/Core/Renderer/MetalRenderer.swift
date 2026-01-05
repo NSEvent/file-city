@@ -119,7 +119,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         let viewProjection = projectionMatrix * viewMatrix
         let inverseViewProjection = simd_inverse(viewProjection)
         let ndcX = (2.0 * Float(point.x) / Float(size.width)) - 1.0
-        let ndcY = 1.0 - (2.0 * Float(point.y) / Float(size.height))
+        let ndcY = (2.0 * Float(point.y) / Float(size.height)) - 1.0
         let nearPoint = SIMD4<Float>(ndcX, ndcY, -1.0, 1.0)
         let farPoint = SIMD4<Float>(ndcX, ndcY, 1.0, 1.0)
         let worldNear = inverseViewProjection * nearPoint
