@@ -143,15 +143,17 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         var bestDistance: Float = .greatestFiniteMagnitude
 
         for block in blocks {
+            let halfSizeX = 0.5 * Float(block.footprint.x)
+            let halfSizeZ = 0.5 * Float(block.footprint.y)
             let minBounds = SIMD3<Float>(
-                block.position.x,
+                block.position.x - halfSizeX,
                 0,
-                block.position.z
+                block.position.z - halfSizeZ
             )
             let maxBounds = SIMD3<Float>(
-                block.position.x + Float(block.footprint.x),
+                block.position.x + halfSizeX,
                 Float(block.height),
-                block.position.z + Float(block.footprint.y)
+                block.position.z + halfSizeZ
             )
             if let distance = rayIntersectAABB(origin: rayOrigin, direction: rayDirection, minBounds: minBounds, maxBounds: maxBounds),
                distance < bestDistance {
