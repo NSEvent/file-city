@@ -36,7 +36,11 @@ struct MetalCityView: NSViewRepresentable {
 
     func updateNSView(_ nsView: MTKView, context: Context) {
         context.coordinator.appState = appState
-        context.coordinator.renderer?.updateInstances(blocks: appState.blocks, selectedNodeID: appState.selectedFocusNodeID)
+        context.coordinator.renderer?.updateInstances(
+            blocks: appState.blocks,
+            selectedNodeID: appState.selectedFocusNodeID,
+            hoveredNodeID: appState.hoveredNodeID
+        )
     }
 
     final class Coordinator: NSObject {
@@ -64,17 +68,20 @@ struct MetalCityView: NSViewRepresentable {
                 if hoveredNodeID != nil {
                     hoveredNodeID = nil
                     appState?.hoveredURL = nil
+                    appState?.hoveredNodeID = nil
                 }
                 return
             }
             guard hoveredNodeID != block.nodeID else { return }
             hoveredNodeID = block.nodeID
             appState?.hoveredURL = appState?.url(for: block.nodeID)
+            appState?.hoveredNodeID = block.nodeID
         }
 
         func clearHover() {
             hoveredNodeID = nil
             appState?.hoveredURL = nil
+            appState?.hoveredNodeID = nil
         }
 
         func handleClick(_ point: CGPoint, in view: MTKView) {

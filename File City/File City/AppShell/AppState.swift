@@ -12,6 +12,7 @@ final class AppState: ObservableObject {
     @Published var selectedURL: URL?
     @Published var selectedFocusNodeID: UUID?
     @Published var hoveredURL: URL?
+    @Published var hoveredNodeID: UUID?
 
     private let scanner = DirectoryScanner()
     private let mapper = CityMapper()
@@ -130,6 +131,7 @@ final class AppState: ObservableObject {
         guard isDirectory(url) else { return }
         rootURL = url
         hoveredURL = nil
+        hoveredNodeID = nil
         selectedURL = nil
         selectedFocusNodeID = nil
         scanRoot()
@@ -140,6 +142,7 @@ final class AppState: ObservableObject {
         guard let parent = parentURL() else { return }
         rootURL = parent
         hoveredURL = nil
+        hoveredNodeID = nil
         selectedURL = nil
         selectedFocusNodeID = nil
         scanRoot()

@@ -13,7 +13,8 @@ struct InstanceData {
     float pad1;
     uint materialID;
     float highlight;
-    uint2 pad2;
+    float hover;
+    uint pad2;
 };
 
 struct Uniforms {
@@ -25,6 +26,7 @@ struct VertexOut {
     float3 normal;
     uint materialID;
     float highlight;
+    float hover;
 };
 
 vertex VertexOut vertex_main(VertexIn in [[stage_in]],
@@ -44,6 +46,7 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
     out.normal = in.normal;
     out.materialID = instance.materialID;
     out.highlight = instance.highlight;
+    out.hover = instance.hover;
     return out;
 }
 
@@ -70,5 +73,10 @@ fragment float4 fragment_main(VertexOut in [[stage_in]]) {
     float3 lit = mix(wallColor, roofColor * (0.5 + 0.5 * shade), roofMask);
     float3 highlight = float3(1.0, 0.88, 0.35);
     float3 finalColor = mix(lit, highlight, saturate(in.highlight));
+    float hover = saturate(in.hover);
+    float rim = pow(1.0 - saturate(in.normal.y), 2.0);
+    float glowStrength = hover * (0.4 + 0.6 * rim);
+    float3 glowColor = float3(0.28, 0.9, 1.0);
+    finalColor += glowColor * glowStrength;
     return float4(finalColor, 1.0);
 }
