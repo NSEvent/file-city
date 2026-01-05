@@ -26,6 +26,7 @@ struct VertexOut {
     float4 position [[position]];
     float3 normal;
     float2 uv;
+    float3 scale [[flat]];
     int textureIndex [[flat]];
     uint materialID [[flat]];
     float highlight;
@@ -48,6 +49,7 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
     out.position = uniforms.viewProjection * float4(world, 1.0);
     out.normal = in.normal;
     out.uv = in.uv;
+    out.scale = instance.scale;
     out.textureIndex = instance.textureIndex;
     out.materialID = instance.materialID;
     out.highlight = instance.highlight;
@@ -78,12 +80,37 @@ fragment float4 fragment_main(VertexOut in [[stage_in]],
     
     // Sample texture if index is valid (>= 0)
     if (in.textureIndex >= 0) {
-        // Simple planar mapping or just use UVs passed from vertex
-        // For now, let's use the UVs.
-        float4 texColor = textures.sample(textureSampler, in.uv, uint(in.textureIndex));
-        // DEBUG: Ignore alpha, force blend to verify texture presence
-        // If texture is black/invisible, we will know.
-        baseColor = texColor.rgb; 
+        float3 normal = abs(in.normal);
+        
+        // Calculate UVs based on world position (scaled)
+        // We use the vertex UVs which are 0..1 per face, but they stretch.
+        // Instead, let's use the object-space UVs adjusted by scale to tile correctly.
+        // Or simpler: Just multiply UV by relevant scale dimensions.
+        
+        float2 tiledUV = in.uv;
+        
+        // Determine which face we are on based on normal
+        // Normals are roughly: (1,0,0), (-1,0,0), (0,1,0), (0,-1,0), (0,0,1), (0,0,-1)
+        if (normal.y > 0.9) {
+            // Top/Bottom: Scale by X and Z
+            tiledUV = in.uv * float2(in.scale.x, in.scale.z) * 0.5; // Scale factor adjustment
+        } else if (normal.x > 0.9) {
+            // Sides X: Scale by Z and Y
+            tiledUV = in.uv * float2(in.scale.z, in.scale.y) * 0.5;
+        } else {
+            // Sides Z: Scale by X and Y
+            tiledUV = in.uv * float2(in.scale.x, in.scale.y) * 0.5;
+        }
+
+        float4 texColor = textures.sample(textureSampler, tiledUV, uint(in.textureIndex));
+        
+        // Blend with base color instead of replacing it, to keep lighting/shading
+        // Or just use the texture color if we want the "Nano Banana" look pure.
+        // Previous logic was pure replacement for debug. Let's blend nicely now.
+        // baseColor = mix(baseColor, texColor.rgb, texColor.a * 0.9);
+        
+        // For "Nano Banana" look, we usually want the texture to BE the building material.
+        baseColor = texColor.rgb;
     }
     
     float bands = floor(shade * 3.0) / 3.0;
