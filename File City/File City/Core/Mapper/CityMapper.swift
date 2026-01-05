@@ -85,7 +85,7 @@ final class CityMapper {
     }
 
     private func footprintFor(node: FileNode, rules: LayoutRules) -> SIMD2<Int32> {
-        let size = node.type == .file ? rules.maxBlockSize : rules.minBlockSize
+        let size = node.type == .folder ? (rules.maxBlockSize / 2) : rules.maxBlockSize
         return SIMD2<Int32>(Int32(size), Int32(size))
     }
 
