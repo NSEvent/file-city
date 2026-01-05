@@ -116,35 +116,62 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         guard size.width > 1, size.height > 1, !blocks.isEmpty else { return nil }
         let viewMatrix = camera.viewMatrix()
         let projectionMatrix = camera.projectionMatrix()
-        let threshold: Float = 30
+        let viewProjection = projectionMatrix * viewMatrix
+        let inverseViewProjection = simd_inverse(viewProjection)
+        let ndcX = (2.0 * Float(point.x) / Float(size.width)) - 1.0
+        let ndcY = 1.0 - (2.0 * Float(point.y) / Float(size.height))
+        let nearPoint = SIMD4<Float>(ndcX, ndcY, -1.0, 1.0)
+        let farPoint = SIMD4<Float>(ndcX, ndcY, 1.0, 1.0)
+        let worldNear = inverseViewProjection * nearPoint
+        let worldFar = inverseViewProjection * farPoint
+        let nearPosition = SIMD3<Float>(
+            worldNear.x / worldNear.w,
+            worldNear.y / worldNear.w,
+            worldNear.z / worldNear.w
+        )
+        let farPosition = SIMD3<Float>(
+            worldFar.x / worldFar.w,
+            worldFar.y / worldFar.w,
+            worldFar.z / worldFar.w
+        )
+        let rayOrigin = nearPosition
+        let rayDirection = simd_normalize(farPosition - nearPosition)
         var bestBlock: CityBlock?
-        var bestDistance = threshold * threshold
-        var bestDepth: Float = .greatestFiniteMagnitude
+        var bestDistance: Float = .greatestFiniteMagnitude
 
         for block in blocks {
-            let center = SIMD3<Float>(
-                block.position.x + Float(block.footprint.x) * 0.5,
-                Float(block.height) * 0.5,
-                block.position.z + Float(block.footprint.y) * 0.5
+            let minBounds = SIMD3<Float>(
+                block.position.x,
+                0,
+                block.position.z
             )
-            let worldPosition = SIMD4<Float>(center.x, center.y, center.z, 1)
-            let clip = projectionMatrix * viewMatrix * worldPosition
-            if clip.w <= 0 { continue }
-            let ndc = SIMD3<Float>(clip.x / clip.w, clip.y / clip.w, clip.z / clip.w)
-            if ndc.x < -1 || ndc.x > 1 || ndc.y < -1 || ndc.y > 1 { continue }
-            let screenX = (ndc.x * 0.5 + 0.5) * Float(size.width)
-            let screenY = (1 - (ndc.y * 0.5 + 0.5)) * Float(size.height)
-            let dx = Float(point.x) - screenX
-            let dy = Float(point.y) - screenY
-            let distance = dx * dx + dy * dy
-            if distance < bestDistance || (distance == bestDistance && ndc.z < bestDepth) {
+            let maxBounds = SIMD3<Float>(
+                block.position.x + Float(block.footprint.x),
+                Float(block.height),
+                block.position.z + Float(block.footprint.y)
+            )
+            if let distance = rayIntersectAABB(origin: rayOrigin, direction: rayDirection, minBounds: minBounds, maxBounds: maxBounds),
+               distance < bestDistance {
                 bestDistance = distance
-                bestDepth = ndc.z
                 bestBlock = block
             }
         }
 
         return bestBlock
+    }
+
+    private func rayIntersectAABB(origin: SIMD3<Float>, direction: SIMD3<Float>, minBounds: SIMD3<Float>, maxBounds: SIMD3<Float>) -> Float? {
+        let invDirection = SIMD3<Float>(
+            direction.x == 0 ? .greatestFiniteMagnitude : 1.0 / direction.x,
+            direction.y == 0 ? .greatestFiniteMagnitude : 1.0 / direction.y,
+            direction.z == 0 ? .greatestFiniteMagnitude : 1.0 / direction.z
+        )
+        let t1 = (minBounds - origin) * invDirection
+        let t2 = (maxBounds - origin) * invDirection
+        let tMin = max(max(min(t1.x, t2.x), min(t1.y, t2.y)), min(t1.z, t2.z))
+        let tMax = min(min(max(t1.x, t2.x), max(t1.y, t2.y)), max(t1.z, t2.z))
+        if tMax < 0 || tMin > tMax { return nil }
+        return tMin >= 0 ? tMin : tMax
     }
 
     private static func vertexDescriptor() -> MTLVertexDescriptor {
