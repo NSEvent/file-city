@@ -38,11 +38,24 @@ final class CityMapper {
         // Only texturize folders (buildings)
         guard node.type == .folder else { return -1 }
         
-        // Hash the name to pick a consistent texture from the palette of 16
+        let lowerName = node.name.lowercased()
+        
+        // Manual mapping to match MetalRenderer's palette order
+        if lowerName.contains("file city") { return 0 }
+        if lowerName.contains("appshell") { return 1 }
+        if lowerName.contains("core") { return 2 }
+        if lowerName.contains("tiktok") { return 3 }
+        if lowerName.contains("imsg") || lowerName.contains("msg") { return 4 }
+        if lowerName.contains("pokemon") { return 5 }
+        if lowerName.contains("python") { return 6 }
+        if lowerName.contains("rust") { return 7 }
+        
+        // Hash the name to pick a consistent texture from the remaining palette
+        // We reserved 0-7 for semantics, use 8-15 for random styles
         var hasher = Hasher()
         hasher.combine(node.name)
         let hash = abs(hasher.finalize())
-        return Int32(hash % 16)
+        return Int32(8 + (hash % 8))
     }
 
     private func heightFor(node: FileNode, maxHeight: Int, minHeight: Int) -> Int {
