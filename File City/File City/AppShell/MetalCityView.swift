@@ -31,6 +31,9 @@ struct MetalCityView: NSViewRepresentable {
         view.onClick = { point in
             context.coordinator.handleClick(point, in: view)
         }
+        view.onRightClick = { point in
+            context.coordinator.handleRightClick(point, in: view)
+        }
         return view
     }
 
@@ -91,6 +94,14 @@ struct MetalCityView: NSViewRepresentable {
             guard let url = appState?.url(for: block.nodeID) else { return }
             appState?.enter(url)
         }
+        
+        func handleRightClick(_ point: CGPoint, in view: MTKView) {
+            guard let renderer else { return }
+            let backingPoint = view.convertToBacking(point)
+            guard let block = renderer.pickBlock(at: backingPoint, in: view.drawableSize) else { return }
+            guard let url = appState?.url(for: block.nodeID) else { return }
+            appState?.reveal(url)
+        }
     }
 }
 
@@ -99,6 +110,7 @@ final class CityMTKView: MTKView {
     var onHover: ((CGPoint) -> Void)?
     var onHoverEnd: (() -> Void)?
     var onClick: ((CGPoint) -> Void)?
+    var onRightClick: ((CGPoint) -> Void)?
     private var trackingArea: NSTrackingArea?
 
     override func scrollWheel(with event: NSEvent) {
@@ -128,6 +140,11 @@ final class CityMTKView: MTKView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         onClick?(point)
+    }
+    
+    override func rightMouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        onRightClick?(point)
     }
 
     override func viewDidMoveToWindow() {
