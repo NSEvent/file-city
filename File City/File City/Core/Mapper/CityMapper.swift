@@ -14,7 +14,7 @@ final class CityMapper {
             let col = index % max(gridSize, 1)
             let x = Float(col) * spacing
             let z = Float(row) * spacing
-            let height = heightFor(node: node, maxHeight: rules.maxBuildingHeight)
+            let height = heightFor(node: node, maxHeight: rules.maxBuildingHeight, minHeight: max(4, rules.minBlockSize))
             let materialID = materialFor(node: node)
             let pinned = pinStore.isPinned(pathHash: PinStore.pathHash(node.url))
             let block = CityBlock(
@@ -32,7 +32,10 @@ final class CityMapper {
         return blocks
     }
 
-    private func heightFor(node: FileNode, maxHeight: Int) -> Int {
+    private func heightFor(node: FileNode, maxHeight: Int, minHeight: Int) -> Int {
+        if node.type != .folder {
+            return minHeight
+        }
         let base = max(1.0, log10(Double(max(node.sizeBytes, 1))))
         return min(maxHeight, Int(base * 8.0))
     }
