@@ -33,6 +33,34 @@ final class TextureGenerator {
             drawPython(width: width, height: height, pixels: &pixelData)
         } else if lowerSeed.contains("ios") || lowerSeed.contains("app") {
             drawIOS(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("ai") || lowerSeed.contains("bot") || lowerSeed.contains("gpt") {
+            drawAI(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("bank") || lowerSeed.contains("money") || lowerSeed.contains("finance") || lowerSeed.contains("card") {
+            drawFinance(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("real") || lowerSeed.contains("estate") || lowerSeed.contains("house") || lowerSeed.contains("mortgage") || lowerSeed.contains("rent") || lowerSeed.contains("zillow") {
+            drawRealEstate(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("audio") || lowerSeed.contains("voice") || lowerSeed.contains("sound") || lowerSeed.contains("speech") || lowerSeed.contains("say") || lowerSeed.contains("dtmf") || lowerSeed.contains("mouth") {
+            drawAudio(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("camera") || lowerSeed.contains("photo") || lowerSeed.contains("image") || lowerSeed.contains("video") || lowerSeed.contains("face") || lowerSeed.contains("glitch") {
+            drawCamera(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("web") || lowerSeed.contains("chrome") || lowerSeed.contains("browser") || lowerSeed.contains("link") || lowerSeed.contains("site") || lowerSeed.contains("scrape") {
+            drawWeb(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("swift") {
+            drawSwift(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("code") || lowerSeed.contains("json") || lowerSeed.contains("js") || lowerSeed.contains("c++") {
+            drawCode(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("text") || lowerSeed.contains("md") || lowerSeed.contains("doc") {
+            drawTextDoc(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("img") || lowerSeed.contains("png") || lowerSeed.contains("jpg") {
+            drawImageFile(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("audio_file") || lowerSeed.contains("mp3") || lowerSeed.contains("wav") {
+            drawAudioFile(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("video_file") || lowerSeed.contains("mp4") || lowerSeed.contains("mov") {
+            drawVideoFile(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("archive_file") || lowerSeed.contains("zip") || lowerSeed.contains("tar") {
+            drawArchiveFile(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("db_file") || lowerSeed.contains("sql") || lowerSeed.contains("sqlite") {
+            drawDatabaseFile(width: width, height: height, pixels: &pixelData)
         } else {
             drawDefault(seed: seed, width: width, height: height, pixels: &pixelData)
         }
@@ -48,6 +76,371 @@ final class TextureGenerator {
     }
     
     // MARK: - Themes
+    
+    private static func drawAudioFile(width: Int, height: Int, pixels: inout [UInt8]) {
+        // Purple with music note
+        for y in 0..<height {
+            for x in 0..<width {
+                var r = 150, g = 100, b = 255
+                
+                // Note shape (simplified)
+                let dx = x - width/2
+                let dy = y - height/2
+                
+                // Circle head
+                if (dx-10)*(dx-10) + (dy+20)*(dy+20) < 200 {
+                    r = 255; g = 255; b = 255
+                }
+                // Stem
+                if dx > 0 && dx < 10 && dy > -40 && dy < 20 {
+                    r = 255; g = 255; b = 255
+                }
+                // Flag
+                if dx >= 10 && dx < 30 && dy > -40 && dy < -20 {
+                    r = 255; g = 255; b = 255
+                }
+                
+                let index = (y * width + x) * 4
+                pixels[index] = UInt8(r)
+                pixels[index + 1] = UInt8(g)
+                pixels[index + 2] = UInt8(b)
+                pixels[index + 3] = 255
+            }
+        }
+    }
+
+    private static func drawVideoFile(width: Int, height: Int, pixels: inout [UInt8]) {
+        // Film strip teal
+        for y in 0..<height {
+            for x in 0..<width {
+                var r = 0, g = 150, b = 150
+                
+                // Film holes
+                if x < 40 || x > width - 40 {
+                    r = 20; g = 20; b = 20
+                    if (y % 40) > 20 && x > 10 && x < 30 { r = 255; g = 255; b = 255 } // Left holes
+                    if (y % 40) > 20 && x > width - 30 && x < width - 10 { r = 255; g = 255; b = 255 } // Right holes
+                }
+                
+                let index = (y * width + x) * 4
+                pixels[index] = UInt8(r)
+                pixels[index + 1] = UInt8(g)
+                pixels[index + 2] = UInt8(b)
+                pixels[index + 3] = 255
+            }
+        }
+    }
+
+    private static func drawArchiveFile(width: Int, height: Int, pixels: inout [UInt8]) {
+        // Brown box with zipper
+        for y in 0..<height {
+            for x in 0..<width {
+                var r = 160, g = 130, b = 100
+                
+                // Zipper
+                if abs(x - width/2) < 15 {
+                    r = 100; g = 100; b = 100
+                    if (y / 10 + x / 10) % 2 == 0 {
+                        r = 200; g = 200; b = 100 // Gold teeth
+                    }
+                }
+                
+                let index = (y * width + x) * 4
+                pixels[index] = UInt8(r)
+                pixels[index + 1] = UInt8(g)
+                pixels[index + 2] = UInt8(b)
+                pixels[index + 3] = 255
+            }
+        }
+    }
+
+    private static func drawDatabaseFile(width: Int, height: Int, pixels: inout [UInt8]) {
+        // Grey cylinder stack
+        for y in 0..<height {
+            for x in 0..<width {
+                var r = 200, g = 200, b = 200
+                
+                // Stack layers
+                if (y % 60) > 50 {
+                    r = 150; g = 150; b = 150 // Separator
+                }
+                
+                // Shading for 3D effect
+                let nx = Double(x)/Double(width)
+                if nx < 0.2 || nx > 0.8 {
+                    r -= 50; g -= 50; b -= 50
+                }
+                
+                let index = (y * width + x) * 4
+                pixels[index] = UInt8(r)
+                pixels[index + 1] = UInt8(g)
+                pixels[index + 2] = UInt8(b)
+                pixels[index + 3] = 255
+            }
+        }
+    }
+    
+    private static func drawSwift(width: Int, height: Int, pixels: inout [UInt8]) {
+        // Orange with white diagonal shape (abstract bird)
+        for y in 0..<height {
+            for x in 0..<width {
+                var r = 250, g = 120, b = 20
+                
+                // Abstract curve
+                let nx = Double(x)/Double(width)
+                let ny = Double(y)/Double(height)
+                let curve = sin(nx * 3.14) * 0.5 + 0.2
+                
+                if abs(ny - curve) < 0.15 {
+                    r = 255; g = 255; b = 255
+                }
+                
+                let index = (y * width + x) * 4
+                pixels[index] = UInt8(r)
+                pixels[index + 1] = UInt8(g)
+                pixels[index + 2] = UInt8(b)
+                pixels[index + 3] = 255
+            }
+        }
+    }
+
+    private static func drawCode(width: Int, height: Int, pixels: inout [UInt8]) {
+        // Dark background with colored syntax highlighting lines
+        for y in 0..<height {
+            for x in 0..<width {
+                var r = 30, g = 30, b = 35 // Dark IDE bg
+                
+                // Lines of code
+                if (y % 20) > 10 {
+                    // "Text"
+                    if x > 20 && x < width - 20 {
+                        let seg = (x / 10) % 5
+                        if seg == 0 { r = 200; g = 100; b = 200 } // Keyword
+                        else if seg == 2 { r = 100; g = 200; b = 255 } // Var
+                        else { r = 180; g = 180; b = 180 } // Normal
+                        
+                        // Random gaps
+                        if (x + y) % 7 == 0 { r = 30; g = 30; b = 35 }
+                    }
+                }
+                
+                let index = (y * width + x) * 4
+                pixels[index] = UInt8(r)
+                pixels[index + 1] = UInt8(g)
+                pixels[index + 2] = UInt8(b)
+                pixels[index + 3] = 255
+            }
+        }
+    }
+
+    private static func drawTextDoc(width: Int, height: Int, pixels: inout [UInt8]) {
+        // White paper with lines
+        for y in 0..<height {
+            for x in 0..<width {
+                var r = 245, g = 245, b = 245
+                
+                // Lines
+                if (y % 25) > 22 {
+                     r = 200; g = 200; b = 220
+                }
+                
+                // Margins
+                if x < 30 || x > width - 30 {
+                    r = 230; g = 230; b = 230
+                }
+                
+                let index = (y * width + x) * 4
+                pixels[index] = UInt8(r)
+                pixels[index + 1] = UInt8(g)
+                pixels[index + 2] = UInt8(b)
+                pixels[index + 3] = 255
+            }
+        }
+    }
+
+    private static func drawImageFile(width: Int, height: Int, pixels: inout [UInt8]) {
+        // Image placeholder icon (Mountain/Sun)
+        for y in 0..<height {
+            for x in 0..<width {
+                var r = 220, g = 220, b = 230
+                
+                let nx = Double(x)/Double(width)
+                let ny = Double(y)/Double(height)
+                
+                // Sun
+                let dx = nx - 0.75
+                let dy = ny - 0.25
+                if sqrt(dx*dx + dy*dy) < 0.1 {
+                    r = 255; g = 200; b = 50
+                }
+                
+                // Mountains
+                let m1 = 1.0 - abs(nx - 0.3) * 2.5
+                let m2 = 1.0 - abs(nx - 0.7) * 2.0
+                if ny > (1.0 - max(m1, m2) * 0.5) {
+                    r = 100; g = 180; b = 100
+                }
+                
+                let index = (y * width + x) * 4
+                pixels[index] = UInt8(r)
+                pixels[index + 1] = UInt8(g)
+                pixels[index + 2] = UInt8(b)
+                pixels[index + 3] = 255
+            }
+        }
+    }
+    
+    private static func drawRealEstate(width: Int, height: Int, pixels: inout [UInt8]) {
+        // Brick red with roof
+        for y in 0..<height {
+            for x in 0..<width {
+                var r = 180, g = 80, b = 60 // Brick
+                if (x / 20 + y / 10) % 2 == 0 {
+                    r -= 20; g -= 10
+                }
+                
+                // Roof
+                if Double(y) < Double(height) / 3.0 {
+                    let dx = abs(Double(x - width / 2))
+                    let roofY = dx
+                    if Double(y) > roofY {
+                        r = 80; g = 40; b = 30
+                    }
+                }
+                
+                let index = (y * width + x) * 4
+                pixels[index] = UInt8(r)
+                pixels[index + 1] = UInt8(g)
+                pixels[index + 2] = UInt8(b)
+                pixels[index + 3] = 255
+            }
+        }
+    }
+
+    private static func drawAudio(width: Int, height: Int, pixels: inout [UInt8]) {
+        // Waveform
+        for y in 0..<height {
+            for x in 0..<width {
+                var r = 20, g = 20, b = 30
+                
+                let amp = sin(Double(x)/10.0) * sin(Double(x)/50.0) * (Double(height)/3.0)
+                if abs(Double(y - height/2)) < abs(amp) {
+                    r = 100; g = 200; b = 255
+                }
+                
+                let index = (y * width + x) * 4
+                pixels[index] = UInt8(r)
+                pixels[index + 1] = UInt8(g)
+                pixels[index + 2] = UInt8(b)
+                pixels[index + 3] = 255
+            }
+        }
+    }
+
+    private static func drawCamera(width: Int, height: Int, pixels: inout [UInt8]) {
+        // Aperture
+        for y in 0..<height {
+            for x in 0..<width {
+                let dx = Double(x - width/2)
+                let dy = Double(y - height/2)
+                let dist = sqrt(dx*dx + dy*dy)
+                
+                var r = 50, g = 50, b = 50
+                if dist < 100 {
+                    let angle = atan2(dy, dx)
+                    r = 20; g = 20; b = 20
+                    if Int(angle * 6) % 2 == 0 {
+                        r = 40; g = 40; b = 40
+                    }
+                    if dist < 40 { // Lens
+                        r = 20; g = 0; b = 80
+                    }
+                }
+                
+                let index = (y * width + x) * 4
+                pixels[index] = UInt8(r)
+                pixels[index + 1] = UInt8(g)
+                pixels[index + 2] = UInt8(b)
+                pixels[index + 3] = 255
+            }
+        }
+    }
+
+    private static func drawWeb(width: Int, height: Int, pixels: inout [UInt8]) {
+        // Grid/Globe
+        for y in 0..<height {
+            for x in 0..<width {
+                var r = 255, g = 255, b = 255
+                
+                // Latitude/Longitude grid
+                if x % 30 == 0 || y % 30 == 0 {
+                    r = 200; g = 200; b = 255
+                }
+                
+                // "Browser" header
+                if y < 40 {
+                    r = 220; g = 220; b = 220
+                    if x > 200 { // Close btn
+                        r = 255; g = 100; b = 100
+                    }
+                }
+                
+                let index = (y * width + x) * 4
+                pixels[index] = UInt8(r)
+                pixels[index + 1] = UInt8(g)
+                pixels[index + 2] = UInt8(b)
+                pixels[index + 3] = 255
+            }
+        }
+    }
+    
+    private static func drawAI(width: Int, height: Int, pixels: inout [UInt8]) {
+        // Circuit board green/black
+        for y in 0..<height {
+            for x in 0..<width {
+                var r = 0, g = 20, b = 0
+                
+                // Lines
+                if x % 30 == 0 || y % 30 == 0 {
+                    r = 0; g = 150; b = 0
+                }
+                
+                // Nodes
+                if x % 60 == 0 && y % 60 == 0 {
+                     r = 100; g = 255; b = 100
+                }
+                
+                let index = (y * width + x) * 4
+                pixels[index] = UInt8(r)
+                pixels[index + 1] = UInt8(g)
+                pixels[index + 2] = UInt8(b)
+                pixels[index + 3] = 255
+            }
+        }
+    }
+
+    private static func drawFinance(width: Int, height: Int, pixels: inout [UInt8]) {
+        // Green charts
+        for y in 0..<height {
+            for x in 0..<width {
+                var r = 240, g = 255, b = 240
+                
+                // Chart line
+                let chartY = Double(height) - (Double(x) / Double(width)) * (Double(height) * 0.8) - 20.0 + sin(Double(x)/10.0)*20.0
+                if abs(Double(y) - chartY) < 2.0 {
+                    r = 0; g = 180; b = 0
+                } else if Double(y) > chartY {
+                    r = 200; g = 250; b = 200
+                }
+                
+                let index = (y * width + x) * 4
+                pixels[index] = UInt8(r)
+                pixels[index + 1] = UInt8(g)
+                pixels[index + 2] = UInt8(b)
+                pixels[index + 3] = 255
+            }
+        }
+    }
     
     private static func drawTikTok(width: Int, height: Int, pixels: inout [UInt8]) {
         // Black background

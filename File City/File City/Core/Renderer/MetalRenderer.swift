@@ -81,27 +81,16 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
     private func loadTextures() {
         var sourceTextures: [MTLTexture] = []
-        let textureCount = 16
+        let textureCount = 32
         
-        // Specific semantic names we want to ensure are in the palette if they match the logic
-        // But CityMapper hashes the name to pick an index. 
-        // To make "File City" actually show the "File City" texture, we need the TextureGenerator 
-        // to receive the name "File City" for the index that "File City" hashes to.
-        // This is tricky with the current random hash logic.
-        
-        // Better approach for V2:
-        // We generate a palette of "Styles".
-        // TextureGenerator can just generate 16 random *styles* (some might be themed if we force it).
-        // BUT, the user wants "File City" (the folder) to look like "File City" (the texture).
-        // So we should change the logic: The texture array should hold SPECIFIC textures for known projects if possible,
-        // or we need a dynamic texture system. 
-        // For this prototype, let's just generate the palette with the names we expect to see, 
-        // effectively "forcing" the styles into the slots 0, 1, 2... and updating the Mapper to map specific names to specific slots.
-        
-        // Let's revert the Mapper change to map specific names to specific slots 0, 1, 2...
-        // And then fill the rest with random styles.
-        
-        let semanticNames = ["File City", "AppShell", "Core", "tiktok-peter", "imsg", "pokemon-red-rust", "bloom-filter-python", "rust"]
+        // Semantic names we want to ensure are in the palette
+        let semanticNames = [
+            "File City", "AppShell", "Core", 
+            "tiktok-peter", "imsg", "pokemon-red-rust", "bloom-filter-python", "rust",
+            "ai-bot", "bank-finance", "real-estate", "audio-voice", "camera-photo", "web-chrome",
+            "swift-file", "code-json", "text-doc", "image-file-png",
+            "audio_file_mp3", "video_file_mp4", "archive_file_zip", "db_file_sql"
+        ]
         
         for i in 0..<textureCount {
             let seed: String
