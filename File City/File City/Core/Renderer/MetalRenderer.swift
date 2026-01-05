@@ -62,13 +62,14 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         view.delegate = self
     }
 
-    func updateInstances(blocks: [CityBlock]) {
+    func updateInstances(blocks: [CityBlock], selectedNodeID: UUID?) {
         let instances = blocks.map { block in
             VoxelInstance(
                 position: SIMD3<Float>(block.position.x, block.position.y, block.position.z),
                 scale: SIMD3<Float>(Float(block.footprint.x), Float(block.height), Float(block.footprint.y)),
                 materialID: UInt32(block.materialID),
-                _pad2: .init(0, 0, 0)
+                highlight: block.nodeID == selectedNodeID ? 1.0 : 0.0,
+                _pad2: .init(0, 0)
             )
         }
         instanceCount = instances.count

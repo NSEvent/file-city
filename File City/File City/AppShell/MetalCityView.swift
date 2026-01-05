@@ -26,7 +26,7 @@ struct MetalCityView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: MTKView, context: Context) {
-        context.coordinator.renderer?.updateInstances(blocks: appState.blocks)
+        context.coordinator.renderer?.updateInstances(blocks: appState.blocks, selectedNodeID: appState.selectedFocusNodeID)
     }
 
     final class Coordinator: NSObject {

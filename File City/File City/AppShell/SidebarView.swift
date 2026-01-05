@@ -24,7 +24,16 @@ struct SidebarView: View {
                 ForEach(appState.searchResults, id: \.self) { url in
                     HStack {
                         Button(url.lastPathComponent) {
-                            appState.open(url)
+                            appState.focus(url)
+                        }
+                        .fontWeight(appState.selectedURL == url ? .semibold : .regular)
+                        .contextMenu {
+                            Button("Open") {
+                                appState.open(url)
+                            }
+                            Button("Reveal in Finder") {
+                                appState.reveal(url)
+                            }
                         }
                         Spacer()
                         Button {
@@ -52,6 +61,43 @@ struct SidebarView: View {
                         .buttonStyle(BorderlessButtonStyle())
                     }
                 }
+            }
+
+            Section("Actions") {
+                if let selectedURL = appState.selectedURL {
+                    Text("Selected: \(selectedURL.lastPathComponent)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Selected: none")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Button("New Folder") {
+                    appState.createFolder()
+                }
+                .disabled(appState.actionContainerURL() == nil)
+
+                Button("New File") {
+                    appState.createFile()
+                }
+                .disabled(appState.actionContainerURL() == nil)
+
+                Button("Rename") {
+                    appState.renameSelected()
+                }
+                .disabled(appState.selectedURL == nil)
+
+                Button("Move") {
+                    appState.moveSelected()
+                }
+                .disabled(appState.selectedURL == nil)
+
+                Button("Move to Trash") {
+                    appState.trashSelected()
+                }
+                .disabled(appState.selectedURL == nil)
             }
         }
         .listStyle(SidebarListStyle())
