@@ -25,7 +25,20 @@ final class TextureGenerator {
         var pixelData = [UInt8](repeating: 0, count: width * height * 4)
         
         var rng = DeterministicRNG(seed: seed)
-        let style = FacadeStyle(rawValue: rng.next() % 5) ?? .glassCurtain
+        let styleRoll = rng.next() % 20
+        let style: FacadeStyle
+        switch styleRoll {
+        case 0...9:
+            style = .glassCurtain
+        case 10...14:
+            style = .metalPanels
+        case 15...16:
+            style = .nightWindows
+        case 17...18:
+            style = .concreteGrid
+        default:
+            style = .stoneCladding
+        }
         switch style {
         case .glassCurtain:
             drawGlassCurtain(width: width, height: height, pixels: &pixelData, rng: &rng)
@@ -51,9 +64,9 @@ final class TextureGenerator {
     
     // MARK: - Themes
     private static func drawGlassCurtain(width: Int, height: Int, pixels: inout [UInt8], rng: inout DeterministicRNG) {
-        let tintR = Int(rng.next() % 30) + 30
-        let tintG = Int(rng.next() % 60) + 90
-        let tintB = Int(rng.next() % 60) + 140
+        let tintR = Int(rng.next() % 20) + 70
+        let tintG = Int(rng.next() % 30) + 110
+        let tintB = Int(rng.next() % 30) + 150
         let mullion = Int(rng.next() % 2) + 2
         let gridW = Int(rng.next() % 24) + 32
         let gridH = Int(rng.next() % 48) + 64
@@ -72,9 +85,9 @@ final class TextureGenerator {
                 let wave = sin(nx * 6.2 + ny * 3.7) * 12.0
                 let haze = Double(hash2D(x: x, y: y, seed: seed) % 9) - 4.0
 
-                let r = clamp(value: tintR + Int(wave * 0.4 + haze), min: 0, max: 255)
-                let g = clamp(value: tintG + Int(wave * 0.3 - ny * 30.0 + haze), min: 0, max: 255)
-                let b = clamp(value: tintB + Int(wave * 0.5 - ny * 45.0), min: 0, max: 255)
+                let r = clamp(value: tintR + Int(wave * 0.5 + haze), min: 0, max: 255)
+                let g = clamp(value: tintG + Int(wave * 0.4 - ny * 24.0 + haze), min: 0, max: 255)
+                let b = clamp(value: tintB + Int(wave * 0.6 - ny * 36.0), min: 0, max: 255)
                 setColor(index: index, r: r, g: g, b: b, pixels: &pixels)
             }
         }
@@ -94,17 +107,18 @@ final class TextureGenerator {
 
                 if lx < frame || ly < frame {
                     let noise = Int(hash2D(x: x, y: y, seed: seed) % 25)
-                    let base = 170 + noise
-                    setColor(index: index, r: base, g: base, b: base, pixels: &pixels)
+                    let base = 180 + noise
+                    setColor(index: index, r: base, g: base + 2, b: base + 6, pixels: &pixels)
                 } else {
                     if lx < frame + 2 || ly < frame + 2 {
                         setColor(index: index, r: 18, g: 18, b: 20, pixels: &pixels)
                     } else {
-                        setColor(index: index, r: 42, g: 52, b: 62, pixels: &pixels)
+                        setColor(index: index, r: 48, g: 58, b: 70, pixels: &pixels)
                     }
                 }
             }
         }
+        overlayWindows(width: width, height: height, pixels: &pixels, seed: seed, density: 0.1)
     }
 
     private static func drawStoneCladding(width: Int, height: Int, pixels: inout [UInt8], rng: inout DeterministicRNG) {
@@ -128,16 +142,17 @@ final class TextureGenerator {
 
                 let blockHash = hash2D(x: ex / blockW, y: row, seed: seed) % 30
                 let noise = hash2D(x: x, y: y, seed: seed) % 40
-                let base = 145 + Int(blockHash + noise / 2)
+                let base = 155 + Int(blockHash + noise / 2)
                 setColor(
                     index: index,
-                    r: clamp(value: base + 6, min: 0, max: 255),
-                    g: clamp(value: base - 4, min: 0, max: 255),
-                    b: clamp(value: base - 14, min: 0, max: 255),
+                    r: clamp(value: base + 8, min: 0, max: 255),
+                    g: clamp(value: base + 2, min: 0, max: 255),
+                    b: clamp(value: base - 4, min: 0, max: 255),
                     pixels: &pixels
                 )
             }
         }
+        overlayWindows(width: width, height: height, pixels: &pixels, seed: seed, density: 0.08)
     }
 
     private static func drawMetalPanels(width: Int, height: Int, pixels: inout [UInt8], rng: inout DeterministicRNG) {
@@ -156,16 +171,17 @@ final class TextureGenerator {
 
                 let stripe = verticalBrush ? hash2D(x: x, y: 0, seed: seed) : hash2D(x: 0, y: y, seed: seed)
                 let noise = hash2D(x: x, y: y, seed: seed) % 18
-                let val = 175 + Int((stripe % 30) + noise)
+                let val = 190 + Int((stripe % 35) + noise)
                 setColor(
                     index: index,
                     r: clamp(value: val, min: 0, max: 255),
-                    g: clamp(value: val, min: 0, max: 255),
-                    b: clamp(value: val + 8, min: 0, max: 255),
+                    g: clamp(value: val + 2, min: 0, max: 255),
+                    b: clamp(value: val + 10, min: 0, max: 255),
                     pixels: &pixels
                 )
             }
         }
+        overlayWindows(width: width, height: height, pixels: &pixels, seed: seed, density: 0.1)
     }
 
     private static func drawNightWindows(width: Int, height: Int, pixels: inout [UInt8], rng: inout DeterministicRNG) {
@@ -197,6 +213,41 @@ final class TextureGenerator {
                     }
                 } else {
                     setColor(index: index, r: 6, g: 8, b: 12, pixels: &pixels)
+                }
+            }
+        }
+    }
+
+    private static func overlayWindows(width: Int, height: Int, pixels: inout [UInt8], seed: UInt64, density: Double) {
+        let winW = 12
+        let winH = 18
+        let gapX = 16
+        let gapY = 18
+        let strideX = winW + gapX
+        let strideY = winH + gapY
+
+        for y in 0..<height {
+            for x in 0..<width {
+                let lx = x % strideX
+                let ly = y % strideY
+                if lx >= winW || ly >= winH {
+                    continue
+                }
+
+                let cellX = x / strideX
+                let cellY = y / strideY
+                let winHash = hash2D(x: cellX, y: cellY, seed: seed)
+                let lit = Double(winHash % 100) < density * 100.0
+
+                let index = (y * width + x) * 4
+                if lit {
+                    if winHash % 2 == 0 {
+                        setColor(index: index, r: 248, g: 228, b: 180, pixels: &pixels)
+                    } else {
+                        setColor(index: index, r: 185, g: 210, b: 245, pixels: &pixels)
+                    }
+                } else {
+                    setColor(index: index, r: 18, g: 22, b: 26, pixels: &pixels)
                 }
             }
         }
