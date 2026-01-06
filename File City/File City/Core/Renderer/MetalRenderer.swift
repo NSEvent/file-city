@@ -203,7 +203,6 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             return
         }
         if blocksChanged {
-            camera.target = centerOf(blocks: blocks)
             rebuildRoadsAndCars(blocks: blocks)
         }
         instanceBuffer = device.makeBuffer(bytes: instances, length: MemoryLayout<VoxelInstance>.stride * instances.count, options: [])
