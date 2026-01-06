@@ -206,7 +206,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         var topBlocks: [UUID: CityBlock] = [:]
         var topHeights: [UUID: Float] = [:]
         for block in blocks where block.isGitRepo {
-            let topY = block.position.y + Float(block.height)
+            let topY = visualTopY(for: block)
             if let existing = topHeights[block.nodeID], existing >= topY {
                 continue
             }
@@ -220,7 +220,12 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         for block in topBlocks.values {
             let footprintX = Float(block.footprint.x)
             let footprintZ = Float(block.footprint.y)
-            let roofY = block.position.y + Float(block.height)
+            let baseTopY = block.position.y + Float(block.height)
+            let visualTopY = visualTopY(for: block)
+            var roofY = visualTopY
+            if block.shapeID == 2 {
+                roofY = baseTopY + (visualTopY - baseTopY) * 0.42
+            }
             let baseX = block.position.x
             let baseZ = block.position.z
             let towerSize: Float = max(1.2, min(2.6, min(footprintX, footprintZ) * 0.35))
@@ -230,7 +235,16 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             let mastY = baseY + towerHeight * 0.5
             let crossbarY = baseY + towerHeight * 0.8
             let beaconSize = towerSize * 0.16
-            let beaconY = baseY + towerHeight + beaconSize * 0.5
+            var beaconY = baseY + towerHeight + beaconSize * 0.5
+            var beaconOffsetX: Float = 0
+            var beaconOffsetZ: Float = 0
+            if block.shapeID == 2 {
+                beaconY = min(beaconY, baseTopY + towerSize * 0.45)
+            } else if block.shapeID == 3 {
+                beaconOffsetX = footprintX * 0.25
+            } else if block.shapeID == 4 {
+                beaconOffsetZ = footprintZ * 0.25
+            }
 
             instances.append(VoxelInstance(
                 position: SIMD3<Float>(baseX, baseY, baseZ),
@@ -257,7 +271,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             ))
 
             instances.append(VoxelInstance(
-                position: SIMD3<Float>(baseX, beaconY, baseZ),
+                position: SIMD3<Float>(baseX + beaconOffsetX, beaconY, baseZ + beaconOffsetZ),
                 scale: SIMD3<Float>(beaconSize, beaconSize, beaconSize),
                 materialID: gitTowerMaterialID,
                 textureIndex: -1,
@@ -266,6 +280,18 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
 
         return instances
+    }
+
+    private func visualTopY(for block: CityBlock) -> Float {
+        let baseTop = block.position.y + Float(block.height)
+        let spireBoost: Float
+        switch block.shapeID {
+        case 1, 2, 3, 4:
+            spireBoost = Float(block.height) * 0.5
+        default:
+            spireBoost = 0
+        }
+        return baseTop + spireBoost
     }
 
     func setHoveredPlane(index: Int?) {
