@@ -935,6 +935,10 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     }
 
     func pickBlock(at point: CGPoint, in size: CGSize) -> CityBlock? {
+        return pickBlockHit(at: point, in: size)?.block
+    }
+
+    func pickBlockHit(at point: CGPoint, in size: CGSize) -> (block: CityBlock, distance: Float)? {
         guard size.width > 1, size.height > 1, !blocks.isEmpty else { return nil }
         let viewMatrix = camera.viewMatrix()
         let projectionMatrix = camera.projectionMatrix()
@@ -959,13 +963,11 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         let rayOrigin = nearPosition
         let rayDirection = simd_normalize(farPosition - nearPosition)
         
-        // Delegate to RayTracer
         let ray = RayTracer.Ray(origin: rayOrigin, direction: rayDirection)
         let tracer = RayTracer()
-        if let hit = tracer.intersect(ray: ray, blocks: blocks, cameraYaw: camera.yaw) {
-            // Find block by ID (this could be optimized if hit returned the block directly, 
-            // but we need to match the signature or keep RayTracer generic)
-            return blocks.first { $0.nodeID == hit.blockID }
+        if let hit = tracer.intersect(ray: ray, blocks: blocks, cameraYaw: camera.yaw),
+           let block = blocks.first(where: { $0.nodeID == hit.blockID }) {
+            return (block, hit.distance)
         }
         
         return nil
@@ -975,6 +977,12 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         guard size.width > 1, size.height > 1, !gitBeaconBoxes.isEmpty else { return nil }
         let ray = rayFrom(point: point, in: size)
         return BeaconPicker.pick(ray: ray, boxes: gitBeaconBoxes)
+    }
+
+    func pickBeaconHit(at point: CGPoint, in size: CGSize) -> (nodeID: UUID, distance: Float)? {
+        guard size.width > 1, size.height > 1, !gitBeaconBoxes.isEmpty else { return nil }
+        let ray = rayFrom(point: point, in: size)
+        return BeaconPicker.pickWithDistance(ray: ray, boxes: gitBeaconBoxes)
     }
 
     private func rayIntersectAABB(origin: SIMD3<Float>, direction: SIMD3<Float>, minBounds: SIMD3<Float>, maxBounds: SIMD3<Float>) -> Float? {

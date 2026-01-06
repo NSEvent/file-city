@@ -86,13 +86,29 @@ struct MetalCityView: NSViewRepresentable {
         func handleHover(_ point: CGPoint, in view: MTKView) {
             guard let renderer else { return }
             let backingPoint = view.convertToBacking(point)
-            if let beaconNodeID = renderer.pickBeacon(at: backingPoint, in: view.drawableSize) {
-                if hoveredBeaconNodeID != beaconNodeID {
-                    hoveredBeaconNodeID = beaconNodeID
+            if let planeIndex = renderer.pickPlane(at: backingPoint, in: view.drawableSize) {
+                renderer.setHoveredPlane(index: planeIndex)
+                if hoveredNodeID != nil {
                     hoveredNodeID = nil
                     appState?.hoveredURL = nil
                     appState?.hoveredNodeID = nil
-                    if let url = appState?.url(for: beaconNodeID) {
+                }
+                return
+            }
+            let beaconHit = renderer.pickBeaconHit(at: backingPoint, in: view.drawableSize)
+            let blockHit = renderer.pickBlockHit(at: backingPoint, in: view.drawableSize)
+            if let beaconHit, let blockHit, blockHit.distance <= beaconHit.distance {
+                if hoveredBeaconNodeID != nil {
+                    hoveredBeaconNodeID = nil
+                    appState?.hoveredGitStatus = nil
+                }
+            } else if let beaconHit {
+                if hoveredBeaconNodeID != beaconHit.nodeID {
+                    hoveredBeaconNodeID = beaconHit.nodeID
+                    hoveredNodeID = nil
+                    appState?.hoveredURL = nil
+                    appState?.hoveredNodeID = nil
+                    if let url = appState?.url(for: beaconHit.nodeID) {
                         appState?.hoveredGitStatus = appState?.gitStatusLines(for: url)
                     } else {
                         appState?.hoveredGitStatus = nil
@@ -105,16 +121,7 @@ struct MetalCityView: NSViewRepresentable {
                 hoveredBeaconNodeID = nil
                 appState?.hoveredGitStatus = nil
             }
-            if let planeIndex = renderer.pickPlane(at: backingPoint, in: view.drawableSize) {
-                renderer.setHoveredPlane(index: planeIndex)
-                if hoveredNodeID != nil {
-                    hoveredNodeID = nil
-                    appState?.hoveredURL = nil
-                    appState?.hoveredNodeID = nil
-                }
-                return
-            }
-            guard let block = renderer.pickBlock(at: backingPoint, in: view.drawableSize) else {
+            guard let block = blockHit?.block else {
                 renderer.setHoveredPlane(index: nil)
                 if hoveredNodeID != nil {
                     hoveredNodeID = nil

@@ -9,6 +9,10 @@ struct BeaconPicker {
     }
 
     static func pick(ray: RayTracer.Ray, boxes: [Box]) -> UUID? {
+        return pickWithDistance(ray: ray, boxes: boxes)?.nodeID
+    }
+
+    static func pickWithDistance(ray: RayTracer.Ray, boxes: [Box]) -> (nodeID: UUID, distance: Float)? {
         var closest: (nodeID: UUID, distance: Float)?
         for box in boxes {
             if let distance = intersectAABB(ray: ray, minBounds: box.min, maxBounds: box.max) {
@@ -17,7 +21,7 @@ struct BeaconPicker {
                 }
             }
         }
-        return closest?.nodeID
+        return closest
     }
 
     private static func intersectAABB(ray: RayTracer.Ray, minBounds: SIMD3<Float>, maxBounds: SIMD3<Float>) -> Float? {
