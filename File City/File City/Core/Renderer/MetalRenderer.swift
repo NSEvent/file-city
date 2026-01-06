@@ -245,9 +245,11 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             } else if block.shapeID == 4 {
                 beaconOffsetZ = footprintZ * 0.25
             }
+            let towerBaseX = baseX + beaconOffsetX
+            let towerBaseZ = baseZ + beaconOffsetZ
 
             instances.append(VoxelInstance(
-                position: SIMD3<Float>(baseX, baseY, baseZ),
+                position: SIMD3<Float>(towerBaseX, baseY, towerBaseZ),
                 scale: SIMD3<Float>(towerSize * 0.55, towerSize * 0.2, towerSize * 0.55),
                 materialID: gitTowerMaterialID,
                 textureIndex: -1,
@@ -255,15 +257,17 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             ))
 
             instances.append(VoxelInstance(
-                position: SIMD3<Float>(baseX, mastY, baseZ),
+                position: SIMD3<Float>(towerBaseX, mastY, towerBaseZ),
                 scale: SIMD3<Float>(towerSize * 0.18, towerHeight, towerSize * 0.18),
                 materialID: gitTowerMaterialID,
                 textureIndex: -1,
                 shapeID: 5
             ))
 
+            let crossbarX = baseX + beaconOffsetX
+            let crossbarZ = baseZ + beaconOffsetZ
             instances.append(VoxelInstance(
-                position: SIMD3<Float>(baseX, crossbarY, baseZ),
+                position: SIMD3<Float>(crossbarX, crossbarY, crossbarZ),
                 scale: SIMD3<Float>(towerSize * 0.55, towerSize * 0.06, towerSize * 0.55),
                 materialID: gitTowerMaterialID,
                 textureIndex: -1,
@@ -271,7 +275,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             ))
 
             instances.append(VoxelInstance(
-                position: SIMD3<Float>(baseX + beaconOffsetX, beaconY, baseZ + beaconOffsetZ),
+                position: SIMD3<Float>(crossbarX, beaconY, crossbarZ),
                 scale: SIMD3<Float>(beaconSize, beaconSize, beaconSize),
                 materialID: gitTowerMaterialID,
                 textureIndex: -1,
