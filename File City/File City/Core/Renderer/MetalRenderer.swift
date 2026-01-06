@@ -29,7 +29,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private var lastPlaneUpdateTime: CFTimeInterval = CACurrentMediaTime()
     private var hoveredPlaneIndex: Int?
     private var gitBeaconBoxes: [BeaconPicker.Box] = []
-    private let beaconHitInflation: Float = 1.6
+    private let beaconHitInflation: Float = 1.0
     private var blocks: [CityBlock] = []
     let camera = Camera()
 
