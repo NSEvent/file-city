@@ -264,11 +264,15 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 towerHeight *= 1.25
                 baseY += towerSize * 0.25
             }
+            if block.shapeID == 2 {
+                let tipY = visualTopY
+                towerHeight = max(0.8, tipY - baseY)
+            }
             let mastY = baseY + towerHeight * 0.5
             let crossbarY = baseY + towerHeight * 0.8
             var beaconY = baseY + towerHeight + beaconSize * 0.5
             if block.shapeID == 2 {
-                beaconY = min(beaconY, baseTopY + towerSize * 0.45)
+                beaconY = visualTopY + beaconSize * 0.5
             }
             let towerBaseX = baseX + beaconOffsetX
             let towerBaseZ = baseZ + beaconOffsetZ
