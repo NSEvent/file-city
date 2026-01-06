@@ -7,6 +7,7 @@ final class AppState: ObservableObject {
     @Published var rootURL: URL?
     @Published var nodeCount: Int = 0
     @Published var blocks: [CityBlock] = []
+    @Published private(set) var pendingAutoFit = false
     @Published var searchQuery: String = ""
     @Published var searchResults: [URL] = []
     @Published var selectedURL: URL?
@@ -96,6 +97,7 @@ final class AppState: ObservableObject {
 
     func scanRoot() {
         guard let rootURL else { return }
+        pendingAutoFit = true
         Task {
             do {
                 let result = try await scanner.scan(url: rootURL, maxDepth: 2, maxNodes: LayoutRules.default.maxNodes)
@@ -210,6 +212,10 @@ final class AppState: ObservableObject {
 
     func url(for nodeID: UUID) -> URL? {
         nodeByID[nodeID]?.url
+    }
+
+    func clearPendingAutoFit() {
+        pendingAutoFit = false
     }
 
     func infoLines(for url: URL) -> [String] {
