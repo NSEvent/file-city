@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct File_CityApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var appState = AppState()
 
     var body: some Scene {

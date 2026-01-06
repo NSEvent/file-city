@@ -59,8 +59,9 @@ final class AppState: ObservableObject {
 
         // Skip automatic setup if running tests to prevent hangs
         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
-            if let defaultRoot = defaultRootURL() {
-                rootURL = defaultRoot
+            let root = LaunchRootResolver.resolve() ?? defaultRootURL()
+            if let root {
+                rootURL = root
                 scanRoot()
                 startWatchingRoot()
             }
