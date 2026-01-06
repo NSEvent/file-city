@@ -64,20 +64,21 @@ final class TextureGenerator {
     
     // MARK: - Themes
     private static func drawGlassCurtain(width: Int, height: Int, pixels: inout [UInt8], rng: inout DeterministicRNG) {
-        let tintR = Int(rng.next() % 20) + 70
-        let tintG = Int(rng.next() % 30) + 110
-        let tintB = Int(rng.next() % 30) + 150
+        let tintR = Int(rng.next() % 30) + 110
+        let tintG = Int(rng.next() % 40) + 150
+        let tintB = Int(rng.next() % 40) + 190
         let mullion = Int(rng.next() % 2) + 2
         let gridW = Int(rng.next() % 24) + 32
         let gridH = Int(rng.next() % 48) + 64
         let seed = rng.next()
+        let accent = vibrantAccent(seed: seed)
 
         for y in 0..<height {
             let ny = Double(y) / Double(height)
             for x in 0..<width {
                 let index = (y * width + x) * 4
                 if x % gridW < mullion || y % gridH < mullion {
-                    setColor(index: index, r: 38, g: 40, b: 44, pixels: &pixels)
+                    setColor(index: index, r: accent.r, g: accent.g, b: accent.b, pixels: &pixels)
                     continue
                 }
 
@@ -85,9 +86,9 @@ final class TextureGenerator {
                 let wave = sin(nx * 6.2 + ny * 3.7) * 12.0
                 let haze = Double(hash2D(x: x, y: y, seed: seed) % 9) - 4.0
 
-                let r = clamp(value: tintR + Int(wave * 0.5 + haze), min: 0, max: 255)
-                let g = clamp(value: tintG + Int(wave * 0.4 - ny * 24.0 + haze), min: 0, max: 255)
-                let b = clamp(value: tintB + Int(wave * 0.6 - ny * 36.0), min: 0, max: 255)
+                let r = clamp(value: tintR + Int(wave * 0.6 + haze), min: 0, max: 255)
+                let g = clamp(value: tintG + Int(wave * 0.5 - ny * 20.0 + haze), min: 0, max: 255)
+                let b = clamp(value: tintB + Int(wave * 0.7 - ny * 28.0), min: 0, max: 255)
                 setColor(index: index, r: r, g: g, b: b, pixels: &pixels)
             }
         }
@@ -98,6 +99,7 @@ final class TextureGenerator {
         let cellH = Int(rng.next() % 24) + 36
         let frame = Int(rng.next() % 3) + 5
         let seed = rng.next()
+        let accent = vibrantAccent(seed: seed)
 
         for y in 0..<height {
             for x in 0..<width {
@@ -107,13 +109,13 @@ final class TextureGenerator {
 
                 if lx < frame || ly < frame {
                     let noise = Int(hash2D(x: x, y: y, seed: seed) % 25)
-                    let base = 180 + noise
-                    setColor(index: index, r: base, g: base + 2, b: base + 6, pixels: &pixels)
+                    let base = 165 + noise
+                    setColor(index: index, r: base + accent.r / 4, g: base + accent.g / 5, b: base + accent.b / 6, pixels: &pixels)
                 } else {
                     if lx < frame + 2 || ly < frame + 2 {
-                        setColor(index: index, r: 18, g: 18, b: 20, pixels: &pixels)
+                        setColor(index: index, r: 22, g: 24, b: 28, pixels: &pixels)
                     } else {
-                        setColor(index: index, r: 48, g: 58, b: 70, pixels: &pixels)
+                        setColor(index: index, r: 70, g: 90, b: 110, pixels: &pixels)
                     }
                 }
             }
@@ -125,6 +127,7 @@ final class TextureGenerator {
         let blockW = Int(rng.next() % 32) + 48
         let blockH = Int(rng.next() % 20) + 24
         let seed = rng.next()
+        let accent = vibrantAccent(seed: seed)
 
         for y in 0..<height {
             let row = y / blockH
@@ -136,18 +139,18 @@ final class TextureGenerator {
                 let ly = y % blockH
 
                 if lx < 2 || ly < 2 {
-                    setColor(index: index, r: 70, g: 64, b: 58, pixels: &pixels)
+                    setColor(index: index, r: 78, g: 74, b: 70, pixels: &pixels)
                     continue
                 }
 
                 let blockHash = hash2D(x: ex / blockW, y: row, seed: seed) % 30
                 let noise = hash2D(x: x, y: y, seed: seed) % 40
-                let base = 155 + Int(blockHash + noise / 2)
+                let base = 145 + Int(blockHash + noise / 2)
                 setColor(
                     index: index,
-                    r: clamp(value: base + 8, min: 0, max: 255),
-                    g: clamp(value: base + 2, min: 0, max: 255),
-                    b: clamp(value: base - 4, min: 0, max: 255),
+                    r: clamp(value: base + 10 + accent.r / 6, min: 0, max: 255),
+                    g: clamp(value: base + 4 + accent.g / 7, min: 0, max: 255),
+                    b: clamp(value: base - 4 + accent.b / 8, min: 0, max: 255),
                     pixels: &pixels
                 )
             }
@@ -160,23 +163,24 @@ final class TextureGenerator {
         let panelH = Int(rng.next() % 80) + 96
         let seed = rng.next()
         let verticalBrush = (rng.next() % 2) == 0
+        let accent = vibrantAccent(seed: seed)
 
         for y in 0..<height {
             for x in 0..<width {
                 let index = (y * width + x) * 4
                 if x % panelW < 2 || y % panelH < 2 {
-                    setColor(index: index, r: 52, g: 52, b: 55, pixels: &pixels)
+                    setColor(index: index, r: accent.r, g: accent.g, b: accent.b, pixels: &pixels)
                     continue
                 }
 
                 let stripe = verticalBrush ? hash2D(x: x, y: 0, seed: seed) : hash2D(x: 0, y: y, seed: seed)
                 let noise = hash2D(x: x, y: y, seed: seed) % 18
-                let val = 190 + Int((stripe % 35) + noise)
+                let val = 180 + Int((stripe % 55) + noise)
                 setColor(
                     index: index,
-                    r: clamp(value: val, min: 0, max: 255),
-                    g: clamp(value: val + 2, min: 0, max: 255),
-                    b: clamp(value: val + 10, min: 0, max: 255),
+                    r: clamp(value: val + accent.r / 5, min: 0, max: 255),
+                    g: clamp(value: val + accent.g / 7, min: 0, max: 255),
+                    b: clamp(value: val + 16 + accent.b / 8, min: 0, max: 255),
                     pixels: &pixels
                 )
             }
@@ -190,12 +194,13 @@ final class TextureGenerator {
         let gap = Int(rng.next() % 6) + 6
         let seed = rng.next()
         let roofBand = Int(Double(height) * 0.18)
+        let accent = vibrantAccent(seed: seed)
 
         for y in 0..<height {
             for x in 0..<width {
                 let index = (y * width + x) * 4
                 if y < roofBand {
-                    setColor(index: index, r: 12, g: 14, b: 18, pixels: &pixels)
+                    setColor(index: index, r: accent.r / 2, g: accent.g / 3, b: accent.b / 3, pixels: &pixels)
                     continue
                 }
                 let cellX = x / (winW + gap)
@@ -212,12 +217,12 @@ final class TextureGenerator {
                 let lit = (winHash % 100) < 45
                 if lit {
                     if winHash % 2 == 0 {
-                        setColor(index: index, r: 250, g: 234, b: 190, pixels: &pixels)
+                        setColor(index: index, r: 255, g: 230, b: 170, pixels: &pixels)
                     } else {
-                        setColor(index: index, r: 190, g: 215, b: 255, pixels: &pixels)
+                        setColor(index: index, r: 170, g: 205, b: 255, pixels: &pixels)
                     }
                 } else {
-                    setColor(index: index, r: 6, g: 8, b: 12, pixels: &pixels)
+                    setColor(index: index, r: 10, g: 12, b: 16, pixels: &pixels)
                 }
             }
         }
@@ -247,12 +252,12 @@ final class TextureGenerator {
                 let index = (y * width + x) * 4
                 if lit {
                     if winHash % 2 == 0 {
-                        setColor(index: index, r: 248, g: 228, b: 180, pixels: &pixels)
+                        setColor(index: index, r: 255, g: 220, b: 165, pixels: &pixels)
                     } else {
-                        setColor(index: index, r: 185, g: 210, b: 245, pixels: &pixels)
+                        setColor(index: index, r: 170, g: 200, b: 255, pixels: &pixels)
                     }
                 } else {
-                    setColor(index: index, r: 18, g: 22, b: 26, pixels: &pixels)
+                    setColor(index: index, r: 20, g: 24, b: 30, pixels: &pixels)
                 }
             }
         }
@@ -918,6 +923,21 @@ final class TextureGenerator {
         pixels[index + 1] = UInt8(clamp(value: g, min: 0, max: 255))
         pixels[index + 2] = UInt8(clamp(value: b, min: 0, max: 255))
         pixels[index + 3] = 255
+    }
+
+    private static func vibrantAccent(seed: UInt64) -> (r: Int, g: Int, b: Int) {
+        switch seed % 5 {
+        case 0:
+            return (r: 70, g: 235, b: 255) // teal
+        case 1:
+            return (r: 255, g: 200, b: 70) // amber
+        case 2:
+            return (r: 255, g: 110, b: 190) // pink
+        case 3:
+            return (r: 160, g: 230, b: 110) // lime
+        default:
+            return (r: 120, g: 140, b: 255) // periwinkle
+        }
     }
 
     private static func hash2D(x: Int, y: Int, seed: UInt64) -> UInt64 {
