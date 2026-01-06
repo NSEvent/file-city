@@ -28,8 +28,16 @@ final class FileActivityWatcher {
         stop()
         guard getuid() == 0 else { return }
         shouldRestart = true
-        let pids = fetchPIDs()
-        guard !pids.isEmpty else { return }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+            let pids = self.fetchPIDs()
+            guard !pids.isEmpty else { return }
+            self.startFsUsage(pids: pids)
+        }
+    }
+
+    private func startFsUsage(pids: [Int]) {
+        guard shouldRestart else { return }
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/sbin/fs_usage")
         task.arguments = ["-w", "-t", "\(sampleDuration)", "-f", "pathname"] + pids.map { String($0) }
