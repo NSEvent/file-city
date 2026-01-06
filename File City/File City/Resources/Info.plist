@@ -2,24 +2,19 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleDisplayName</key>
-	<string>FileCity</string>
-	<key>CFBundleIdentifier</key>
-	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-	<key>CFBundleName</key>
-	<string>FileCity</string>
-	<key>CFBundleShortVersionString</key>
-	<string>0.1</string>
-	<key>CFBundleVersion</key>
-	<string>1</string>
-	<key>LSApplicationCategoryType</key>
-	<string>public.app-category.developer-tools</string>
-	<key>NSHighResolutionCapable</key>
-	<true/>
-	<key>SMPrivilegedExecutables</key>
-	<dict>
-		<key>KevinTang.File-City.PrivilegedHelper</key>
-		<string>identifier KevinTang.File-City.PrivilegedHelper and anchor apple generic and certificate leaf[subject.CN] = Apple Development: Kevin Tang (K87G5Q3KRD)</string>
-	</dict>
+    <key>CFBundleName</key>
+    <string>FileCity</string>
+    <key>CFBundleDisplayName</key>
+    <string>FileCity</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.kevin.filecity</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.developer-tools</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
 </dict>
 </plist>

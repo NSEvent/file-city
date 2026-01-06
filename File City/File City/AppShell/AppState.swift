@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 import Foundation
-import Darwin
 
 @MainActor
 final class AppState: ObservableObject {
@@ -600,11 +599,6 @@ final class AppState: ObservableObject {
     }
 
     private func defaultRootURL() -> URL? {
-        if getuid() == 0,
-           let sudoUser = ProcessInfo.processInfo.environment["SUDO_USER"], !sudoUser.isEmpty {
-            let sudoHome = URL(fileURLWithPath: "/Users/\(sudoUser)", isDirectory: true)
-            return sudoHome.appendingPathComponent("projects", isDirectory: true)
-        }
         let home = FileManager.default.homeDirectoryForCurrentUser
         return home.appendingPathComponent("projects", isDirectory: true)
     }
