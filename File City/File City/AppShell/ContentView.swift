@@ -9,7 +9,6 @@ struct ContentView: View {
             SidebarView()
             ZStack(alignment: .topLeading) {
                 MetalCityView()
-                    .id(appState.rootURL?.path ?? "root")
                 InfoOverlayView()
             }
         }

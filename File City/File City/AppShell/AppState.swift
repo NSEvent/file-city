@@ -76,8 +76,11 @@ final class AppState: ObservableObject {
                 ?? defaultRootURL()
             if let root {
                 rootURL = root
-                scanRoot()
-                startWatchingRoot()
+                // Delay scan slightly to let SwiftUI set up the view hierarchy first
+                DispatchQueue.main.async { [weak self] in
+                    self?.scanRoot(autoFit: true)
+                    self?.startWatchingRoot()
+                }
             }
         }
     }
@@ -90,14 +93,16 @@ final class AppState: ObservableObject {
         panel.prompt = "Choose"
         if panel.runModal() == .OK {
             rootURL = panel.url
-            scanRoot()
+            scanRoot(autoFit: true)
             startWatchingRoot()
         }
     }
 
-    func scanRoot() {
+    func scanRoot(autoFit: Bool = false) {
         guard let rootURL else { return }
-        pendingAutoFit = true
+        if autoFit {
+            pendingAutoFit = true
+        }
         Task {
             do {
                 let result = try await scanner.scan(url: rootURL, maxDepth: 2, maxNodes: LayoutRules.default.maxNodes)
@@ -187,7 +192,7 @@ final class AppState: ObservableObject {
         activityInfoLines = nil
         selectedURL = nil
         selectedFocusNodeID = nil
-        scanRoot()
+        scanRoot(autoFit: true)
         startWatchingRoot()
     }
 
@@ -202,7 +207,7 @@ final class AppState: ObservableObject {
         activityInfoLines = nil
         selectedURL = nil
         selectedFocusNodeID = nil
-        scanRoot()
+        scanRoot(autoFit: true)
         startWatchingRoot()
     }
 

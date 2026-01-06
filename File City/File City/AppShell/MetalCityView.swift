@@ -1,3 +1,4 @@
+import Combine
 import MetalKit
 import SwiftUI
 
@@ -10,6 +11,8 @@ struct MetalCityView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> MTKView {
         let view = CityMTKView()
+        // Subscribe to appState changes via Coordinator
+        context.coordinator.startObserving(appState: appState)
         view.preferredFramesPerSecond = 60
         view.clearColor = MTLClearColor(red: 0.68, green: 0.78, blue: 0.86, alpha: 1.0)
         view.colorPixelFormat = .bgra8Unorm
@@ -42,6 +45,8 @@ struct MetalCityView: NSViewRepresentable {
 
     func updateNSView(_ nsView: MTKView, context: Context) {
         context.coordinator.appState = appState
+        // Apply auto-fit BEFORE updating instances so first render has correct camera
+        context.coordinator.applyPendingAutoFit(blocks: appState.blocks)
         let activityNow = appState.activityNow()
         context.coordinator.renderer?.updateInstances(
             blocks: appState.blocks,
@@ -52,7 +57,6 @@ struct MetalCityView: NSViewRepresentable {
             activityNow: activityNow,
             activityDuration: appState.activityDuration
         )
-        context.coordinator.applyPendingAutoFit(blocks: appState.blocks)
     }
 
     final class Coordinator: NSObject {
@@ -60,9 +64,51 @@ struct MetalCityView: NSViewRepresentable {
         weak var appState: AppState?
         private var hoveredNodeID: UUID?
         private(set) var hoveredBeaconNodeID: UUID?
+        private var cancellables = Set<AnyCancellable>()
 
         init(appState: AppState) {
             self.appState = appState
+        }
+
+        func startObserving(appState: AppState) {
+            self.appState = appState
+            // Subscribe to blocks changes and trigger updates
+            appState.$blocks
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] blocks in
+                    self?.updateFromAppState()
+                }
+                .store(in: &cancellables)
+
+            // Also observe other relevant properties
+            appState.$pendingAutoFit
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    self?.updateFromAppState()
+                }
+                .store(in: &cancellables)
+        }
+
+        private func updateFromAppState() {
+            guard let appState, let renderer else { return }
+
+            // Apply auto-fit first
+            if appState.pendingAutoFit && !appState.blocks.isEmpty {
+                renderer.autoFitCamera(blocks: appState.blocks)
+                appState.clearPendingAutoFit()
+            }
+
+            // Update instances
+            let activityNow = appState.activityNow()
+            renderer.updateInstances(
+                blocks: appState.blocks,
+                selectedNodeID: appState.selectedFocusNodeID,
+                hoveredNodeID: appState.hoveredNodeID,
+                hoveredBeaconNodeID: appState.hoveredBeaconNodeID,
+                activityByNodeID: appState.activitySnapshot(now: activityNow),
+                activityNow: activityNow,
+                activityDuration: appState.activityDuration
+            )
         }
 
         func applyPendingAutoFit(blocks: [CityBlock]) {
