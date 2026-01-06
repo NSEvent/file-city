@@ -189,10 +189,15 @@ final class TextureGenerator {
         let winH = Int(rng.next() % 12) + 20
         let gap = Int(rng.next() % 6) + 6
         let seed = rng.next()
+        let roofBand = Int(Double(height) * 0.18)
 
         for y in 0..<height {
             for x in 0..<width {
                 let index = (y * width + x) * 4
+                if y < roofBand {
+                    setColor(index: index, r: 12, g: 14, b: 18, pixels: &pixels)
+                    continue
+                }
                 let cellX = x / (winW + gap)
                 let cellY = y / (winH + gap)
                 let lx = x % (winW + gap)
