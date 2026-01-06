@@ -935,7 +935,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         // Delegate to RayTracer
         let ray = RayTracer.Ray(origin: rayOrigin, direction: rayDirection)
         let tracer = RayTracer()
-        if let hit = tracer.intersect(ray: ray, blocks: blocks) {
+        if let hit = tracer.intersect(ray: ray, blocks: blocks, cameraYaw: camera.yaw) {
             // Find block by ID (this could be optimized if hit returned the block directly, 
             // but we need to match the signature or keep RayTracer generic)
             return blocks.first { $0.nodeID == hit.blockID }

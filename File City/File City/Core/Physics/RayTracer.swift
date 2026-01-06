@@ -15,10 +15,11 @@ final class RayTracer {
     // Intersection epsilon
     private let epsilon: Float = 1e-6
 
-    func intersect(ray: Ray, blocks: [CityBlock]) -> Hit? {
+    func intersect(ray: Ray, blocks: [CityBlock], cameraYaw: Float) -> Hit? {
         var closestHit: Hit?
 
         for block in blocks {
+            let rotationY = rotationYForWedge(block: block, cameraYaw: cameraYaw)
             // 1. Fast AABB Check
             let aabb = calculateAABB(for: block)
             guard let aabbDist = intersectAABB(ray: ray, minBounds: aabb.min, maxBounds: aabb.max),
@@ -27,7 +28,7 @@ final class RayTracer {
             }
 
             // 2. Exact Mesh Check
-            if let dist = intersectMesh(ray: ray, block: block) {
+            if let dist = intersectMesh(ray: ray, block: block, rotationY: rotationY) {
                 if dist < (closestHit?.distance ?? .greatestFiniteMagnitude) {
                     closestHit = Hit(distance: dist, blockID: block.nodeID)
                 }
@@ -72,17 +73,17 @@ final class RayTracer {
         return nil
     }
 
-    private func intersectMesh(ray: Ray, block: CityBlock) -> Float? {
+    private func intersectMesh(ray: Ray, block: CityBlock, rotationY: Float) -> Float? {
         let halfX = Float(block.footprint.x) * 0.5
         let halfZ = Float(block.footprint.y) * 0.5
         let height = Float(block.height)
         let baseY = block.position.y
         
         // Base vertices (Y=base)
-        let v0 = SIMD3<Float>(block.position.x - halfX, baseY, block.position.z - halfZ) // Back Left
-        let v1 = SIMD3<Float>(block.position.x + halfX, baseY, block.position.z - halfZ) // Back Right
-        let v2 = SIMD3<Float>(block.position.x + halfX, baseY, block.position.z + halfZ) // Front Right
-        let v3 = SIMD3<Float>(block.position.x - halfX, baseY, block.position.z + halfZ) // Front Left
+        var v0 = SIMD3<Float>(block.position.x - halfX, baseY, block.position.z - halfZ) // Back Left
+        var v1 = SIMD3<Float>(block.position.x + halfX, baseY, block.position.z - halfZ) // Back Right
+        var v2 = SIMD3<Float>(block.position.x + halfX, baseY, block.position.z + halfZ) // Front Right
+        var v3 = SIMD3<Float>(block.position.x - halfX, baseY, block.position.z + halfZ) // Front Left
         
         // Top vertices (Y=height, potentially modified)
         var t0 = SIMD3<Float>(block.position.x - halfX, baseY + height, block.position.z - halfZ)
@@ -162,6 +163,18 @@ final class RayTracer {
             t3.y += 0.5 * 1.5 * height
         }
         
+        if rotationY != 0, block.shapeID == 3 || block.shapeID == 4 {
+            let center = block.position
+            v0 = rotateY(point: v0, around: center, radians: rotationY)
+            v1 = rotateY(point: v1, around: center, radians: rotationY)
+            v2 = rotateY(point: v2, around: center, radians: rotationY)
+            v3 = rotateY(point: v3, around: center, radians: rotationY)
+            t0 = rotateY(point: t0, around: center, radians: rotationY)
+            t1 = rotateY(point: t1, around: center, radians: rotationY)
+            t2 = rotateY(point: t2, around: center, radians: rotationY)
+            t3 = rotateY(point: t3, around: center, radians: rotationY)
+        }
+
         let triangles: [(SIMD3<Float>, SIMD3<Float>, SIMD3<Float>)] = [
             // Side 0 (Back): v0, t0, t1, v1
             (v0, t0, t1), (v0, t1, v1),
@@ -190,6 +203,25 @@ final class RayTracer {
         }
         
         return hit ? minT : nil
+    }
+
+    private func rotationYForWedge(block: CityBlock, cameraYaw: Float) -> Float {
+        guard block.shapeID == 3 || block.shapeID == 4 else { return 0 }
+        let cameraX = sin(cameraYaw)
+        let cameraZ = cos(cameraYaw)
+        if block.shapeID == 3 {
+            return cameraX >= 0 ? .pi : 0
+        }
+        return cameraZ >= 0 ? .pi : 0
+    }
+
+    private func rotateY(point: SIMD3<Float>, around center: SIMD3<Float>, radians: Float) -> SIMD3<Float> {
+        let translated = point - center
+        let c = cos(radians)
+        let s = sin(radians)
+        let x = translated.x * c - translated.z * s
+        let z = translated.x * s + translated.z * c
+        return SIMD3<Float>(x, translated.y, z) + center
     }
 
     private func intersectPrism(
