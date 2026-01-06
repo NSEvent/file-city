@@ -28,6 +28,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private var planeOffsets: [Float] = []
     private var lastPlaneUpdateTime: CFTimeInterval = CACurrentMediaTime()
     private var hoveredPlaneIndex: Int?
+    private var gitBeaconBoxes: [BeaconPicker.Box] = []
+    private let beaconHitInflation: Float = 1.6
     private var blocks: [CityBlock] = []
     let camera = Camera()
 
@@ -215,6 +217,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private func buildGitTowerInstances(blocks: [CityBlock]) -> [VoxelInstance] {
         var topBlocks: [UUID: CityBlock] = [:]
         var topHeights: [UUID: Float] = [:]
+        gitBeaconBoxes.removeAll()
         for block in blocks where block.isGitRepo {
             let topY = visualTopY(for: block)
             if let existing = topHeights[block.nodeID], existing >= topY {
@@ -303,6 +306,26 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 textureIndex: -1,
                 shapeID: 8
             ))
+
+            let nodeID = block.nodeID
+            func addBeaconBox(x: Float, y: Float, z: Float, scale: SIMD3<Float>) {
+                let half = scale * 0.5 * beaconHitInflation
+                let minBounds = SIMD3<Float>(x, y, z) - half
+                let maxBounds = SIMD3<Float>(x, y, z) + half
+                gitBeaconBoxes.append(BeaconPicker.Box(
+                    nodeID: nodeID,
+                    min: minBounds,
+                    max: maxBounds
+                ))
+            }
+            addBeaconBox(x: towerBaseX, y: baseY, z: towerBaseZ,
+                         scale: SIMD3<Float>(towerSize * 0.55, towerSize * 0.2, towerSize * 0.55))
+            addBeaconBox(x: towerBaseX, y: mastY, z: towerBaseZ,
+                         scale: SIMD3<Float>(towerSize * 0.18, towerHeight, towerSize * 0.18))
+            addBeaconBox(x: crossbarX, y: crossbarY, z: crossbarZ,
+                         scale: SIMD3<Float>(towerSize * 0.55, towerSize * 0.06, towerSize * 0.55))
+            addBeaconBox(x: crossbarX, y: beaconY, z: crossbarZ,
+                         scale: SIMD3<Float>(beaconSize, beaconSize, beaconSize))
         }
 
         return instances
@@ -941,6 +964,12 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
         
         return nil
+    }
+
+    func pickBeacon(at point: CGPoint, in size: CGSize) -> UUID? {
+        guard size.width > 1, size.height > 1, !gitBeaconBoxes.isEmpty else { return nil }
+        let ray = rayFrom(point: point, in: size)
+        return BeaconPicker.pick(ray: ray, boxes: gitBeaconBoxes)
     }
 
     private func rayIntersectAABB(origin: SIMD3<Float>, direction: SIMD3<Float>, minBounds: SIMD3<Float>, maxBounds: SIMD3<Float>) -> Float? {

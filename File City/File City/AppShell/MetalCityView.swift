@@ -50,6 +50,7 @@ struct MetalCityView: NSViewRepresentable {
         var renderer: MetalRenderer?
         weak var appState: AppState?
         private var hoveredNodeID: UUID?
+        private var hoveredBeaconNodeID: UUID?
 
         init(appState: AppState) {
             self.appState = appState
@@ -67,6 +68,25 @@ struct MetalCityView: NSViewRepresentable {
         func handleHover(_ point: CGPoint, in view: MTKView) {
             guard let renderer else { return }
             let backingPoint = view.convertToBacking(point)
+            if let beaconNodeID = renderer.pickBeacon(at: backingPoint, in: view.drawableSize) {
+                if hoveredBeaconNodeID != beaconNodeID {
+                    hoveredBeaconNodeID = beaconNodeID
+                    hoveredNodeID = nil
+                    appState?.hoveredURL = nil
+                    appState?.hoveredNodeID = nil
+                    if let url = appState?.url(for: beaconNodeID) {
+                        appState?.hoveredGitStatus = appState?.gitStatusLines(for: url)
+                    } else {
+                        appState?.hoveredGitStatus = nil
+                    }
+                }
+                renderer.setHoveredPlane(index: nil)
+                return
+            }
+            if hoveredBeaconNodeID != nil {
+                hoveredBeaconNodeID = nil
+                appState?.hoveredGitStatus = nil
+            }
             if let planeIndex = renderer.pickPlane(at: backingPoint, in: view.drawableSize) {
                 renderer.setHoveredPlane(index: planeIndex)
                 if hoveredNodeID != nil {
@@ -88,6 +108,8 @@ struct MetalCityView: NSViewRepresentable {
             renderer.setHoveredPlane(index: nil)
             guard hoveredNodeID != block.nodeID else { return }
             hoveredNodeID = block.nodeID
+            hoveredBeaconNodeID = nil
+            appState?.hoveredGitStatus = nil
             appState?.hoveredURL = appState?.url(for: block.nodeID)
             appState?.hoveredNodeID = block.nodeID
         }
@@ -95,8 +117,10 @@ struct MetalCityView: NSViewRepresentable {
         func clearHover() {
             renderer?.setHoveredPlane(index: nil)
             hoveredNodeID = nil
+            hoveredBeaconNodeID = nil
             appState?.hoveredURL = nil
             appState?.hoveredNodeID = nil
+            appState?.hoveredGitStatus = nil
         }
 
         func handleClick(_ point: CGPoint, in view: MTKView) {

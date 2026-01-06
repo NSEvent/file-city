@@ -13,6 +13,7 @@ final class AppState: ObservableObject {
     @Published var selectedFocusNodeID: UUID?
     @Published var hoveredURL: URL?
     @Published var hoveredNodeID: UUID?
+    @Published var hoveredGitStatus: [String]?
 
     private let scanner = DirectoryScanner()
     private let mapper = CityMapper()
@@ -135,6 +136,7 @@ final class AppState: ObservableObject {
         rootURL = url
         hoveredURL = nil
         hoveredNodeID = nil
+        hoveredGitStatus = nil
         selectedURL = nil
         selectedFocusNodeID = nil
         scanRoot()
@@ -146,6 +148,7 @@ final class AppState: ObservableObject {
         rootURL = parent
         hoveredURL = nil
         hoveredNodeID = nil
+        hoveredGitStatus = nil
         selectedURL = nil
         selectedFocusNodeID = nil
         scanRoot()
@@ -173,6 +176,51 @@ final class AppState: ObservableObject {
             "Modified \(modifiedText)",
             node.url.path
         ]
+    }
+
+    func gitStatusLines(for url: URL) -> [String] {
+        let title = "\(url.lastPathComponent) (git)"
+        guard isDirectory(url) else {
+            return [title, "Not a folder"]
+        }
+        let output = runGitStatus(at: url)
+        guard !output.isEmpty else {
+            return [title, "Git status unavailable"]
+        }
+        let lines = output
+            .split(separator: "\n")
+            .map { String($0) }
+        guard let first = lines.first else {
+            return [title, "Git status unavailable"]
+        }
+        var result: [String] = [title]
+        let branchLine = first.hasPrefix("## ") ? String(first.dropFirst(3)) : first
+        result.append(branchLine.isEmpty ? "Unknown branch" : branchLine)
+        let changes = lines.dropFirst()
+        if changes.isEmpty {
+            result.append("Clean")
+        } else {
+            result.append(contentsOf: changes.prefix(5))
+        }
+        return result
+    }
+
+    private func runGitStatus(at url: URL) -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["git", "-C", url.path, "status", "--porcelain=1", "-b"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        do {
+            try process.run()
+        } catch {
+            return ""
+        }
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { return "" }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8) ?? ""
     }
 
     func actionContainerURL() -> URL? {
