@@ -10,4 +10,5 @@ struct VoxelInstance {
     var highlight: Float = 0
     var hover: Float = 0
     var textureIndex: Int32 = -1
+    var shapeID: Int32 = 0
 }

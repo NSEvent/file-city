@@ -9,5 +9,6 @@ struct CityBlock: Identifiable, Hashable {
     let height: Int32
     let materialID: Int32
     let textureIndex: Int32
+    let shapeID: Int32
     let isPinned: Bool
 }

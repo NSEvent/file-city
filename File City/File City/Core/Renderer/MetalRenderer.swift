@@ -144,7 +144,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 materialID: UInt32(block.materialID),
                 highlight: block.nodeID == selectedNodeID ? 1.0 : 0.0,
                 hover: block.nodeID == hoveredNodeID ? 1.0 : 0.0,
-                textureIndex: block.textureIndex
+                textureIndex: block.textureIndex,
+                shapeID: block.shapeID
             )
         }
         instanceCount = instances.count
@@ -226,16 +227,42 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 0,
                 block.position.z - halfSizeZ
             )
+            
+            // Adjust AABB height for deformed shapes
+            var boundsHeight = Float(block.height)
+            if block.shapeID > 0 {
+                // Taper/Pyramid add 0.5 to local.y (which is 1.0h range). 
+                // Top becomes 1.5h. Slant might be more. 
+                // Let's use 1.75x to be safe for all deformations.
+                boundsHeight *= 1.75
+            }
+            
             let maxBounds = SIMD3<Float>(
                 block.position.x + halfSizeX,
-                Float(block.height),
+                boundsHeight,
                 block.position.z + halfSizeZ
             )
-            if let distance = rayIntersectAABB(origin: rayOrigin, direction: rayDirection, minBounds: minBounds, maxBounds: maxBounds),
-               distance < bestDistance {
-                bestDistance = distance
-                bestBlock = block
+            
+            // First check AABB
+            guard let distance = rayIntersectAABB(origin: rayOrigin, direction: rayDirection, minBounds: minBounds, maxBounds: maxBounds),
+                  distance < bestDistance else {
+                continue
             }
+            
+            // If shape is non-standard, perform stricter check
+            // SIMPLIFIED: For now, trust the AABB for Taper (1) and Pyramid (2) to ensure hittability.
+            // The previous logic checked the AABB entry point, which is incorrect for a ray passing through to the center.
+            // A proper fix would require ray-cone/pyramid intersection.
+            // For UI feel, slightly larger hit area is better than unhittable tips.
+            
+            /*
+            if block.shapeID > 0 {
+                // ... (Removed strict check that was causing false negatives)
+            }
+            */
+
+            bestDistance = distance
+            bestBlock = block
         }
 
         return bestBlock

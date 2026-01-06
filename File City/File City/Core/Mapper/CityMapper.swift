@@ -18,6 +18,24 @@ final class CityMapper {
             let footprint = footprintFor(node: node, rules: rules)
             let materialID = materialFor(node: node)
             let pinned = pinStore.isPinned(pathHash: PinStore.pathHash(node.url))
+            
+            // Determine shape
+            var shapeID: Int32 = 0
+            if node.type == .folder && height > 5 && footprint.x < 10 {
+                var hasher = Hasher()
+                hasher.combine(node.name)
+                // 5 shape types (0-4)
+                // 0: Standard, 1: Taper, 2: Pyramid, 3: SlantX, 4: SlantZ
+                // Let's bias towards 0 (Standard) for variety
+                let h = abs(hasher.finalize())
+                let rnd = h % 10
+                if rnd < 5 {
+                    shapeID = Int32(rnd) // 0, 1, 2, 3, 4
+                } else {
+                    shapeID = 0 // Extra weight for standard
+                }
+            }
+
             let block = CityBlock(
                 id: UUID(),
                 nodeID: node.id,
@@ -26,6 +44,7 @@ final class CityMapper {
                 height: Int32(height),
                 materialID: Int32(materialID),
                 textureIndex: textureIndexFor(node: node),
+                shapeID: shapeID,
                 isPinned: pinned
             )
             blocks.append(block)
