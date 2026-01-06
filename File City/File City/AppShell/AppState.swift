@@ -203,9 +203,35 @@ final class AppState: ObservableObject {
         if changes.isEmpty {
             linesResult.append("Clean")
         } else {
-            linesResult.append(contentsOf: changes.prefix(5))
+            let formatted = changes.prefix(5).map { formatGitStatusLine($0) }
+            linesResult.append(contentsOf: formatted)
         }
         return linesResult
+    }
+
+    private func formatGitStatusLine(_ line: String) -> String {
+        guard line.count >= 3 else { return line }
+        let status = String(line.prefix(2))
+        let path = line.dropFirst(3)
+        if status == "??" {
+            return "Untracked:\t\(path)"
+        }
+        if status == " M" {
+            return "Modified:\t\(path)"
+        }
+        if status == "M " {
+            return "Staged:\t\(path)"
+        }
+        if status == "A " {
+            return "Added:\t\(path)"
+        }
+        if status == " D" {
+            return "Deleted:\t\(path)"
+        }
+        if status == "R " || status == "R?" {
+            return "Renamed:\t\(path)"
+        }
+        return line
     }
 
     private func runGitStatus(at url: URL) -> (output: String, error: String) {
