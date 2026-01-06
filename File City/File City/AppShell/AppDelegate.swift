@@ -5,6 +5,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         bringToFront()
     }
 
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         bringToFront()
         return true
