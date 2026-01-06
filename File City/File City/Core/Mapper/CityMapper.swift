@@ -34,8 +34,8 @@ final class CityMapper {
         for (index, node) in nodes.enumerated() {
             let row = index / max(gridSize, 1)
             let col = index % max(gridSize, 1)
-            let x = Float(col) * spacing
-            let z = Float(row) * spacing
+            let x = Float(row) * spacing
+            let z = -Float(col) * spacing
             let height = heightFor(node: node, maxHeight: rules.maxBuildingHeight, minHeight: max(4, rules.minBlockSize))
             let footprint = footprintFor(node: node, rules: rules)
             let materialID = materialFor(node: node)
