@@ -18,6 +18,7 @@ final class AppState: ObservableObject {
     @Published var hoveredBeaconNodeID: UUID?
     @Published var hoveredBeaconURL: URL?
     @Published var activityInfoLines: [String]?
+    @Published private(set) var activityVersion: UInt = 0
 
     private let scanner = DirectoryScanner()
     private let mapper = CityMapper()
@@ -31,6 +32,7 @@ final class AppState: ObservableObject {
     private var nodeByURL: [URL: FileNode] = [:]
     private var watcher: FSEventsWatcher?
     private var activityWatcher: FileActivityWatcher?
+    private var socketWatcher: SocketActivityWatcher?
     private var activityByURL: [URL: NodeActivityPulse] = [:]
     private var activityInfoExpiresAt: CFTimeInterval?
     let activityDuration: CFTimeInterval = 1.4
@@ -513,15 +515,45 @@ final class AppState: ObservableObject {
         watcher.onChange = { [weak self] in
             self?.rescanSubject.send(())
         }
+        // FSEvents can detect file writes without sudo
+        watcher.onFileActivity = { [weak self] url, kind in
+            self?.handleFSEventsActivity(url: url, kind: kind)
+        }
         watcher.start()
         self.watcher = watcher
 
+        // FileActivityWatcher uses fs_usage which requires root - only start if running as root
         activityWatcher?.stop()
-        let activityWatcher = FileActivityWatcher(rootURL: rootURL) { [weak self] event in
-            self?.handleActivityEvent(event)
+        socketWatcher?.stop()
+        if getuid() == 0 {
+            let activityWatcher = FileActivityWatcher(rootURL: rootURL) { [weak self] event in
+                self?.handleActivityEvent(event)
+            }
+            activityWatcher.start()
+            self.activityWatcher = activityWatcher
+        } else {
+            // Connect to helper daemon for full read/write monitoring via socket
+            let socketWatcher = SocketActivityWatcher(rootURL: rootURL) { [weak self] event in
+                self?.handleActivityEvent(event)
+            }
+            socketWatcher.start()
+            self.socketWatcher = socketWatcher
         }
-        activityWatcher.start()
-        self.activityWatcher = activityWatcher
+    }
+
+    private func handleFSEventsActivity(url: URL, kind: ActivityKind) {
+        let now = activityNow()
+        // Don't overwrite fs_usage events which have more detail
+        if let existing = activityByURL[url], now - existing.startedAt < 0.3 {
+            return
+        }
+        activityByURL[url] = NodeActivityPulse(
+            kind: kind,
+            startedAt: now,
+            processName: "FSEvents",
+            url: url
+        )
+        activityVersion &+= 1
     }
 
     private func handleActivityEvent(_ event: FileActivityEvent) {
@@ -532,6 +564,7 @@ final class AppState: ObservableObject {
             processName: event.processName,
             url: event.url
         )
+        activityVersion &+= 1
         let verb = event.kind == .write ? "Write" : "Read"
         let pathLine = relativePath(for: event.url) ?? event.url.lastPathComponent
         activityInfoLines = [

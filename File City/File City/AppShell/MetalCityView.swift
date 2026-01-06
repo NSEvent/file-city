@@ -65,6 +65,8 @@ struct MetalCityView: NSViewRepresentable {
         private var hoveredNodeID: UUID?
         private(set) var hoveredBeaconNodeID: UUID?
         private var cancellables = Set<AnyCancellable>()
+        private var activityTimer: Timer?
+        private var activityEndTime: CFTimeInterval = 0
 
         init(appState: AppState) {
             self.appState = appState
@@ -87,6 +89,44 @@ struct MetalCityView: NSViewRepresentable {
                     self?.updateFromAppState()
                 }
                 .store(in: &cancellables)
+
+            // Observe activity changes to start animation timer
+            appState.$activityVersion
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    self?.handleActivityChange()
+                }
+                .store(in: &cancellables)
+        }
+
+        private func handleActivityChange() {
+            guard let appState else { return }
+            // Extend the timer end time
+            activityEndTime = appState.activityNow() + appState.activityDuration + 0.1
+            // Start timer if not already running
+            if activityTimer == nil {
+                activityTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+                    self?.activityTimerFired()
+                }
+            }
+            updateFromAppState()
+        }
+
+        private func activityTimerFired() {
+            guard let appState else {
+                stopActivityTimer()
+                return
+            }
+            let now = appState.activityNow()
+            if now >= activityEndTime {
+                stopActivityTimer()
+            }
+            updateFromAppState()
+        }
+
+        private func stopActivityTimer() {
+            activityTimer?.invalidate()
+            activityTimer = nil
         }
 
         private func updateFromAppState() {
