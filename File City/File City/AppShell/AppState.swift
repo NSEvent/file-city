@@ -16,6 +16,7 @@ final class AppState: ObservableObject {
     @Published var hoveredGitStatus: [String]?
     @Published var hoveredBeaconNodeID: UUID?
     @Published var hoveredBeaconURL: URL?
+    @Published var activityInfoLines: [String]?
 
     private let scanner = DirectoryScanner()
     private let mapper = CityMapper()
@@ -28,6 +29,10 @@ final class AppState: ObservableObject {
     private var nodeByID: [UUID: FileNode] = [:]
     private var nodeByURL: [URL: FileNode] = [:]
     private var watcher: FSEventsWatcher?
+    private var activityWatcher: FileActivityWatcher?
+    private var activityByURL: [URL: NodeActivityPulse] = [:]
+    private var activityInfoExpiresAt: CFTimeInterval?
+    let activityDuration: CFTimeInterval = 1.4
     private var cancellables: Set<AnyCancellable> = []
     private let sizeFormatter = ByteCountFormatter()
     private let dateFormatter: DateFormatter = {
@@ -158,6 +163,7 @@ final class AppState: ObservableObject {
         hoveredGitStatus = nil
         hoveredBeaconNodeID = nil
         hoveredBeaconURL = nil
+        activityInfoLines = nil
         selectedURL = nil
         selectedFocusNodeID = nil
         scanRoot()
@@ -172,6 +178,7 @@ final class AppState: ObservableObject {
         hoveredGitStatus = nil
         hoveredBeaconNodeID = nil
         hoveredBeaconURL = nil
+        activityInfoLines = nil
         selectedURL = nil
         selectedFocusNodeID = nil
         scanRoot()
@@ -429,6 +436,46 @@ final class AppState: ObservableObject {
         pinStore.allPinnedURLs()
     }
 
+    func activityNow() -> CFTimeInterval {
+        CFAbsoluteTimeGetCurrent()
+    }
+
+    func activitySnapshot(now: CFTimeInterval) -> [UUID: NodeActivityPulse] {
+        activityByURL = activityByURL.filter { now - $0.value.startedAt <= activityDuration }
+        if let expiresAt = activityInfoExpiresAt, now >= expiresAt {
+            activityInfoLines = nil
+            activityInfoExpiresAt = nil
+        }
+        var snapshot: [UUID: NodeActivityPulse] = [:]
+        snapshot.reserveCapacity(activityByURL.count)
+        for pulse in activityByURL.values {
+            if let nodeID = resolveActivityNodeID(url: pulse.url) {
+                snapshot[nodeID] = pulse
+            }
+        }
+        return snapshot
+    }
+
+    func triggerTestActivity(kind: ActivityKind) {
+        let now = activityNow()
+        let targetNodeID = hoveredNodeID ?? hoveredBeaconNodeID ?? selectedFocusNodeID
+        guard let targetNodeID,
+              let url = nodeByID[targetNodeID]?.url else { return }
+        activityByURL[url] = NodeActivityPulse(
+            kind: kind,
+            startedAt: now,
+            processName: "Test",
+            url: url
+        )
+        let verb = kind == .write ? "Write" : "Read"
+        let pathLine = relativePath(for: url) ?? url.lastPathComponent
+        activityInfoLines = [
+            "Test • \(verb)",
+            pathLine
+        ]
+        activityInfoExpiresAt = now + 2.0
+    }
+
     private func startWatchingRoot() {
         guard let rootURL else { return }
         watcher?.stop()
@@ -438,6 +485,59 @@ final class AppState: ObservableObject {
         }
         watcher.start()
         self.watcher = watcher
+
+        activityWatcher?.stop()
+        let activityWatcher = FileActivityWatcher(rootURL: rootURL) { [weak self] event in
+            self?.handleActivityEvent(event)
+        }
+        activityWatcher.start()
+        self.activityWatcher = activityWatcher
+    }
+
+    private func handleActivityEvent(_ event: FileActivityEvent) {
+        let now = activityNow()
+        activityByURL[event.url] = NodeActivityPulse(
+            kind: event.kind,
+            startedAt: now,
+            processName: event.processName,
+            url: event.url
+        )
+        let verb = event.kind == .write ? "Write" : "Read"
+        let pathLine = relativePath(for: event.url) ?? event.url.lastPathComponent
+        activityInfoLines = [
+            "\(event.processName) • \(verb)",
+            pathLine
+        ]
+        activityInfoExpiresAt = now + 2.0
+    }
+
+    private func resolveActivityNodeID(url: URL) -> UUID? {
+        if let node = nodeByURL[url] {
+            return node.id
+        }
+        guard let rootURL else { return nil }
+        guard url.path.hasPrefix(rootURL.path) else { return nil }
+        var currentURL = url.deletingLastPathComponent()
+        while currentURL.path != rootURL.path {
+            if let node = nodeByURL[currentURL] {
+                return node.id
+            }
+            currentURL = currentURL.deletingLastPathComponent()
+        }
+        return nodeByURL[rootURL]?.id
+    }
+
+    private func relativePath(for url: URL) -> String? {
+        guard let rootURL else { return nil }
+        let rootPath = rootURL.path
+        let path = url.path
+        guard path.hasPrefix(rootPath) else { return nil }
+        let relative = path.dropFirst(rootPath.count)
+        if relative.isEmpty { return "." }
+        if relative.hasPrefix("/") {
+            return String(relative.dropFirst())
+        }
+        return String(relative)
     }
 
     private func buildFocusMap(root: FileNode) -> [URL: UUID] {

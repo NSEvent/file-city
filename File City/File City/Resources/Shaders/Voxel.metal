@@ -17,6 +17,8 @@ struct InstanceData {
     uint materialID;
     float highlight;
     float hover;
+    float activity;
+    int activityKind;
     int textureIndex;
     int shapeID;
 };
@@ -37,6 +39,8 @@ struct VertexOut {
     int shapeID [[flat]];
     float highlight;
     float hover;
+    float activity;
+    int activityKind [[flat]];
 };
 
 vertex VertexOut vertex_main(VertexIn in [[stage_in]],
@@ -124,6 +128,8 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
     out.shapeID = instance.shapeID;
     out.highlight = instance.highlight;
     out.hover = instance.hover;
+    out.activity = instance.activity;
+    out.activityKind = instance.activityKind;
     return out;
 }
 
@@ -203,6 +209,14 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
     float glowStrength = hover * (0.25 + 0.45 * rim);
     float3 glowColor = float3(0.3, 0.8, 0.85);
     finalColor += glowColor * glowStrength;
+    float activity = saturate(in.activity);
+    if (activity > 0.0) {
+        float pulseSpeed = in.activityKind == 2 ? 10.5 : 6.5;
+        float pulse = 0.45 + 0.55 * sin(uniforms.time * pulseSpeed);
+        float3 activityColor = in.activityKind == 2 ? float3(1.0, 0.55, 0.2) : float3(0.2, 0.75, 1.0);
+        finalColor = mix(finalColor, activityColor, activity * (0.25 + 0.35 * pulse));
+        finalColor += activityColor * activity * 0.18;
+    }
     if (in.shapeID == 8) {
         float3 flashColor = float3(1.0, 0.55, 0.15);
         float pulse = 0.5 + 0.5 * sin(uniforms.time * 7.5);

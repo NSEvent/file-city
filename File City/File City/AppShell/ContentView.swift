@@ -38,6 +38,9 @@ private struct InfoOverlayView: View {
     }
 
     private func infoLines() -> [String]? {
+        if let activityInfo = appState.activityInfoLines {
+            return activityInfo
+        }
         if let hoveredGitStatus = appState.hoveredGitStatus {
             return hoveredGitStatus
         }

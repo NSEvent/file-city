@@ -177,13 +177,31 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         self.textureArray = arrayTex
     }
 
-    func updateInstances(blocks: [CityBlock], selectedNodeID: UUID?, hoveredNodeID: UUID?, hoveredBeaconNodeID: UUID?) {
+    func updateInstances(blocks: [CityBlock],
+                         selectedNodeID: UUID?,
+                         hoveredNodeID: UUID?,
+                         hoveredBeaconNodeID: UUID?,
+                         activityByNodeID: [UUID: NodeActivityPulse],
+                         activityNow: CFTimeInterval,
+                         activityDuration: CFTimeInterval) {
         let blocksChanged = blocks != self.blocks
         self.blocks = blocks
         let cameraYaw = camera.yaw
         var instances: [VoxelInstance] = blocks.map { block in
             let rotationY = rotationYForWedge(block: block, cameraYaw: cameraYaw)
             let isHovering = block.nodeID == hoveredNodeID || block.nodeID == hoveredBeaconNodeID
+            let activity = activityByNodeID[block.nodeID]
+            let activityStrength: Float
+            let activityKind: Int32
+            if let activity {
+                let elapsed = max(0, activityNow - activity.startedAt)
+                let normalized = max(0, 1.0 - (elapsed / max(0.001, activityDuration)))
+                activityStrength = Float(normalized)
+                activityKind = activity.kind.rawValue
+            } else {
+                activityStrength = 0
+                activityKind = 0
+            }
             return VoxelInstance(
                 position: SIMD3<Float>(block.position.x, block.position.y + Float(block.height) * 0.5, block.position.z),
                 scale: SIMD3<Float>(Float(block.footprint.x), Float(block.height), Float(block.footprint.y)),
@@ -191,6 +209,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 materialID: UInt32(block.materialID),
                 highlight: block.nodeID == selectedNodeID ? 1.0 : 0.0,
                 hover: isHovering ? 1.0 : 0.0,
+                activity: activityStrength,
+                activityKind: activityKind,
                 textureIndex: block.textureIndex,
                 shapeID: block.shapeID
             )

@@ -28,6 +28,9 @@ struct MetalCityView: NSViewRepresentable {
         view.onHoverEnd = {
             context.coordinator.clearHover()
         }
+        view.onKey = { key in
+            context.coordinator.handleKey(key)
+        }
         view.onClick = { point in
             context.coordinator.handleClick(point, in: view)
         }
@@ -40,11 +43,15 @@ struct MetalCityView: NSViewRepresentable {
     func updateNSView(_ nsView: MTKView, context: Context) {
         context.coordinator.appState = appState
         context.coordinator.syncRoot(url: appState.rootURL)
+        let activityNow = appState.activityNow()
         context.coordinator.renderer?.updateInstances(
             blocks: appState.blocks,
             selectedNodeID: appState.selectedFocusNodeID,
             hoveredNodeID: appState.hoveredNodeID,
-            hoveredBeaconNodeID: appState.hoveredBeaconNodeID
+            hoveredBeaconNodeID: appState.hoveredBeaconNodeID,
+            activityByNodeID: appState.activitySnapshot(now: activityNow),
+            activityNow: activityNow,
+            activityDuration: appState.activityDuration
         )
         context.coordinator.applyPendingAutoFit(blocks: appState.blocks)
     }
@@ -165,6 +172,17 @@ struct MetalCityView: NSViewRepresentable {
             appState?.hoveredBeaconURL = nil
         }
 
+        func handleKey(_ key: String) {
+            switch key {
+            case "1":
+                appState?.triggerTestActivity(kind: .read)
+            case "2":
+                appState?.triggerTestActivity(kind: .write)
+            default:
+                break
+            }
+        }
+
         func handleClick(_ point: CGPoint, in view: MTKView) {
             guard let renderer else { return }
             let backingPoint = view.convertToBacking(point)
@@ -187,6 +205,7 @@ final class CityMTKView: MTKView {
     var onScroll: ((CGFloat, CGFloat) -> Void)?
     var onHover: ((CGPoint) -> Void)?
     var onHoverEnd: (() -> Void)?
+    var onKey: ((String) -> Void)?
     var onClick: ((CGPoint) -> Void)?
     var onRightClick: ((CGPoint) -> Void)?
     private var trackingArea: NSTrackingArea?
@@ -228,5 +247,18 @@ final class CityMTKView: MTKView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         window?.acceptsMouseMovedEvents = true
+        window?.makeFirstResponder(self)
+    }
+
+    override var acceptsFirstResponder: Bool {
+        true
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if let key = event.charactersIgnoringModifiers, !key.isEmpty {
+            onKey?(key)
+        } else {
+            super.keyDown(with: event)
+        }
     }
 }
