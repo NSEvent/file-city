@@ -14,7 +14,18 @@ final class CityMapper {
     }
 
     func map(root: FileNode, rules: LayoutRules, pinStore: PinStore) -> [CityBlock] {
-        let nodes = root.children.sorted { $0.url.path < $1.url.path }
+        let nodes = root.children.sorted { lhs, rhs in
+            let lhsType = nodeTypeRank(lhs)
+            let rhsType = nodeTypeRank(rhs)
+            if lhsType != rhsType { return lhsType < rhsType }
+
+            let lhsDepth = pathDepth(lhs.url.path)
+            let rhsDepth = pathDepth(rhs.url.path)
+            if lhsDepth != rhsDepth { return lhsDepth < rhsDepth }
+
+            if lhs.sizeBytes != rhs.sizeBytes { return lhs.sizeBytes > rhs.sizeBytes }
+            return lhs.url.path < rhs.url.path
+        }
         let gridSize = Int(ceil(sqrt(Double(nodes.count))))
         let spacing = Float(rules.maxBlockSize + rules.roadWidth)
         var blocks: [CityBlock] = []
@@ -403,6 +414,21 @@ final class CityMapper {
             let index = Int(abs(deterministicHash(node.url.pathExtension.lowercased())) % 8)
             return 4 + index
         }
+    }
+
+    private func nodeTypeRank(_ node: FileNode) -> Int {
+        switch node.type {
+        case .folder:
+            return 0
+        case .file:
+            return 1
+        case .symlink:
+            return 2
+        }
+    }
+
+    private func pathDepth(_ path: String) -> Int {
+        return path.split(separator: "/").count
     }
 
     private func deterministicHash(_ value: String) -> Int64 {
