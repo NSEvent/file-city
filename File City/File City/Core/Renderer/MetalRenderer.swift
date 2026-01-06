@@ -378,6 +378,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
         let gridW = xRoads.count
         let gridH = zRoads.count
+        guard gridW > 2, gridH > 2 else { return }
         let minPathLength = max(spanX, spanZ) * 0.6
         for index in 0..<count {
             let seed = UInt64(index * 113)
@@ -398,20 +399,21 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                     attempts += 1
                     continue
                 }
-                let waypoints = pathCells.map { cell in
-                    SIMD3<Float>(xRoads[cell.x], altitude, zRoads[cell.y])
-                }
-                let segmentLengths = computeSegmentLengths(waypoints: waypoints)
-                let totalLength = segmentLengths.reduce(0, +)
-                if totalLength >= minPathLength {
-                    let speed = 6.0 + randomUnit(seed: seed ^ 0xFACE) * 6.0
-                    let phase = randomUnit(seed: seed ^ 0xCAFE) * totalLength
-                    let scale = SIMD3<Float>(6.0, 0.6, 2.5)
-                    planePaths.append(PlanePath(waypoints: waypoints, segmentLengths: segmentLengths, totalLength: totalLength, speed: speed, phase: phase, scale: scale))
-                    break
-                }
-                attempts += 1
+            let waypoints = pathCells.map { cell in
+                SIMD3<Float>(xRoads[cell.x], altitude, zRoads[cell.y])
             }
+            let smoothed = smoothPath(waypoints: waypoints, iterations: 2)
+            let segmentLengths = computeSegmentLengths(waypoints: smoothed)
+            let totalLength = segmentLengths.reduce(0, +)
+            if totalLength >= minPathLength {
+                let speed = 6.0 + randomUnit(seed: seed ^ 0xFACE) * 6.0
+                let phase = randomUnit(seed: seed ^ 0xCAFE) * totalLength
+                let scale = SIMD3<Float>(6.0, 0.6, 2.5)
+                planePaths.append(PlanePath(waypoints: smoothed, segmentLengths: segmentLengths, totalLength: totalLength, speed: speed, phase: phase, scale: scale))
+                break
+            }
+            attempts += 1
+        }
         }
 
         planeInstanceCount = planePaths.count * 2
@@ -502,6 +504,27 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         return lengths
     }
 
+    private func smoothPath(waypoints: [SIMD3<Float>], iterations: Int) -> [SIMD3<Float>] {
+        guard waypoints.count > 2 else { return waypoints }
+        var points = waypoints
+        for _ in 0..<iterations {
+            var smoothed: [SIMD3<Float>] = []
+            smoothed.reserveCapacity(points.count * 2)
+            smoothed.append(points[0])
+            for index in 0..<(points.count - 1) {
+                let p0 = points[index]
+                let p1 = points[index + 1]
+                let q = p0 * 0.75 + p1 * 0.25
+                let r = p0 * 0.25 + p1 * 0.75
+                smoothed.append(q)
+                smoothed.append(r)
+            }
+            smoothed.append(points[points.count - 1])
+            points = smoothed
+        }
+        return points
+    }
+
     private func randomPerimeterPoint(width: Int, height: Int, seed: UInt64, edge: Int) -> (x: Int, y: Int) {
         let pick = Int((seed >> 8) % UInt64(max(1, max(width, height))))
         switch edge {
@@ -517,12 +540,17 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     }
 
     private func randomInteriorPoint(width: Int, height: Int, seed: UInt64) -> (x: Int, y: Int) {
-        let ix = max(1, min(width - 2, Int(seed % UInt64(width))))
-        let iy = max(1, min(height - 2, Int((seed >> 8) % UInt64(height))))
+        let ix = max(0, min(width - 1, Int(seed % UInt64(width))))
+        let iy = max(0, min(height - 1, Int((seed >> 8) % UInt64(height))))
         return (x: ix, y: iy)
     }
 
     private func findPath(start: (x: Int, y: Int), goal: (x: Int, y: Int), width: Int, height: Int) -> [(x: Int, y: Int)] {
+        guard width > 0, height > 0 else { return [start, goal] }
+        guard start.x >= 0, start.x < width, start.y >= 0, start.y < height,
+              goal.x >= 0, goal.x < width, goal.y >= 0, goal.y < height else {
+            return [start, goal]
+        }
         let total = width * height
         var gScore = [Float](repeating: .greatestFiniteMagnitude, count: total)
         var fScore = [Float](repeating: .greatestFiniteMagnitude, count: total)
@@ -576,10 +604,11 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
 
         var path: [(x: Int, y: Int)] = []
-        var current = indexFor(x: goal.x, y: goal.y)
-        if cameFrom[current] == -1 {
+        let goalIndex = indexFor(x: goal.x, y: goal.y)
+        if goalIndex < 0 || goalIndex >= total || cameFrom[goalIndex] == -1 {
             return [start, goal]
         }
+        var current = goalIndex
         while current != -1 {
             let x = current % width
             let y = current / width
