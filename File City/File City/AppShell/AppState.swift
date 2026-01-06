@@ -419,13 +419,7 @@ final class AppState: ObservableObject {
     }
 
     private func defaultRootURL() -> URL? {
-        // Point to the source directory to show AppShell and Core
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let url = home.appendingPathComponent("projects/file-city/File City/File City", isDirectory: true)
-        var isDirectory: ObjCBool = false
-        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
-            return url
-        }
         return home.appendingPathComponent("projects", isDirectory: true)
     }
 

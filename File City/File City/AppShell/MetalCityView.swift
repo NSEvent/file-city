@@ -39,11 +39,13 @@ struct MetalCityView: NSViewRepresentable {
 
     func updateNSView(_ nsView: MTKView, context: Context) {
         context.coordinator.appState = appState
+        context.coordinator.syncRoot(url: appState.rootURL)
         context.coordinator.renderer?.updateInstances(
             blocks: appState.blocks,
             selectedNodeID: appState.selectedFocusNodeID,
             hoveredNodeID: appState.hoveredNodeID
         )
+        context.coordinator.applyPendingAutoFit(blocks: appState.blocks)
     }
 
     final class Coordinator: NSObject {
@@ -51,9 +53,25 @@ struct MetalCityView: NSViewRepresentable {
         weak var appState: AppState?
         private var hoveredNodeID: UUID?
         private var hoveredBeaconNodeID: UUID?
+        private var lastRootURL: URL?
+        private var pendingAutoFit = false
 
         init(appState: AppState) {
             self.appState = appState
+        }
+
+        func syncRoot(url: URL?) {
+            guard let url else { return }
+            if lastRootURL?.path != url.path {
+                lastRootURL = url
+                pendingAutoFit = true
+            }
+        }
+
+        func applyPendingAutoFit(blocks: [CityBlock]) {
+            guard pendingAutoFit, !blocks.isEmpty else { return }
+            renderer?.autoFitCamera(blocks: blocks)
+            pendingAutoFit = false
         }
 
         func attachGestures(to view: MTKView) {

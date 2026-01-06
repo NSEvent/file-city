@@ -1084,4 +1084,58 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
         return SIMD3<Float>((minX + maxX) * 0.5, 0, (minZ + maxZ) * 0.5)
     }
+
+    func autoFitCamera(blocks: [CityBlock]) {
+        guard let bounds = boundsOf(blocks: blocks) else { return }
+        let center = (bounds.min + bounds.max) * 0.5
+        let radius = maxDistance(from: center, minBounds: bounds.min, maxBounds: bounds.max)
+        let fovY: Float = 0.75
+        let fovX = 2 * atan(tan(fovY * 0.5) * max(camera.aspect, 0.01))
+        let halfAngle = min(fovY * 0.5, fovX * 0.5)
+        let paddedRadius = radius * 1.1
+        let distance = paddedRadius / max(tan(halfAngle), 0.001)
+        camera.target = center
+        camera.distance = max(10, min(1000, distance))
+    }
+
+    private func boundsOf(blocks: [CityBlock]) -> (min: SIMD3<Float>, max: SIMD3<Float>)? {
+        guard !blocks.isEmpty else { return nil }
+        var minX: Float = .greatestFiniteMagnitude
+        var maxX: Float = -.greatestFiniteMagnitude
+        var minY: Float = .greatestFiniteMagnitude
+        var maxY: Float = -.greatestFiniteMagnitude
+        var minZ: Float = .greatestFiniteMagnitude
+        var maxZ: Float = -.greatestFiniteMagnitude
+
+        for block in blocks {
+            let halfX = Float(block.footprint.x) * 0.5
+            let halfZ = Float(block.footprint.y) * 0.5
+            minX = min(minX, block.position.x - halfX)
+            maxX = max(maxX, block.position.x + halfX)
+            minZ = min(minZ, block.position.z - halfZ)
+            maxZ = max(maxZ, block.position.z + halfZ)
+            minY = min(minY, block.position.y)
+            maxY = max(maxY, visualTopY(for: block))
+        }
+
+        return (SIMD3<Float>(minX, minY, minZ), SIMD3<Float>(maxX, maxY, maxZ))
+    }
+
+    private func maxDistance(from center: SIMD3<Float>, minBounds: SIMD3<Float>, maxBounds: SIMD3<Float>) -> Float {
+        let corners = [
+            SIMD3<Float>(minBounds.x, minBounds.y, minBounds.z),
+            SIMD3<Float>(minBounds.x, minBounds.y, maxBounds.z),
+            SIMD3<Float>(minBounds.x, maxBounds.y, minBounds.z),
+            SIMD3<Float>(minBounds.x, maxBounds.y, maxBounds.z),
+            SIMD3<Float>(maxBounds.x, minBounds.y, minBounds.z),
+            SIMD3<Float>(maxBounds.x, minBounds.y, maxBounds.z),
+            SIMD3<Float>(maxBounds.x, maxBounds.y, minBounds.z),
+            SIMD3<Float>(maxBounds.x, maxBounds.y, maxBounds.z)
+        ]
+        var maxDistance: Float = 0
+        for corner in corners {
+            maxDistance = max(maxDistance, simd_distance(center, corner))
+        }
+        return maxDistance
+    }
 }
