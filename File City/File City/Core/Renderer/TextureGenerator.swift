@@ -3,6 +3,14 @@ import Metal
 import CryptoKit
 
 final class TextureGenerator {
+    private enum FacadeStyle: UInt64 {
+        case glassCurtain = 0
+        case concreteGrid = 1
+        case stoneCladding = 2
+        case metalPanels = 3
+        case nightWindows = 4
+    }
+
     static func generateTexture(device: MTLDevice, seed: String, width: Int = 256, height: Int = 256) -> MTLTexture? {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .rgba8Unorm,
@@ -16,53 +24,19 @@ final class TextureGenerator {
         
         var pixelData = [UInt8](repeating: 0, count: width * height * 4)
         
-        // Detect Theme
-        let lowerSeed = seed.lowercased()
-        
-        if lowerSeed.contains("tiktok") {
-            drawTikTok(width: width, height: height, pixels: &pixelData)
-        } else if lowerSeed.contains("file-city") || lowerSeed.contains("file city") {
-            drawFileCity(width: width, height: height, pixels: &pixelData)
-        } else if lowerSeed.contains("pokemon") {
-            drawPokemon(width: width, height: height, pixels: &pixelData)
-        } else if lowerSeed.contains("msg") || lowerSeed.contains("chat") {
-            drawIMessage(width: width, height: height, pixels: &pixelData)
-        } else if lowerSeed.contains("rust") {
-            drawRust(width: width, height: height, pixels: &pixelData)
-        } else if lowerSeed.contains("python") {
-            drawPython(width: width, height: height, pixels: &pixelData)
-        } else if lowerSeed.contains("ios") || lowerSeed.contains("app") {
-            drawIOS(width: width, height: height, pixels: &pixelData)
-        } else if lowerSeed.contains("ai") || lowerSeed.contains("bot") || lowerSeed.contains("gpt") {
-            drawAI(width: width, height: height, pixels: &pixelData)
-        } else if lowerSeed.contains("bank") || lowerSeed.contains("money") || lowerSeed.contains("finance") || lowerSeed.contains("card") {
-            drawFinance(width: width, height: height, pixels: &pixelData)
-        } else if lowerSeed.contains("real") || lowerSeed.contains("estate") || lowerSeed.contains("house") || lowerSeed.contains("mortgage") || lowerSeed.contains("rent") || lowerSeed.contains("zillow") {
-            drawRealEstate(width: width, height: height, pixels: &pixelData)
-        } else if lowerSeed.contains("audio") || lowerSeed.contains("voice") || lowerSeed.contains("sound") || lowerSeed.contains("speech") || lowerSeed.contains("say") || lowerSeed.contains("dtmf") || lowerSeed.contains("mouth") {
-            drawAudio(width: width, height: height, pixels: &pixelData)
-        } else if lowerSeed.contains("camera") || lowerSeed.contains("photo") || lowerSeed.contains("image") || lowerSeed.contains("video") || lowerSeed.contains("face") || lowerSeed.contains("glitch") {
-            drawCamera(width: width, height: height, pixels: &pixelData)
-        } else if lowerSeed.contains("web") || lowerSeed.contains("chrome") || lowerSeed.contains("browser") || lowerSeed.contains("link") || lowerSeed.contains("site") || lowerSeed.contains("scrape") {
-            drawWeb(width: width, height: height, pixels: &pixelData)
-        } else if lowerSeed.contains("swift") {
-            drawSwift(width: width, height: height, pixels: &pixelData)
-        } else if lowerSeed.contains("code") || lowerSeed.contains("json") || lowerSeed.contains("js") || lowerSeed.contains("c++") {
-            drawCode(width: width, height: height, pixels: &pixelData)
-        } else if lowerSeed.contains("text") || lowerSeed.contains("md") || lowerSeed.contains("doc") {
-            drawTextDoc(width: width, height: height, pixels: &pixelData)
-        } else if lowerSeed.contains("img") || lowerSeed.contains("png") || lowerSeed.contains("jpg") {
-            drawImageFile(width: width, height: height, pixels: &pixelData)
-        } else if lowerSeed.contains("audio_file") || lowerSeed.contains("mp3") || lowerSeed.contains("wav") {
-            drawAudioFile(width: width, height: height, pixels: &pixelData)
-        } else if lowerSeed.contains("video_file") || lowerSeed.contains("mp4") || lowerSeed.contains("mov") {
-            drawVideoFile(width: width, height: height, pixels: &pixelData)
-        } else if lowerSeed.contains("archive_file") || lowerSeed.contains("zip") || lowerSeed.contains("tar") {
-            drawArchiveFile(width: width, height: height, pixels: &pixelData)
-        } else if lowerSeed.contains("db_file") || lowerSeed.contains("sql") || lowerSeed.contains("sqlite") {
-            drawDatabaseFile(width: width, height: height, pixels: &pixelData)
-        } else {
-            drawDefault(seed: seed, width: width, height: height, pixels: &pixelData)
+        var rng = DeterministicRNG(seed: seed)
+        let style = FacadeStyle(rawValue: rng.next() % 5) ?? .glassCurtain
+        switch style {
+        case .glassCurtain:
+            drawGlassCurtain(width: width, height: height, pixels: &pixelData, rng: &rng)
+        case .concreteGrid:
+            drawConcreteGrid(width: width, height: height, pixels: &pixelData, rng: &rng)
+        case .stoneCladding:
+            drawStoneCladding(width: width, height: height, pixels: &pixelData, rng: &rng)
+        case .metalPanels:
+            drawMetalPanels(width: width, height: height, pixels: &pixelData, rng: &rng)
+        case .nightWindows:
+            drawNightWindows(width: width, height: height, pixels: &pixelData, rng: &rng)
         }
         
         texture.replace(
@@ -76,6 +50,157 @@ final class TextureGenerator {
     }
     
     // MARK: - Themes
+    private static func drawGlassCurtain(width: Int, height: Int, pixels: inout [UInt8], rng: inout DeterministicRNG) {
+        let tintR = Int(rng.next() % 30) + 30
+        let tintG = Int(rng.next() % 60) + 90
+        let tintB = Int(rng.next() % 60) + 140
+        let mullion = Int(rng.next() % 2) + 2
+        let gridW = Int(rng.next() % 24) + 32
+        let gridH = Int(rng.next() % 48) + 64
+        let seed = rng.next()
+
+        for y in 0..<height {
+            let ny = Double(y) / Double(height)
+            for x in 0..<width {
+                let index = (y * width + x) * 4
+                if x % gridW < mullion || y % gridH < mullion {
+                    setColor(index: index, r: 38, g: 40, b: 44, pixels: &pixels)
+                    continue
+                }
+
+                let nx = Double(x) / Double(width)
+                let wave = sin(nx * 6.2 + ny * 3.7) * 12.0
+                let haze = Double(hash2D(x: x, y: y, seed: seed) % 9) - 4.0
+
+                let r = clamp(value: tintR + Int(wave * 0.4 + haze), min: 0, max: 255)
+                let g = clamp(value: tintG + Int(wave * 0.3 - ny * 30.0 + haze), min: 0, max: 255)
+                let b = clamp(value: tintB + Int(wave * 0.5 - ny * 45.0), min: 0, max: 255)
+                setColor(index: index, r: r, g: g, b: b, pixels: &pixels)
+            }
+        }
+    }
+
+    private static func drawConcreteGrid(width: Int, height: Int, pixels: inout [UInt8], rng: inout DeterministicRNG) {
+        let cellW = Int(rng.next() % 24) + 36
+        let cellH = Int(rng.next() % 24) + 36
+        let frame = Int(rng.next() % 3) + 5
+        let seed = rng.next()
+
+        for y in 0..<height {
+            for x in 0..<width {
+                let index = (y * width + x) * 4
+                let lx = x % cellW
+                let ly = y % cellH
+
+                if lx < frame || ly < frame {
+                    let noise = Int(hash2D(x: x, y: y, seed: seed) % 25)
+                    let base = 170 + noise
+                    setColor(index: index, r: base, g: base, b: base, pixels: &pixels)
+                } else {
+                    if lx < frame + 2 || ly < frame + 2 {
+                        setColor(index: index, r: 18, g: 18, b: 20, pixels: &pixels)
+                    } else {
+                        setColor(index: index, r: 42, g: 52, b: 62, pixels: &pixels)
+                    }
+                }
+            }
+        }
+    }
+
+    private static func drawStoneCladding(width: Int, height: Int, pixels: inout [UInt8], rng: inout DeterministicRNG) {
+        let blockW = Int(rng.next() % 32) + 48
+        let blockH = Int(rng.next() % 20) + 24
+        let seed = rng.next()
+
+        for y in 0..<height {
+            let row = y / blockH
+            let offset = (row % 2 == 0) ? 0 : blockW / 2
+            for x in 0..<width {
+                let index = (y * width + x) * 4
+                let ex = (x + offset) % width
+                let lx = ex % blockW
+                let ly = y % blockH
+
+                if lx < 2 || ly < 2 {
+                    setColor(index: index, r: 70, g: 64, b: 58, pixels: &pixels)
+                    continue
+                }
+
+                let blockHash = hash2D(x: ex / blockW, y: row, seed: seed) % 30
+                let noise = hash2D(x: x, y: y, seed: seed) % 40
+                let base = 145 + Int(blockHash + noise / 2)
+                setColor(
+                    index: index,
+                    r: clamp(value: base + 6, min: 0, max: 255),
+                    g: clamp(value: base - 4, min: 0, max: 255),
+                    b: clamp(value: base - 14, min: 0, max: 255),
+                    pixels: &pixels
+                )
+            }
+        }
+    }
+
+    private static func drawMetalPanels(width: Int, height: Int, pixels: inout [UInt8], rng: inout DeterministicRNG) {
+        let panelW = Int(rng.next() % 40) + 48
+        let panelH = Int(rng.next() % 80) + 96
+        let seed = rng.next()
+        let verticalBrush = (rng.next() % 2) == 0
+
+        for y in 0..<height {
+            for x in 0..<width {
+                let index = (y * width + x) * 4
+                if x % panelW < 2 || y % panelH < 2 {
+                    setColor(index: index, r: 52, g: 52, b: 55, pixels: &pixels)
+                    continue
+                }
+
+                let stripe = verticalBrush ? hash2D(x: x, y: 0, seed: seed) : hash2D(x: 0, y: y, seed: seed)
+                let noise = hash2D(x: x, y: y, seed: seed) % 18
+                let val = 175 + Int((stripe % 30) + noise)
+                setColor(
+                    index: index,
+                    r: clamp(value: val, min: 0, max: 255),
+                    g: clamp(value: val, min: 0, max: 255),
+                    b: clamp(value: val + 8, min: 0, max: 255),
+                    pixels: &pixels
+                )
+            }
+        }
+    }
+
+    private static func drawNightWindows(width: Int, height: Int, pixels: inout [UInt8], rng: inout DeterministicRNG) {
+        let winW = Int(rng.next() % 8) + 14
+        let winH = Int(rng.next() % 12) + 20
+        let gap = Int(rng.next() % 6) + 6
+        let seed = rng.next()
+
+        for y in 0..<height {
+            for x in 0..<width {
+                let index = (y * width + x) * 4
+                let cellX = x / (winW + gap)
+                let cellY = y / (winH + gap)
+                let lx = x % (winW + gap)
+                let ly = y % (winH + gap)
+
+                if lx >= winW || ly >= winH {
+                    setColor(index: index, r: 9, g: 10, b: 14, pixels: &pixels)
+                    continue
+                }
+
+                let winHash = hash2D(x: cellX, y: cellY, seed: seed)
+                let lit = (winHash % 100) < 45
+                if lit {
+                    if winHash % 2 == 0 {
+                        setColor(index: index, r: 250, g: 234, b: 190, pixels: &pixels)
+                    } else {
+                        setColor(index: index, r: 190, g: 215, b: 255, pixels: &pixels)
+                    }
+                } else {
+                    setColor(index: index, r: 6, g: 8, b: 12, pixels: &pixels)
+                }
+            }
+        }
+    }
     
     private static func drawAudioFile(width: Int, height: Int, pixels: inout [UInt8]) {
         // Purple with music note
@@ -731,7 +856,22 @@ final class TextureGenerator {
             }
         }
     }
-    
+
+    private static func setColor(index: Int, r: Int, g: Int, b: Int, pixels: inout [UInt8]) {
+        pixels[index] = UInt8(clamp(value: r, min: 0, max: 255))
+        pixels[index + 1] = UInt8(clamp(value: g, min: 0, max: 255))
+        pixels[index + 2] = UInt8(clamp(value: b, min: 0, max: 255))
+        pixels[index + 3] = 255
+    }
+
+    private static func hash2D(x: Int, y: Int, seed: UInt64) -> UInt64 {
+        var h = UInt64(bitPattern: Int64(x)) &* 374761393
+        h = (h ^ (h >> 13)) &* 1274126177
+        h &+= UInt64(bitPattern: Int64(y)) &* 668265263
+        h ^= seed
+        return h ^ (h >> 16)
+    }
+
     private static func clamp(value: Int, min: Int, max: Int) -> Int {
         return value < min ? min : (value > max ? max : value)
     }
