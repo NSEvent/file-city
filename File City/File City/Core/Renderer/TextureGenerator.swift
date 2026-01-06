@@ -25,7 +25,11 @@ final class TextureGenerator {
         var pixelData = [UInt8](repeating: 0, count: width * height * 4)
         
         let lowerSeed = seed.lowercased()
-        if lowerSeed.contains("road-asphalt") {
+        if lowerSeed.contains("sun-sky") {
+            drawSunSky(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("plane-body") {
+            drawPlaneBody(width: width, height: height, pixels: &pixelData, seed: seed)
+        } else if lowerSeed.contains("road-asphalt") {
             drawRoadAsphalt(width: width, height: height, pixels: &pixelData)
         } else if lowerSeed.contains("car-paint") {
             drawCarPaint(width: width, height: height, pixels: &pixelData, seed: seed)
@@ -441,6 +445,65 @@ final class TextureGenerator {
                     r = clamp(value: baseR - 30, min: 0, max: 255)
                     g = clamp(value: baseG - 30, min: 0, max: 255)
                     b = clamp(value: baseB - 30, min: 0, max: 255)
+                }
+
+                setColor(index: index, r: r, g: g, b: b, pixels: &pixels)
+            }
+        }
+    }
+
+    private static func drawSunSky(width: Int, height: Int, pixels: inout [UInt8]) {
+        let centerX = width / 2
+        let centerY = height / 2
+        let radius = min(width, height) / 3
+
+        for y in 0..<height {
+            for x in 0..<width {
+                let dx = x - centerX
+                let dy = y - centerY
+                let dist = sqrt(Double(dx * dx + dy * dy))
+                let index = (y * width + x) * 4
+
+                if dist < Double(radius) {
+                    let t = max(0.0, 1.0 - dist / Double(radius))
+                    let r = clamp(value: 240 + Int(t * 15), min: 0, max: 255)
+                    let g = clamp(value: 200 + Int(t * 40), min: 0, max: 255)
+                    let b = clamp(value: 120 + Int(t * 60), min: 0, max: 255)
+                    setColor(index: index, r: r, g: g, b: b, pixels: &pixels)
+                } else {
+                    setColor(index: index, r: 120, g: 180, b: 235, pixels: &pixels)
+                }
+            }
+        }
+    }
+
+    private static func drawPlaneBody(width: Int, height: Int, pixels: inout [UInt8], seed: String) {
+        var rng = DeterministicRNG(seed: seed)
+        let accent = vibrantAccent(seed: rng.next())
+        let stripe = (accent.r + accent.g + accent.b) % 2 == 0
+        let nose = width / 6
+        let tail = width - nose
+
+        for y in 0..<height {
+            for x in 0..<width {
+                let index = (y * width + x) * 4
+                var r = 220
+                var g = 225
+                var b = 230
+
+                if stripe && y > height / 3 && y < height / 3 + 4 {
+                    r = accent.r; g = accent.g; b = accent.b
+                }
+
+                if x < nose {
+                    r = 200; g = 210; b = 225
+                } else if x > tail {
+                    r = 180; g = 190; b = 205
+                }
+
+                let windowBand = y > height / 2 && y < height / 2 + 3
+                if windowBand && x > nose && x < tail && x % 8 < 4 {
+                    r = 40; g = 60; b = 80
                 }
 
                 setColor(index: index, r: r, g: g, b: b, pixels: &pixels)
