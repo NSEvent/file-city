@@ -24,6 +24,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private var planeInstanceBuffer: MTLBuffer?
     private var planeInstanceCount: Int = 0
     private var planePaths: [PlanePath] = []
+    private var planeOffsets: [Float] = []
+    private var lastPlaneUpdateTime: CFTimeInterval = CACurrentMediaTime()
+    private var hoveredPlaneIndex: Int?
     private var blocks: [CityBlock] = []
     let camera = Camera()
 
@@ -194,6 +197,32 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         instanceBuffer = device.makeBuffer(bytes: instances, length: MemoryLayout<VoxelInstance>.stride * instances.count, options: [])
     }
 
+    func setHoveredPlane(index: Int?) {
+        hoveredPlaneIndex = index
+    }
+
+    func pickPlane(at point: CGPoint, in size: CGSize) -> Int? {
+        guard size.width > 1, size.height > 1, !planePaths.isEmpty else { return nil }
+        let ray = rayFrom(point: point, in: size)
+        let now = CACurrentMediaTime()
+        var closest: (index: Int, distance: Float)?
+
+        for (index, path) in planePaths.enumerated() {
+            let baseDistance = fmod(Float(now) * path.speed + path.phase, path.totalLength)
+            let offset = index < planeOffsets.count ? planeOffsets[index] : 0
+            let distance = fmod(baseDistance + offset, path.totalLength)
+            let position = positionAlongPath(path: path, distance: distance)
+            let radius = max(path.scale.x, path.scale.z) * 0.75
+            if let hit = intersectSphere(ray: ray, center: position, radius: radius) {
+                if closest == nil || hit < closest!.distance {
+                    closest = (index, hit)
+                }
+            }
+        }
+
+        return closest?.index
+    }
+
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         camera.aspect = Float(size.width / max(size.height, 1))
     }
@@ -254,6 +283,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         planeInstanceBuffer = nil
         planeInstanceCount = 0
         planePaths.removeAll()
+        planeOffsets.removeAll()
 
         guard blocks.count > 3 else { return }
 
@@ -379,6 +409,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         let gridW = xRoads.count
         let gridH = zRoads.count
         guard gridW > 2, gridH > 2 else { return }
+        guard gridW > 2, gridH > 2 else { return }
         let minPathLength = max(spanX, spanZ) * 0.6
         for index in 0..<count {
             let seed = UInt64(index * 113)
@@ -416,10 +447,12 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
         }
 
-        planeInstanceCount = planePaths.count * 2
+        planeInstanceCount = planePaths.count * 4
         if planeInstanceCount > 0 {
             planeInstanceBuffer = device.makeBuffer(length: MemoryLayout<VoxelInstance>.stride * planeInstanceCount, options: [])
         }
+        planeOffsets = Array(repeating: 0, count: planePaths.count)
+        lastPlaneUpdateTime = CACurrentMediaTime()
     }
 
     private func updateCarInstances() {
@@ -442,15 +475,26 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private func updatePlaneInstances() {
         guard let planeInstanceBuffer, !planePaths.isEmpty else { return }
         let now = CACurrentMediaTime()
+        let deltaTime = max(0, now - lastPlaneUpdateTime)
+        lastPlaneUpdateTime = now
         let pointer = planeInstanceBuffer.contents().bindMemory(to: VoxelInstance.self, capacity: planeInstanceCount)
         for (index, path) in planePaths.enumerated() {
-            let distance = fmod(Float(now) * path.speed + path.phase, path.totalLength)
+            let isHovered = hoveredPlaneIndex == index
+            let speedBoost: Float = isHovered ? 1.6 : 1.0
+            if index < planeOffsets.count, speedBoost > 1.0 {
+                planeOffsets[index] = fmod(planeOffsets[index] + Float(deltaTime) * path.speed * (speedBoost - 1.0), path.totalLength)
+            }
+            let baseDistance = fmod(Float(now) * path.speed + path.phase, path.totalLength)
+            let offset = index < planeOffsets.count ? planeOffsets[index] : 0
+            let distance = fmod(baseDistance + offset, path.totalLength)
             let position = positionAlongPath(path: path, distance: distance)
             let nextDistance = fmod(distance + 1.0, path.totalLength)
             let nextPosition = positionAlongPath(path: path, distance: nextDistance)
             let direction = simd_normalize(nextPosition - position)
+            let right = simd_normalize(SIMD3<Float>(-direction.z, 0, direction.x))
             let rotationY = atan2(direction.z, direction.x)
-            let baseIndex = index * 2
+            let glow = isHovered ? (0.6 + 0.4 * sin(Float(now) * 18.0)) : 0.0
+            let baseIndex = index * 4
             pointer[baseIndex] = VoxelInstance(
                 position: position,
                 _pad0: 0,
@@ -460,7 +504,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 _pad2: 0,
                 materialID: 0,
                 highlight: 0,
-                hover: 0,
+                hover: glow,
                 textureIndex: planeTextureIndex,
                 shapeID: 6
             )
@@ -473,7 +517,35 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 _pad2: 0,
                 materialID: 0,
                 highlight: 0,
-                hover: 0,
+                hover: glow * 0.6,
+                textureIndex: planeTextureIndex,
+                shapeID: 0
+            )
+            let thrusterOffset = path.scale.z * 0.35
+            let thrusterBack = path.scale.x * 0.05
+            pointer[baseIndex + 2] = VoxelInstance(
+                position: position - direction * thrusterBack + right * thrusterOffset - SIMD3<Float>(0, 0.12, 0),
+                _pad0: 0,
+                scale: SIMD3<Float>(0.55, 0.25, 0.55),
+                _pad1: 0,
+                rotationY: rotationY,
+                _pad2: 0,
+                materialID: 0,
+                highlight: 0,
+                hover: glow,
+                textureIndex: planeTextureIndex,
+                shapeID: 0
+            )
+            pointer[baseIndex + 3] = VoxelInstance(
+                position: position - direction * thrusterBack - right * thrusterOffset - SIMD3<Float>(0, 0.12, 0),
+                _pad0: 0,
+                scale: SIMD3<Float>(0.55, 0.25, 0.55),
+                _pad1: 0,
+                rotationY: rotationY,
+                _pad2: 0,
+                materialID: 0,
+                highlight: 0,
+                hover: glow,
                 textureIndex: planeTextureIndex,
                 shapeID: 0
             )
@@ -638,6 +710,47 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private func randomUnit(seed: UInt64) -> Float {
         let v = (seed &* 1103515245 &+ 12345) & 0x7fffffff
         return Float(v) / Float(0x7fffffff)
+    }
+
+    private func rayFrom(point: CGPoint, in size: CGSize) -> RayTracer.Ray {
+        let viewMatrix = camera.viewMatrix()
+        let projectionMatrix = camera.projectionMatrix()
+        let viewProjection = projectionMatrix * viewMatrix
+        let inverseViewProjection = simd_inverse(viewProjection)
+        let ndcX = (2.0 * Float(point.x) / Float(size.width)) - 1.0
+        let ndcY = (2.0 * Float(point.y) / Float(size.height)) - 1.0
+        let nearPoint = SIMD4<Float>(ndcX, ndcY, -1.0, 1.0)
+        let farPoint = SIMD4<Float>(ndcX, ndcY, 1.0, 1.0)
+        let worldNear = inverseViewProjection * nearPoint
+        let worldFar = inverseViewProjection * farPoint
+        let nearPosition = SIMD3<Float>(
+            worldNear.x / worldNear.w,
+            worldNear.y / worldNear.w,
+            worldNear.z / worldNear.w
+        )
+        let farPosition = SIMD3<Float>(
+            worldFar.x / worldFar.w,
+            worldFar.y / worldFar.w,
+            worldFar.z / worldFar.w
+        )
+        let rayOrigin = nearPosition
+        let rayDirection = simd_normalize(farPosition - nearPosition)
+        return RayTracer.Ray(origin: rayOrigin, direction: rayDirection)
+    }
+
+    private func intersectSphere(ray: RayTracer.Ray, center: SIMD3<Float>, radius: Float) -> Float? {
+        let oc = ray.origin - center
+        let a = simd_dot(ray.direction, ray.direction)
+        let b = 2.0 * simd_dot(oc, ray.direction)
+        let c = simd_dot(oc, oc) - radius * radius
+        let discriminant = b * b - 4.0 * a * c
+        if discriminant < 0 { return nil }
+        let sqrtD = sqrt(discriminant)
+        let t1 = (-b - sqrtD) / (2.0 * a)
+        let t2 = (-b + sqrtD) / (2.0 * a)
+        if t1 >= 0 { return t1 }
+        if t2 >= 0 { return t2 }
+        return nil
     }
 
     func pickBlock(at point: CGPoint, in size: CGSize) -> CityBlock? {

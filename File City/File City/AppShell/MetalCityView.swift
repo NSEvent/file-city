@@ -67,7 +67,8 @@ struct MetalCityView: NSViewRepresentable {
         func handleHover(_ point: CGPoint, in view: MTKView) {
             guard let renderer else { return }
             let backingPoint = view.convertToBacking(point)
-            guard let block = renderer.pickBlock(at: backingPoint, in: view.drawableSize) else {
+            if let planeIndex = renderer.pickPlane(at: backingPoint, in: view.drawableSize) {
+                renderer.setHoveredPlane(index: planeIndex)
                 if hoveredNodeID != nil {
                     hoveredNodeID = nil
                     appState?.hoveredURL = nil
@@ -75,6 +76,16 @@ struct MetalCityView: NSViewRepresentable {
                 }
                 return
             }
+            guard let block = renderer.pickBlock(at: backingPoint, in: view.drawableSize) else {
+                renderer.setHoveredPlane(index: nil)
+                if hoveredNodeID != nil {
+                    hoveredNodeID = nil
+                    appState?.hoveredURL = nil
+                    appState?.hoveredNodeID = nil
+                }
+                return
+            }
+            renderer.setHoveredPlane(index: nil)
             guard hoveredNodeID != block.nodeID else { return }
             hoveredNodeID = block.nodeID
             appState?.hoveredURL = appState?.url(for: block.nodeID)
@@ -82,6 +93,7 @@ struct MetalCityView: NSViewRepresentable {
         }
 
         func clearHover() {
+            renderer?.setHoveredPlane(index: nil)
             hoveredNodeID = nil
             appState?.hoveredURL = nil
             appState?.hoveredNodeID = nil
