@@ -13,6 +13,13 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private var textureArray: MTLTexture?
     private var instanceBuffer: MTLBuffer?
     private var instanceCount: Int = 0
+    private let roadTextureIndex: Int32 = 32
+    private let carTextureIndex: Int32 = 33
+    private var roadInstanceBuffer: MTLBuffer?
+    private var roadInstanceCount: Int = 0
+    private var carInstanceBuffer: MTLBuffer?
+    private var carInstanceCount: Int = 0
+    private var carPaths: [CarPath] = []
     private var blocks: [CityBlock] = []
     let camera = Camera()
 
@@ -24,6 +31,14 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
     struct Uniforms {
         var viewProjection: simd_float4x4
+    }
+
+    private struct CarPath {
+        let start: SIMD3<Float>
+        let end: SIMD3<Float>
+        let speed: Float
+        let phase: Float
+        let scale: SIMD3<Float>
     }
 
     init?(view: MTKView) {
@@ -81,7 +96,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
     private func loadTextures() {
         var sourceTextures: [MTLTexture] = []
-        let textureCount = 32
+        let textureCount = 34
         
         // Semantic names we want to ensure are in the palette
         let semanticNames = [
@@ -96,6 +111,10 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             let seed: String
             if i < semanticNames.count {
                 seed = semanticNames[i]
+            } else if i == Int(roadTextureIndex) {
+                seed = "road-asphalt"
+            } else if i == Int(carTextureIndex) {
+                seed = "car-paint"
             } else {
                 seed = "Style \(i)"
             }
@@ -155,6 +174,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
         if blocksChanged {
             camera.target = centerOf(blocks: blocks)
+            rebuildRoadsAndCars(blocks: blocks)
         }
         instanceBuffer = device.makeBuffer(bytes: instances, length: MemoryLayout<VoxelInstance>.stride * instances.count, options: [])
     }
@@ -174,7 +194,6 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         encoder?.setRenderPipelineState(pipelineState)
         encoder?.setDepthStencilState(depthState)
         encoder?.setVertexBuffer(cubeVertexBuffer, offset: 0, index: 0)
-        encoder?.setVertexBuffer(instanceBuffer, offset: 0, index: 1)
 
         var uniforms = Uniforms(viewProjection: camera.projectionMatrix() * camera.viewMatrix())
         encoder?.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 2)
@@ -184,12 +203,167 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
         encoder?.setFragmentSamplerState(samplerState, index: 0)
 
+        if let roadInstanceBuffer, roadInstanceCount > 0 {
+            encoder?.setVertexBuffer(roadInstanceBuffer, offset: 0, index: 1)
+            encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 36, instanceCount: roadInstanceCount)
+        }
+
+        encoder?.setVertexBuffer(instanceBuffer, offset: 0, index: 1)
         if instanceCount > 0 {
             encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 36, instanceCount: instanceCount)
+        }
+
+        updateCarInstances()
+        if let carInstanceBuffer, carInstanceCount > 0 {
+            encoder?.setVertexBuffer(carInstanceBuffer, offset: 0, index: 1)
+            encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 36, instanceCount: carInstanceCount)
         }
         encoder?.endEncoding()
         commandBuffer.present(drawable)
         commandBuffer.commit()
+    }
+
+    private func rebuildRoadsAndCars(blocks: [CityBlock]) {
+        roadInstanceBuffer = nil
+        roadInstanceCount = 0
+        carInstanceBuffer = nil
+        carInstanceCount = 0
+        carPaths.removeAll()
+
+        guard blocks.count > 3 else { return }
+
+        let xs = sortedUnique(values: blocks.map { $0.position.x })
+        let zs = sortedUnique(values: blocks.map { $0.position.z })
+        guard xs.count > 1, zs.count > 1 else { return }
+
+        let stepX = minSpacing(values: xs)
+        let stepZ = minSpacing(values: zs)
+        guard stepX > 0, stepZ > 0 else { return }
+
+        let maxFootX = Int(blocks.map { Int($0.footprint.x) }.max() ?? 0)
+        let maxFootZ = Int(blocks.map { Int($0.footprint.y) }.max() ?? 0)
+        let roadWidth = max(2, Int(min(stepX, stepZ)) - max(maxFootX, maxFootZ))
+        let spanX = (xs.last ?? 0) - (xs.first ?? 0) + Float(maxFootX)
+        let spanZ = (zs.last ?? 0) - (zs.first ?? 0) + Float(maxFootZ)
+        let centerX = ((xs.first ?? 0) + (xs.last ?? 0)) * 0.5
+        let centerZ = ((zs.first ?? 0) + (zs.last ?? 0)) * 0.5
+
+        var roadInstances: [VoxelInstance] = []
+
+        for zIndex in 0..<(zs.count - 1) {
+            let roadZ = zs[zIndex] + stepZ * 0.5
+            let instance = VoxelInstance(
+                position: SIMD3<Float>(centerX, 0.5, roadZ),
+                scale: SIMD3<Float>(spanX, 1.0, Float(roadWidth)),
+                materialID: 0,
+                textureIndex: roadTextureIndex,
+                shapeID: 0
+            )
+            roadInstances.append(instance)
+        }
+
+        for xIndex in 0..<(xs.count - 1) {
+            let roadX = xs[xIndex] + stepX * 0.5
+            let instance = VoxelInstance(
+                position: SIMD3<Float>(roadX, 0.5, centerZ),
+                scale: SIMD3<Float>(Float(roadWidth), 1.0, spanZ),
+                materialID: 0,
+                textureIndex: roadTextureIndex,
+                shapeID: 0
+            )
+            roadInstances.append(instance)
+        }
+
+        roadInstanceCount = roadInstances.count
+        if roadInstanceCount > 0 {
+            roadInstanceBuffer = device.makeBuffer(bytes: roadInstances, length: MemoryLayout<VoxelInstance>.stride * roadInstanceCount, options: [])
+        }
+
+        buildCarPaths(xs: xs, zs: zs, stepX: stepX, stepZ: stepZ, spanX: spanX, spanZ: spanZ, roadWidth: roadWidth)
+    }
+
+    private func buildCarPaths(xs: [Float], zs: [Float], stepX: Float, stepZ: Float, spanX: Float, spanZ: Float, roadWidth: Int) {
+        let minX = xs.first ?? 0
+        let maxX = xs.last ?? 0
+        let minZ = zs.first ?? 0
+        let maxZ = zs.last ?? 0
+        let laneOffset = Float(roadWidth) * 0.25
+
+        for (index, z) in zs.dropLast().enumerated() {
+            let roadZ = z + stepZ * 0.5
+            let distance = max(1.0, spanX)
+            let carCount = max(1, Int(distance / 40.0))
+            for carIndex in 0..<carCount {
+                let seed = UInt64(index * 73 + carIndex * 17)
+                let speed = (2.0 + randomUnit(seed: seed) * 3.0) / distance
+                let phase = randomUnit(seed: seed ^ 0xCAFE)
+                let forward = (index % 2 == 0)
+                let start = SIMD3<Float>(forward ? minX - 2.0 : maxX + 2.0, 0.6, roadZ + laneOffset)
+                let end = SIMD3<Float>(forward ? maxX + 2.0 : minX - 2.0, 0.6, roadZ + laneOffset)
+                let scale = SIMD3<Float>(3.2, 1.2, 1.6)
+                carPaths.append(CarPath(start: start, end: end, speed: speed, phase: phase, scale: scale))
+            }
+        }
+
+        for (index, x) in xs.dropLast().enumerated() {
+            let roadX = x + stepX * 0.5
+            let distance = max(1.0, spanZ)
+            let carCount = max(1, Int(distance / 40.0))
+            for carIndex in 0..<carCount {
+                let seed = UInt64(index * 91 + carIndex * 29)
+                let speed = (2.0 + randomUnit(seed: seed) * 3.0) / distance
+                let phase = randomUnit(seed: seed ^ 0xBEEF)
+                let forward = (index % 2 == 0)
+                let start = SIMD3<Float>(roadX - laneOffset, 0.6, forward ? minZ - 2.0 : maxZ + 2.0)
+                let end = SIMD3<Float>(roadX - laneOffset, 0.6, forward ? maxZ + 2.0 : minZ - 2.0)
+                let scale = SIMD3<Float>(1.6, 1.2, 3.2)
+                carPaths.append(CarPath(start: start, end: end, speed: speed, phase: phase, scale: scale))
+            }
+        }
+
+        carInstanceCount = carPaths.count
+        if carInstanceCount > 0 {
+            carInstanceBuffer = device.makeBuffer(length: MemoryLayout<VoxelInstance>.stride * carInstanceCount, options: [])
+        }
+    }
+
+    private func updateCarInstances() {
+        guard let carInstanceBuffer, !carPaths.isEmpty else { return }
+        let now = CACurrentMediaTime()
+        let pointer = carInstanceBuffer.contents().bindMemory(to: VoxelInstance.self, capacity: carPaths.count)
+        for (index, path) in carPaths.enumerated() {
+            let t = fmod(Float(now) * path.speed + path.phase, 1.0)
+            let position = path.start + (path.end - path.start) * t
+            pointer[index] = VoxelInstance(
+                position: position,
+                scale: path.scale,
+                materialID: 0,
+                textureIndex: carTextureIndex,
+                shapeID: 0
+            )
+        }
+    }
+
+    private func sortedUnique(values: [Float]) -> [Float] {
+        let rounded = values.map { round($0 * 100.0) / 100.0 }
+        return Array(Set(rounded)).sorted()
+    }
+
+    private func minSpacing(values: [Float]) -> Float {
+        guard values.count > 1 else { return 0 }
+        var minDiff: Float = .greatestFiniteMagnitude
+        for index in 1..<values.count {
+            let diff = values[index] - values[index - 1]
+            if diff > 0 && diff < minDiff {
+                minDiff = diff
+            }
+        }
+        return minDiff == .greatestFiniteMagnitude ? 0 : minDiff
+    }
+
+    private func randomUnit(seed: UInt64) -> Float {
+        let v = (seed &* 1103515245 &+ 12345) & 0x7fffffff
+        return Float(v) / Float(0x7fffffff)
     }
 
     func pickBlock(at point: CGPoint, in size: CGSize) -> CityBlock? {

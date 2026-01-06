@@ -25,7 +25,11 @@ final class TextureGenerator {
         var pixelData = [UInt8](repeating: 0, count: width * height * 4)
         
         let lowerSeed = seed.lowercased()
-        if lowerSeed.contains("audio_file") || lowerSeed.contains("audio-file") {
+        if lowerSeed.contains("road-asphalt") {
+            drawRoadAsphalt(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("car-paint") {
+            drawCarPaint(width: width, height: height, pixels: &pixelData, seed: seed)
+        } else if lowerSeed.contains("audio_file") || lowerSeed.contains("audio-file") {
             drawAudioFile(width: width, height: height, pixels: &pixelData)
         } else if lowerSeed.contains("video_file") || lowerSeed.contains("video-file") {
             drawVideoFile(width: width, height: height, pixels: &pixelData)
@@ -381,6 +385,65 @@ final class TextureGenerator {
                 pixels[index + 1] = UInt8(g)
                 pixels[index + 2] = UInt8(b)
                 pixels[index + 3] = 255
+            }
+        }
+    }
+
+    private static func drawRoadAsphalt(width: Int, height: Int, pixels: inout [UInt8]) {
+        let seed: UInt64 = 0xA5A5_5A5A
+        let centerX = width / 2
+        let leftEdge = width / 6
+        let rightEdge = width - leftEdge
+
+        for y in 0..<height {
+            for x in 0..<width {
+                let index = (y * width + x) * 4
+                let noise = Int(hash2D(x: x, y: y, seed: seed) % 18)
+                let base = 30 + noise
+                var r = base
+                var g = base + 2
+                var b = base + 4
+
+                let dash = (y % 28) < 14
+                if abs(x - centerX) < 2 && dash {
+                    r = 220; g = 200; b = 90
+                } else if abs(x - leftEdge) < 2 || abs(x - rightEdge) < 2 {
+                    r = 200; g = 200; b = 200
+                }
+
+                setColor(index: index, r: r, g: g, b: b, pixels: &pixels)
+            }
+        }
+    }
+
+    private static func drawCarPaint(width: Int, height: Int, pixels: inout [UInt8], seed: String) {
+        var rng = DeterministicRNG(seed: seed)
+        let accent = vibrantAccent(seed: rng.next())
+        let baseR = clamp(value: accent.r + 40, min: 0, max: 255)
+        let baseG = clamp(value: accent.g + 20, min: 0, max: 255)
+        let baseB = clamp(value: accent.b + 20, min: 0, max: 255)
+
+        let windshieldTop = height / 4
+        let windshieldBottom = height / 2
+        let windshieldLeft = width / 4
+        let windshieldRight = width - windshieldLeft
+
+        for y in 0..<height {
+            for x in 0..<width {
+                let index = (y * width + x) * 4
+                var r = baseR
+                var g = baseG
+                var b = baseB
+
+                if y > windshieldTop && y < windshieldBottom && x > windshieldLeft && x < windshieldRight {
+                    r = 40; g = 60; b = 80
+                } else if x < 6 || x > width - 6 || y < 6 || y > height - 6 {
+                    r = clamp(value: baseR - 30, min: 0, max: 255)
+                    g = clamp(value: baseG - 30, min: 0, max: 255)
+                    b = clamp(value: baseB - 30, min: 0, max: 255)
+                }
+
+                setColor(index: index, r: r, g: g, b: b, pixels: &pixels)
             }
         }
     }
