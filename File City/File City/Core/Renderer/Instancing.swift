@@ -6,6 +6,8 @@ struct VoxelInstance {
     var _pad0: Float = 0
     var scale: SIMD3<Float>
     var _pad1: Float = 0
+    var rotationY: Float = 0
+    var _pad2: Float = 0
     var materialID: UInt32
     var highlight: Float = 0
     var hover: Float = 0

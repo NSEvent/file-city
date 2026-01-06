@@ -12,6 +12,8 @@ struct InstanceData {
     float pad0;
     float3 scale;
     float pad1;
+    float rotationY;
+    float pad2;
     uint materialID;
     float highlight;
     float hover;
@@ -84,10 +86,28 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
     }
 
     float3 scaled = local * instance.scale;
+    if (instance.rotationY != 0.0) {
+        float c = cos(instance.rotationY);
+        float s = sin(instance.rotationY);
+        float x = scaled.x * c - scaled.z * s;
+        float z = scaled.x * s + scaled.z * c;
+        scaled.x = x;
+        scaled.z = z;
+    }
+
     float3 world = scaled + instance.position;
     VertexOut out;
     out.position = uniforms.viewProjection * float4(world, 1.0);
-    out.normal = in.normal;
+    float3 normal = in.normal;
+    if (instance.rotationY != 0.0) {
+        float c = cos(instance.rotationY);
+        float s = sin(instance.rotationY);
+        float nx = normal.x * c - normal.z * s;
+        float nz = normal.x * s + normal.z * c;
+        normal.x = nx;
+        normal.z = nz;
+    }
+    out.normal = normal;
     out.uv = in.uv;
     out.scale = instance.scale;
     out.textureIndex = instance.textureIndex;

@@ -23,7 +23,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private var carPaths: [CarPath] = []
     private var planeInstanceBuffer: MTLBuffer?
     private var planeInstanceCount: Int = 0
-    private var planePaths: [CarPath] = []
+    private var planePaths: [PlanePath] = []
     private var blocks: [CityBlock] = []
     let camera = Camera()
 
@@ -40,6 +40,15 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private struct CarPath {
         let start: SIMD3<Float>
         let end: SIMD3<Float>
+        let speed: Float
+        let phase: Float
+        let scale: SIMD3<Float>
+    }
+
+    private struct PlanePath {
+        let waypoints: [SIMD3<Float>]
+        let segmentLengths: [Float]
+        let totalLength: Float
         let speed: Float
         let phase: Float
         let scale: SIMD3<Float>
@@ -351,20 +360,41 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     }
 
     private func buildPlanePaths(minX: Float, maxX: Float, minZ: Float, maxZ: Float, maxHeight: Float) {
-        let altitude = maxHeight + 20
         let spanX = maxX - minX
         let spanZ = maxZ - minZ
         let count = max(2, Int((spanX + spanZ) / 120.0))
 
+        let xs = sortedUnique(values: blocks.map { $0.position.x })
+        let zs = sortedUnique(values: blocks.map { $0.position.z })
+        guard xs.count > 1, zs.count > 1 else { return }
+
+        let stepX = minSpacing(values: xs)
+        let stepZ = minSpacing(values: zs)
+        guard stepX > 0, stepZ > 0 else { return }
+
+        let xRoads = (0..<(xs.count - 1)).map { xs[$0] + stepX * 0.5 }
+        let zRoads = (0..<(zs.count - 1)).map { zs[$0] + stepZ * 0.5 }
+        guard !xRoads.isEmpty, !zRoads.isEmpty else { return }
+
+        let gridW = xRoads.count
+        let gridH = zRoads.count
         for index in 0..<count {
             let seed = UInt64(index * 113)
-            let speed = (4.0 + randomUnit(seed: seed) * 4.0) / max(1.0, spanX + spanZ)
-            let phase = randomUnit(seed: seed ^ 0xFACE)
-            let offsetZ = minZ + randomUnit(seed: seed ^ 0xCAFE) * max(10.0, spanZ)
-            let start = SIMD3<Float>(minX - 20, altitude + Float(index % 3) * 4.0, offsetZ)
-            let end = SIMD3<Float>(maxX + 20, altitude + Float(index % 3) * 4.0, offsetZ)
+            let altitude = maxHeight + 18 + Float(index % 3) * 6.0
+            let start = randomPerimeterPoint(width: gridW, height: gridH, seed: seed)
+            let end = randomPerimeterPoint(width: gridW, height: gridH, seed: seed ^ 0xBEEF)
+            let pathCells = findPath(start: start, goal: end, width: gridW, height: gridH)
+            if pathCells.count < 2 { continue }
+
+            let waypoints = pathCells.map { cell in
+                SIMD3<Float>(xRoads[cell.x], altitude, zRoads[cell.y])
+            }
+            let segmentLengths = computeSegmentLengths(waypoints: waypoints)
+            let totalLength = segmentLengths.reduce(0, +)
+            let speed = 6.0 + randomUnit(seed: seed ^ 0xFACE) * 6.0
+            let phase = randomUnit(seed: seed ^ 0xCAFE)
             let scale = SIMD3<Float>(6.0, 0.6, 2.5)
-            planePaths.append(CarPath(start: start, end: end, speed: speed, phase: phase, scale: scale))
+            planePaths.append(PlanePath(waypoints: waypoints, segmentLengths: segmentLengths, totalLength: totalLength, speed: speed, phase: phase, scale: scale))
         }
 
         planeInstanceCount = planePaths.count * 2
@@ -395,24 +425,146 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         let now = CACurrentMediaTime()
         let pointer = planeInstanceBuffer.contents().bindMemory(to: VoxelInstance.self, capacity: planeInstanceCount)
         for (index, path) in planePaths.enumerated() {
-            let t = fmod(Float(now) * path.speed + path.phase, 1.0)
-            let position = path.start + (path.end - path.start) * t
+            let distance = fmod(Float(now) * path.speed + path.phase * path.totalLength, path.totalLength)
+            let position = positionAlongPath(path: path, distance: distance)
+            let nextDistance = fmod(distance + 1.0, path.totalLength)
+            let nextPosition = positionAlongPath(path: path, distance: nextDistance)
+            let direction = simd_normalize(nextPosition - position)
+            let rotationY = atan2(direction.z, direction.x)
             let baseIndex = index * 2
             pointer[baseIndex] = VoxelInstance(
                 position: position,
+                _pad0: 0,
                 scale: path.scale,
+                _pad1: 0,
+                rotationY: rotationY,
+                _pad2: 0,
                 materialID: 0,
+                highlight: 0,
+                hover: 0,
                 textureIndex: planeTextureIndex,
                 shapeID: 6
             )
             pointer[baseIndex + 1] = VoxelInstance(
                 position: SIMD3<Float>(position.x, position.y + 0.1, position.z),
+                _pad0: 0,
                 scale: SIMD3<Float>(1.4, 0.08, 6.3),
+                _pad1: 0,
+                rotationY: rotationY,
+                _pad2: 0,
                 materialID: 0,
+                highlight: 0,
+                hover: 0,
                 textureIndex: planeTextureIndex,
                 shapeID: 0
             )
         }
+    }
+
+    private func positionAlongPath(path: PlanePath, distance: Float) -> SIMD3<Float> {
+        var remaining = distance
+        for (index, segment) in path.segmentLengths.enumerated() {
+            if remaining <= segment || index == path.segmentLengths.count - 1 {
+                let a = path.waypoints[index]
+                let b = path.waypoints[index + 1]
+                let t = segment == 0 ? 0 : remaining / segment
+                return a + (b - a) * t
+            }
+            remaining -= segment
+        }
+        return path.waypoints.last ?? SIMD3<Float>(0, 0, 0)
+    }
+
+    private func computeSegmentLengths(waypoints: [SIMD3<Float>]) -> [Float] {
+        guard waypoints.count > 1 else { return [] }
+        var lengths: [Float] = []
+        lengths.reserveCapacity(waypoints.count - 1)
+        for index in 0..<(waypoints.count - 1) {
+            lengths.append(simd_length(waypoints[index + 1] - waypoints[index]))
+        }
+        return lengths
+    }
+
+    private func randomPerimeterPoint(width: Int, height: Int, seed: UInt64) -> (x: Int, y: Int) {
+        let edge = Int(seed % 4)
+        let pick = Int((seed >> 8) % UInt64(max(1, max(width, height))))
+        switch edge {
+        case 0:
+            return (x: min(pick, width - 1), y: 0)
+        case 1:
+            return (x: min(pick, width - 1), y: height - 1)
+        case 2:
+            return (x: 0, y: min(pick, height - 1))
+        default:
+            return (x: width - 1, y: min(pick, height - 1))
+        }
+    }
+
+    private func findPath(start: (x: Int, y: Int), goal: (x: Int, y: Int), width: Int, height: Int) -> [(x: Int, y: Int)] {
+        let total = width * height
+        var gScore = [Float](repeating: .greatestFiniteMagnitude, count: total)
+        var fScore = [Float](repeating: .greatestFiniteMagnitude, count: total)
+        var cameFrom = [Int](repeating: -1, count: total)
+        var openSet: [Int] = []
+
+        func indexFor(x: Int, y: Int) -> Int { y * width + x }
+        func heuristic(x: Int, y: Int) -> Float {
+            let dx = abs(goal.x - x)
+            let dy = abs(goal.y - y)
+            let diag = min(dx, dy)
+            let straight = max(dx, dy) - diag
+            return Float(diag) * 1.414 + Float(straight)
+        }
+
+        let startIndex = indexFor(x: start.x, y: start.y)
+        gScore[startIndex] = 0
+        fScore[startIndex] = heuristic(x: start.x, y: start.y)
+        openSet.append(startIndex)
+
+        let neighbors = [
+            (-1, 0), (1, 0), (0, -1), (0, 1),
+            (-1, -1), (1, -1), (-1, 1), (1, 1)
+        ]
+
+        while !openSet.isEmpty {
+            let currentIndex = openSet.min(by: { fScore[$0] < fScore[$1] }) ?? openSet[0]
+            if currentIndex == indexFor(x: goal.x, y: goal.y) {
+                break
+            }
+            openSet.removeAll { $0 == currentIndex }
+
+            let currentX = currentIndex % width
+            let currentY = currentIndex / width
+            for (dx, dy) in neighbors {
+                let nx = currentX + dx
+                let ny = currentY + dy
+                if nx < 0 || ny < 0 || nx >= width || ny >= height { continue }
+                let neighborIndex = indexFor(x: nx, y: ny)
+                let cost: Float = (dx != 0 && dy != 0) ? 1.414 : 1.0
+                let tentative = gScore[currentIndex] + cost
+                if tentative < gScore[neighborIndex] {
+                    cameFrom[neighborIndex] = currentIndex
+                    gScore[neighborIndex] = tentative
+                    fScore[neighborIndex] = tentative + heuristic(x: nx, y: ny)
+                    if !openSet.contains(neighborIndex) {
+                        openSet.append(neighborIndex)
+                    }
+                }
+            }
+        }
+
+        var path: [(x: Int, y: Int)] = []
+        var current = indexFor(x: goal.x, y: goal.y)
+        if cameFrom[current] == -1 {
+            return [start, goal]
+        }
+        while current != -1 {
+            let x = current % width
+            let y = current / width
+            path.append((x: x, y: y))
+            current = cameFrom[current]
+        }
+        return path.reversed()
     }
 
     private func sortedUnique(values: [Float]) -> [Float] {
