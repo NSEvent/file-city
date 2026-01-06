@@ -16,6 +16,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private let roadTextureIndex: Int32 = 32
     private let carTextureIndex: Int32 = 33
     private let planeTextureIndex: Int32 = 34
+    private let gitTowerMaterialID: UInt32 = 8
     private var roadInstanceBuffer: MTLBuffer?
     private var roadInstanceCount: Int = 0
     private var carInstanceBuffer: MTLBuffer?
@@ -174,7 +175,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     func updateInstances(blocks: [CityBlock], selectedNodeID: UUID?, hoveredNodeID: UUID?) {
         let blocksChanged = blocks != self.blocks
         self.blocks = blocks
-        let instances = blocks.map { block in
+        var instances = blocks.map { block in
             VoxelInstance(
                 position: SIMD3<Float>(block.position.x, block.position.y + Float(block.height) * 0.5, block.position.z),
                 scale: SIMD3<Float>(Float(block.footprint.x), Float(block.height), Float(block.footprint.y)),
@@ -184,6 +185,10 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 textureIndex: block.textureIndex,
                 shapeID: block.shapeID
             )
+        }
+        let gitTowerInstances = buildGitTowerInstances(blocks: blocks)
+        if !gitTowerInstances.isEmpty {
+            instances.append(contentsOf: gitTowerInstances)
         }
         instanceCount = instances.count
         if instances.isEmpty {
@@ -195,6 +200,72 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             rebuildRoadsAndCars(blocks: blocks)
         }
         instanceBuffer = device.makeBuffer(bytes: instances, length: MemoryLayout<VoxelInstance>.stride * instances.count, options: [])
+    }
+
+    private func buildGitTowerInstances(blocks: [CityBlock]) -> [VoxelInstance] {
+        var topBlocks: [UUID: CityBlock] = [:]
+        var topHeights: [UUID: Float] = [:]
+        for block in blocks where block.isGitRepo {
+            let topY = block.position.y + Float(block.height)
+            if let existing = topHeights[block.nodeID], existing >= topY {
+                continue
+            }
+            topHeights[block.nodeID] = topY
+            topBlocks[block.nodeID] = block
+        }
+        guard !topBlocks.isEmpty else { return [] }
+
+        var instances: [VoxelInstance] = []
+        instances.reserveCapacity(topBlocks.count * 4)
+        for block in topBlocks.values {
+            let footprintX = Float(block.footprint.x)
+            let footprintZ = Float(block.footprint.y)
+            let roofY = block.position.y + Float(block.height)
+            let baseX = block.position.x
+            let baseZ = block.position.z
+            let towerSize: Float = max(1.2, min(2.6, min(footprintX, footprintZ) * 0.35))
+            let towerHeight: Float = max(2.0, towerSize * 2.2)
+            let basePad: Float = 0.15
+            let baseY = roofY + basePad
+            let mastY = baseY + towerHeight * 0.5
+            let crossbarY = baseY + towerHeight * 0.8
+            let beaconSize = towerSize * 0.16
+            let beaconY = baseY + towerHeight + beaconSize * 0.5
+
+            instances.append(VoxelInstance(
+                position: SIMD3<Float>(baseX, baseY, baseZ),
+                scale: SIMD3<Float>(towerSize * 0.55, towerSize * 0.2, towerSize * 0.55),
+                materialID: gitTowerMaterialID,
+                textureIndex: -1,
+                shapeID: 5
+            ))
+
+            instances.append(VoxelInstance(
+                position: SIMD3<Float>(baseX, mastY, baseZ),
+                scale: SIMD3<Float>(towerSize * 0.18, towerHeight, towerSize * 0.18),
+                materialID: gitTowerMaterialID,
+                textureIndex: -1,
+                shapeID: 5
+            ))
+
+            instances.append(VoxelInstance(
+                position: SIMD3<Float>(baseX, crossbarY, baseZ),
+                scale: SIMD3<Float>(towerSize * 0.55, towerSize * 0.06, towerSize * 0.55),
+                materialID: gitTowerMaterialID,
+                textureIndex: -1,
+                shapeID: 0
+            ))
+
+            instances.append(VoxelInstance(
+                position: SIMD3<Float>(baseX, beaconY, baseZ),
+                scale: SIMD3<Float>(beaconSize, beaconSize, beaconSize),
+                materialID: gitTowerMaterialID,
+                textureIndex: -1,
+                shapeID: 5
+            ))
+        }
+
+        return instances
     }
 
     func setHoveredPlane(index: Int?) {

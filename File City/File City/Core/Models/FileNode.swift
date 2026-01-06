@@ -15,4 +15,5 @@ struct FileNode: Identifiable, Hashable {
     let modifiedAt: Date
     var children: [FileNode]
     var isHidden: Bool
+    var isGitRepo: Bool
 }

@@ -11,4 +11,5 @@ struct CityBlock: Identifiable, Hashable {
     let textureIndex: Int32
     let shapeID: Int32
     let isPinned: Bool
+    let isGitRepo: Bool
 }
