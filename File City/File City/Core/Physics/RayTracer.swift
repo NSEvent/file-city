@@ -207,12 +207,7 @@ final class RayTracer {
 
     private func rotationYForWedge(block: CityBlock, cameraYaw: Float) -> Float {
         guard block.shapeID == 3 || block.shapeID == 4 else { return 0 }
-        let cameraX = sin(cameraYaw)
-        let cameraZ = cos(cameraYaw)
-        if block.shapeID == 3 {
-            return cameraX >= 0 ? .pi : 0
-        }
-        return cameraZ >= 0 ? .pi : 0
+        return cameraYaw + (.pi / 4)
     }
 
     private func rotateY(point: SIMD3<Float>, around center: SIMD3<Float>, radians: Float) -> SIMD3<Float> {
