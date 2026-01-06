@@ -23,6 +23,8 @@ struct InstanceData {
 
 struct Uniforms {
     float4x4 viewProjection;
+    float time;
+    float3 pad;
 };
 
 struct VertexOut {
@@ -126,6 +128,7 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
 }
 
 fragment float4 fragment_main(VertexOut in [[stage_in]],
+                              constant Uniforms &uniforms [[buffer(2)]],
                               texture2d_array<float> textures [[texture(0)]],
                               sampler textureSampler [[sampler(0)]]) {
     float shade = saturate(dot(normalize(in.normal), float3(0.4, 0.85, 0.2)));
@@ -200,5 +203,12 @@ fragment float4 fragment_main(VertexOut in [[stage_in]],
     float glowStrength = hover * (0.25 + 0.45 * rim);
     float3 glowColor = float3(0.3, 0.8, 0.85);
     finalColor += glowColor * glowStrength;
+    if (in.shapeID == 8) {
+        float pulse = 0.5 + 0.5 * sin(uniforms.time * 7.5);
+        float flash = smoothstep(0.55, 0.9, pulse);
+        float3 flashColor = float3(1.0, 0.55, 0.15);
+        finalColor = mix(finalColor, flashColor, flash);
+        finalColor += flashColor * flash * 0.6;
+    }
     return float4(finalColor, 1.0);
 }

@@ -39,6 +39,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
     struct Uniforms {
         var viewProjection: simd_float4x4
+        var time: Float
+        var _pad: SIMD3<Float> = .zero
     }
 
     private struct CarPath {
@@ -299,7 +301,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 scale: SIMD3<Float>(beaconSize, beaconSize, beaconSize),
                 materialID: gitTowerMaterialID,
                 textureIndex: -1,
-                shapeID: 5
+                shapeID: 8
             ))
         }
 
@@ -360,8 +362,10 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         encoder?.setDepthStencilState(depthState)
         encoder?.setVertexBuffer(cubeVertexBuffer, offset: 0, index: 0)
 
-        var uniforms = Uniforms(viewProjection: camera.projectionMatrix() * camera.viewMatrix())
+        var uniforms = Uniforms(viewProjection: camera.projectionMatrix() * camera.viewMatrix(),
+                                time: Float(CACurrentMediaTime()))
         encoder?.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 2)
+        encoder?.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 2)
         
         if let textureArray = textureArray {
             encoder?.setFragmentTexture(textureArray, index: 0)
