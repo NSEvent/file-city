@@ -57,9 +57,22 @@ final class AppState: ObservableObject {
             }
             .store(in: &cancellables)
 
+        NotificationCenter.default.addObserver(
+            forName: .fileCityOpenURL,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let url = notification.object as? URL else { return }
+            Task { @MainActor [weak self] in
+                self?.openRoot(url)
+            }
+        }
+
         // Skip automatic setup if running tests to prevent hangs
         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
-            let root = LaunchRootResolver.resolve() ?? defaultRootURL()
+            let root = AppDelegate.takePendingOpenURL()
+                ?? LaunchRootResolver.resolve()
+                ?? defaultRootURL()
             if let root {
                 rootURL = root
                 scanRoot()
@@ -157,8 +170,13 @@ final class AppState: ObservableObject {
 
     func enter(_ url: URL) {
         focus(url)
-        guard isDirectory(url) else { return }
-        rootURL = url
+        openRoot(url)
+    }
+
+    func openRoot(_ url: URL) {
+        let target = isDirectory(url) ? url : url.deletingLastPathComponent()
+        guard isDirectory(target) else { return }
+        rootURL = target
         hoveredURL = nil
         hoveredNodeID = nil
         hoveredGitStatus = nil

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ContentView: View {
@@ -8,10 +9,24 @@ struct ContentView: View {
             SidebarView()
             ZStack(alignment: .topLeading) {
                 MetalCityView()
+                    .id(appState.rootURL?.path ?? "root")
                 InfoOverlayView()
             }
         }
         .navigationViewStyle(DoubleColumnNavigationViewStyle())
+        .onAppear {
+            bringToFront()
+        }
+    }
+
+    private func bringToFront() {
+        DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
+            NSApp.unhide(nil)
+            for window in NSApp.windows {
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
     }
 }
 
