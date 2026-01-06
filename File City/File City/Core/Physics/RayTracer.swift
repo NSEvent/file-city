@@ -89,7 +89,25 @@ final class RayTracer {
         var t1 = SIMD3<Float>(block.position.x + halfX, baseY + height, block.position.z - halfZ)
         var t2 = SIMD3<Float>(block.position.x + halfX, baseY + height, block.position.z + halfZ)
         var t3 = SIMD3<Float>(block.position.x - halfX, baseY + height, block.position.z + halfZ)
-        
+
+        if block.shapeID == 5 { // Cylinder
+            applyCylinder(&t0, centerX: block.position.x, centerZ: block.position.z, scaleX: Float(block.footprint.x), scaleZ: Float(block.footprint.y))
+            applyCylinder(&t1, centerX: block.position.x, centerZ: block.position.z, scaleX: Float(block.footprint.x), scaleZ: Float(block.footprint.y))
+            applyCylinder(&t2, centerX: block.position.x, centerZ: block.position.z, scaleX: Float(block.footprint.x), scaleZ: Float(block.footprint.y))
+            applyCylinder(&t3, centerX: block.position.x, centerZ: block.position.z, scaleX: Float(block.footprint.x), scaleZ: Float(block.footprint.y))
+
+            var v0c = v0
+            var v1c = v1
+            var v2c = v2
+            var v3c = v3
+            applyCylinder(&v0c, centerX: block.position.x, centerZ: block.position.z, scaleX: Float(block.footprint.x), scaleZ: Float(block.footprint.y))
+            applyCylinder(&v1c, centerX: block.position.x, centerZ: block.position.z, scaleX: Float(block.footprint.x), scaleZ: Float(block.footprint.y))
+            applyCylinder(&v2c, centerX: block.position.x, centerZ: block.position.z, scaleX: Float(block.footprint.x), scaleZ: Float(block.footprint.y))
+            applyCylinder(&v3c, centerX: block.position.x, centerZ: block.position.z, scaleX: Float(block.footprint.x), scaleZ: Float(block.footprint.y))
+
+            return intersectPrism(ray: ray, v0: v0c, v1: v1c, v2: v2c, v3: v3c, t0: t0, t1: t1, t2: t2, t3: t3)
+        }
+
         if block.shapeID == 1 { // Taper
             // Top scaled by 0.4, moved up by 0.5h
             let scale: Float = 0.4
@@ -172,6 +190,60 @@ final class RayTracer {
         }
         
         return hit ? minT : nil
+    }
+
+    private func intersectPrism(
+        ray: Ray,
+        v0: SIMD3<Float>,
+        v1: SIMD3<Float>,
+        v2: SIMD3<Float>,
+        v3: SIMD3<Float>,
+        t0: SIMD3<Float>,
+        t1: SIMD3<Float>,
+        t2: SIMD3<Float>,
+        t3: SIMD3<Float>
+    ) -> Float? {
+        let triangles: [(SIMD3<Float>, SIMD3<Float>, SIMD3<Float>)] = [
+            (v0, t0, t1), (v0, t1, v1),
+            (v1, t1, t2), (v1, t2, v2),
+            (v2, t2, t3), (v2, t3, v3),
+            (v3, t3, t0), (v3, t0, v0),
+            (t0, t2, t1), (t0, t3, t2),
+            (v0, v1, v2), (v0, v2, v3)
+        ]
+
+        var minT: Float = .greatestFiniteMagnitude
+        var hit = false
+
+        for (a, b, c) in triangles {
+            if let t = intersectTriangle(ray: ray, v0: a, v1: b, v2: c) {
+                if t < minT {
+                    minT = t
+                    hit = true
+                }
+            }
+        }
+
+        return hit ? minT : nil
+    }
+
+    private func applyCylinder(
+        _ vertex: inout SIMD3<Float>,
+        centerX: Float,
+        centerZ: Float,
+        scaleX: Float,
+        scaleZ: Float
+    ) {
+        let localX = (vertex.x - centerX) / scaleX
+        let localZ = (vertex.z - centerZ) / scaleZ
+        let radius = sqrt(localX * localX + localZ * localZ)
+        let maxRadius: Float = 0.5
+
+        if radius > maxRadius {
+            let factor = maxRadius / radius
+            vertex.x = centerX + (localX * factor) * scaleX
+            vertex.z = centerZ + (localZ * factor) * scaleZ
+        }
     }
 
     private func intersectTriangle(ray: Ray, v0: SIMD3<Float>, v1: SIMD3<Float>, v2: SIMD3<Float>) -> Float? {

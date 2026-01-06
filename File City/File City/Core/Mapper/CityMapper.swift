@@ -2,6 +2,16 @@ import Foundation
 import simd
 
 final class CityMapper {
+    private enum BuildingStyle {
+        case standard
+        case taper
+        case pyramid
+        case slantX
+        case slantZ
+        case cylinder
+        case bulbous
+    }
+
     func map(root: FileNode, rules: LayoutRules, pinStore: PinStore) -> [CityBlock] {
         let nodes = root.children
         let gridSize = Int(ceil(sqrt(Double(nodes.count))))
@@ -21,6 +31,7 @@ final class CityMapper {
             let seed = buildingSeed(node: node)
             let basePosition = SIMD3<Float>(x, 0, z)
             let textureIndex = textureIndexFor(node: node)
+            let style = buildingStyleFor(node: node, height: height, footprint: footprint, seed: seed)
 
             if shouldStackSkyscraper(node: node, height: height, footprint: footprint, seed: seed) {
                 let towerBlocks = buildSkyscraperBlocks(
@@ -34,6 +45,17 @@ final class CityMapper {
                     seed: seed
                 )
                 blocks.append(contentsOf: towerBlocks)
+            } else if style == .bulbous {
+                let bulbousBlocks = buildBulbousBlocks(
+                    position: basePosition,
+                    nodeID: node.id,
+                    height: Int32(height),
+                    footprint: footprint,
+                    materialID: Int32(materialID),
+                    textureIndex: textureIndex,
+                    pinned: pinned
+                )
+                blocks.append(contentsOf: bulbousBlocks)
             } else {
                 let block = CityBlock(
                     id: UUID(),
@@ -43,7 +65,7 @@ final class CityMapper {
                     height: Int32(height),
                     materialID: Int32(materialID),
                     textureIndex: textureIndex,
-                    shapeID: shapeIDFor(node: node, height: height, footprint: footprint, seed: seed),
+                    shapeID: shapeIDFor(style: style),
                     isPinned: pinned
                 )
                 blocks.append(block)
@@ -57,6 +79,26 @@ final class CityMapper {
         guard node.type == .folder else { return false }
         let maxFootprint = max(footprint.x, footprint.y)
         return height >= 14 && maxFootprint >= 6 && seed % 3 == 0
+    }
+
+    private func buildingStyleFor(node: FileNode, height: Int, footprint: SIMD2<Int32>, seed: UInt32) -> BuildingStyle {
+        guard node.type == .folder, height > 5, footprint.x < 10 else { return .standard }
+        switch seed % 12 {
+        case 0...5:
+            return .standard
+        case 6:
+            return .slantX
+        case 7:
+            return .slantZ
+        case 8:
+            return .pyramid
+        case 9:
+            return .taper
+        case 10:
+            return .cylinder
+        default:
+            return .bulbous
+        }
     }
 
     private func buildSkyscraperBlocks(
@@ -173,6 +215,50 @@ final class CityMapper {
         return blocks
     }
 
+    private func buildBulbousBlocks(
+        position: SIMD3<Float>,
+        nodeID: UUID,
+        height: Int32,
+        footprint: SIMD2<Int32>,
+        materialID: Int32,
+        textureIndex: Int32,
+        pinned: Bool
+    ) -> [CityBlock] {
+        var heights: [Int32] = [
+            max(4, Int32(Float(height) * 0.3)),
+            max(4, Int32(Float(height) * 0.4)),
+            max(4, height - Int32(Float(height) * 0.7))
+        ]
+        normalizeHeights(total: height, heights: &heights, minHeight: 3)
+
+        let midFootprint = footprint
+        let baseFootprint = shrinkFootprint(midFootprint, by: 2, min: 4)
+        let topFootprint = shrinkFootprint(midFootprint, by: 2, min: 4)
+        let segmentFootprints = [baseFootprint, midFootprint, topFootprint]
+
+        var blocks: [CityBlock] = []
+        blocks.reserveCapacity(3)
+
+        var currentY: Float = position.y
+        for (index, segmentHeight) in heights.enumerated() {
+            let block = CityBlock(
+                id: UUID(),
+                nodeID: nodeID,
+                position: SIMD3<Float>(position.x, currentY, position.z),
+                footprint: segmentFootprints[index],
+                height: segmentHeight,
+                materialID: materialID,
+                textureIndex: textureIndex,
+                shapeID: 5,
+                isPinned: pinned
+            )
+            blocks.append(block)
+            currentY += Float(segmentHeight)
+        }
+
+        return blocks
+    }
+
     private func tierCountFor(height: Int32, seed: UInt32) -> Int {
         if height >= 40 {
             return seed % 2 == 0 ? 4 : 3
@@ -236,13 +322,23 @@ final class CityMapper {
         return UInt32(truncatingIfNeeded: hasher.finalize())
     }
 
-    private func shapeIDFor(node: FileNode, height: Int, footprint: SIMD2<Int32>, seed: UInt32) -> Int32 {
-        guard node.type == .folder, height > 5, footprint.x < 10 else { return 0 }
-        let rnd = Int(seed % 10)
-        if rnd < 5 {
-            return Int32(rnd) // 0, 1, 2, 3, 4
+    private func shapeIDFor(style: BuildingStyle) -> Int32 {
+        switch style {
+        case .standard:
+            return 0
+        case .taper:
+            return 1
+        case .pyramid:
+            return 2
+        case .slantX:
+            return 3
+        case .slantZ:
+            return 4
+        case .cylinder:
+            return 5
+        case .bulbous:
+            return 0
         }
-        return 0
     }
 
     private func textureIndexFor(node: FileNode) -> Int32 {

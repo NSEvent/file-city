@@ -42,7 +42,15 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
     float3 local = in.position;
     
     // Apply shape deformations
-    if (instance.shapeID > 0 && local.y > 0.0) {
+    if (instance.shapeID == 5) {
+        float radius = length(local.xz);
+        float maxRadius = 0.5;
+        if (radius > maxRadius) {
+            float scale = maxRadius / radius;
+            local.x *= scale;
+            local.z *= scale;
+        }
+    } else if (instance.shapeID > 0 && local.y > 0.0) {
         if (instance.shapeID == 1) {
             // Tapered Spire
             local.x *= 0.4;

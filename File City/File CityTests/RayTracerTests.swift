@@ -121,4 +121,13 @@ final class RayTracerTests: XCTestCase {
         let rayMiss = RayTracer.Ray(origin: SIMD3<Float>(4.5, 10, 20), direction: SIMD3<Float>(0, 0, -1))
         XCTAssertNil(tracer.intersect(ray: rayMiss, blocks: [block]), "Should miss the tapered side")
     }
+
+    func testIntersectCylinderBlock() {
+        let block = createBlock(position: SIMD3<Float>(0, 0, 0), width: 10, height: 10, shapeID: 5)
+
+        let ray = RayTracer.Ray(origin: SIMD3<Float>(0, 5, 20), direction: SIMD3<Float>(0, 0, -1))
+        let hit = tracer.intersect(ray: ray, blocks: [block])
+
+        XCTAssertNotNil(hit, "Should hit the cylinder block")
+    }
 }
