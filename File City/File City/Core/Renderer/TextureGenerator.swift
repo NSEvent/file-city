@@ -24,7 +24,25 @@ final class TextureGenerator {
         
         var pixelData = [UInt8](repeating: 0, count: width * height * 4)
         
-        var rng = DeterministicRNG(seed: seed)
+        let lowerSeed = seed.lowercased()
+        if lowerSeed.contains("audio_file") || lowerSeed.contains("audio-file") {
+            drawAudioFile(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("video_file") || lowerSeed.contains("video-file") {
+            drawVideoFile(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("archive_file") || lowerSeed.contains("archive-file") {
+            drawArchiveFile(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("db_file") || lowerSeed.contains("db-file") {
+            drawDatabaseFile(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("image-file") {
+            drawImageFile(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("text-doc") {
+            drawTextDoc(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("code-json") {
+            drawCode(width: width, height: height, pixels: &pixelData)
+        } else if lowerSeed.contains("swift-file") {
+            drawSwift(width: width, height: height, pixels: &pixelData)
+        } else {
+            var rng = DeterministicRNG(seed: seed)
         let styleRoll = rng.next() % 20
         let style: FacadeStyle
         switch styleRoll {
@@ -50,6 +68,7 @@ final class TextureGenerator {
             drawMetalPanels(width: width, height: height, pixels: &pixelData, rng: &rng)
         case .nightWindows:
             drawNightWindows(width: width, height: height, pixels: &pixelData, rng: &rng)
+        }
         }
         
         texture.replace(
