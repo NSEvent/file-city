@@ -14,6 +14,8 @@ final class AppState: ObservableObject {
     @Published var hoveredURL: URL?
     @Published var hoveredNodeID: UUID?
     @Published var hoveredGitStatus: [String]?
+    @Published var hoveredBeaconNodeID: UUID?
+    @Published var hoveredBeaconURL: URL?
 
     private let scanner = DirectoryScanner()
     private let mapper = CityMapper()
@@ -86,6 +88,10 @@ final class AppState: ObservableObject {
                 nodeByID = buildNodeIDMap(root: result.root)
                 nodeByURL = buildNodeURLMap(root: result.root)
                 selectedFocusNodeID = selectedURL.flatMap { focusNodeIDByURL[$0] }
+                hoveredURL = hoveredURL.flatMap { nodeByURL[$0] != nil ? $0 : nil }
+                hoveredNodeID = hoveredURL.flatMap { nodeByURL[$0]?.id }
+                hoveredBeaconURL = hoveredBeaconURL.flatMap { nodeByURL[$0] != nil ? $0 : nil }
+                hoveredBeaconNodeID = hoveredBeaconURL.flatMap { nodeByURL[$0]?.id }
                 applyCachedGitStatuses()
                 refreshGitStatuses()
             } catch {
@@ -96,6 +102,9 @@ final class AppState: ObservableObject {
                 nodeByID = [:]
                 nodeByURL = [:]
                 selectedFocusNodeID = nil
+                hoveredNodeID = nil
+                hoveredBeaconNodeID = nil
+                hoveredBeaconURL = nil
             }
         }
     }
@@ -125,6 +134,10 @@ final class AppState: ObservableObject {
                 nodeByID = buildNodeIDMap(root: result.root)
                 nodeByURL = buildNodeURLMap(root: result.root)
                 selectedFocusNodeID = selectedURL.flatMap { focusNodeIDByURL[$0] }
+                hoveredURL = hoveredURL.flatMap { nodeByURL[$0] != nil ? $0 : nil }
+                hoveredNodeID = hoveredURL.flatMap { nodeByURL[$0]?.id }
+                hoveredBeaconURL = hoveredBeaconURL.flatMap { nodeByURL[$0] != nil ? $0 : nil }
+                hoveredBeaconNodeID = hoveredBeaconURL.flatMap { nodeByURL[$0]?.id }
                 applyCachedGitStatuses()
                 refreshGitStatuses()
             }
@@ -143,6 +156,8 @@ final class AppState: ObservableObject {
         hoveredURL = nil
         hoveredNodeID = nil
         hoveredGitStatus = nil
+        hoveredBeaconNodeID = nil
+        hoveredBeaconURL = nil
         selectedURL = nil
         selectedFocusNodeID = nil
         scanRoot()
@@ -155,6 +170,8 @@ final class AppState: ObservableObject {
         hoveredURL = nil
         hoveredNodeID = nil
         hoveredGitStatus = nil
+        hoveredBeaconNodeID = nil
+        hoveredBeaconURL = nil
         selectedURL = nil
         selectedFocusNodeID = nil
         scanRoot()

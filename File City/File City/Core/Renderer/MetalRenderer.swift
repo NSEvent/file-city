@@ -177,24 +177,25 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         self.textureArray = arrayTex
     }
 
-    func updateInstances(blocks: [CityBlock], selectedNodeID: UUID?, hoveredNodeID: UUID?) {
+    func updateInstances(blocks: [CityBlock], selectedNodeID: UUID?, hoveredNodeID: UUID?, hoveredBeaconNodeID: UUID?) {
         let blocksChanged = blocks != self.blocks
         self.blocks = blocks
         let cameraYaw = camera.yaw
         var instances: [VoxelInstance] = blocks.map { block in
             let rotationY = rotationYForWedge(block: block, cameraYaw: cameraYaw)
+            let isHovering = block.nodeID == hoveredNodeID || block.nodeID == hoveredBeaconNodeID
             return VoxelInstance(
                 position: SIMD3<Float>(block.position.x, block.position.y + Float(block.height) * 0.5, block.position.z),
                 scale: SIMD3<Float>(Float(block.footprint.x), Float(block.height), Float(block.footprint.y)),
                 rotationY: rotationY,
                 materialID: UInt32(block.materialID),
                 highlight: block.nodeID == selectedNodeID ? 1.0 : 0.0,
-                hover: block.nodeID == hoveredNodeID ? 1.0 : 0.0,
+                hover: isHovering ? 1.0 : 0.0,
                 textureIndex: block.textureIndex,
                 shapeID: block.shapeID
             )
         }
-        let gitTowerInstances = buildGitTowerInstances(blocks: blocks)
+        let gitTowerInstances = buildGitTowerInstances(blocks: blocks, hoveredBeaconNodeID: hoveredBeaconNodeID)
         if !gitTowerInstances.isEmpty {
             instances.append(contentsOf: gitTowerInstances)
         }
@@ -214,7 +215,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         return cameraYaw + (.pi / 4)
     }
 
-    private func buildGitTowerInstances(blocks: [CityBlock]) -> [VoxelInstance] {
+    private func buildGitTowerInstances(blocks: [CityBlock], hoveredBeaconNodeID: UUID?) -> [VoxelInstance] {
         var topBlocks: [UUID: CityBlock] = [:]
         var topHeights: [UUID: Float] = [:]
         gitBeaconBoxes.removeAll()
@@ -231,6 +232,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         var instances: [VoxelInstance] = []
         instances.reserveCapacity(topBlocks.count * 4)
         for block in topBlocks.values {
+            let beaconHighlight: Float = block.nodeID == hoveredBeaconNodeID ? 1.0 : 0.0
             let towerMaterialID = block.isGitClean ? gitCleanMaterialID : gitTowerMaterialID
             let footprintX = Float(block.footprint.x)
             let footprintZ = Float(block.footprint.y)
@@ -282,6 +284,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 position: SIMD3<Float>(towerBaseX, baseY, towerBaseZ),
                 scale: SIMD3<Float>(towerSize * 0.55, towerSize * 0.2, towerSize * 0.55),
                 materialID: towerMaterialID,
+                highlight: beaconHighlight,
                 textureIndex: -1,
                 shapeID: 5
             ))
@@ -290,6 +293,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 position: SIMD3<Float>(towerBaseX, mastY, towerBaseZ),
                 scale: SIMD3<Float>(towerSize * 0.18, towerHeight, towerSize * 0.18),
                 materialID: towerMaterialID,
+                highlight: beaconHighlight,
                 textureIndex: -1,
                 shapeID: 5
             ))
@@ -300,6 +304,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 position: SIMD3<Float>(crossbarX, crossbarY, crossbarZ),
                 scale: SIMD3<Float>(towerSize * 0.55, towerSize * 0.06, towerSize * 0.55),
                 materialID: towerMaterialID,
+                highlight: beaconHighlight,
                 textureIndex: -1,
                 shapeID: 0
             ))
@@ -308,6 +313,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 position: SIMD3<Float>(crossbarX, beaconY, crossbarZ),
                 scale: SIMD3<Float>(beaconSize, beaconSize, beaconSize),
                 materialID: towerMaterialID,
+                highlight: beaconHighlight,
                 textureIndex: -1,
                 shapeID: block.isGitClean ? 9 : 8
             ))
