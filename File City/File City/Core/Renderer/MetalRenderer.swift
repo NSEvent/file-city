@@ -378,23 +378,40 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
         let gridW = xRoads.count
         let gridH = zRoads.count
+        let minPathLength = max(spanX, spanZ) * 0.6
         for index in 0..<count {
             let seed = UInt64(index * 113)
             let altitude = maxHeight + 18 + Float(index % 3) * 6.0
-            let start = randomPerimeterPoint(width: gridW, height: gridH, seed: seed)
-            let end = randomPerimeterPoint(width: gridW, height: gridH, seed: seed ^ 0xBEEF)
-            let pathCells = findPath(start: start, goal: end, width: gridW, height: gridH)
-            if pathCells.count < 2 { continue }
+            let startEdge = Int(seed % 4)
+            let endEdge = (startEdge + 2 + Int(seed % 2)) % 4
+            var attempts = 0
+            var pathCells: [(x: Int, y: Int)] = []
 
-            let waypoints = pathCells.map { cell in
-                SIMD3<Float>(xRoads[cell.x], altitude, zRoads[cell.y])
+            while attempts < 6 {
+                let start = randomPerimeterPoint(width: gridW, height: gridH, seed: seed &+ UInt64(attempts * 31), edge: startEdge)
+                let end = randomPerimeterPoint(width: gridW, height: gridH, seed: seed ^ 0xBEEF &+ UInt64(attempts * 17), edge: endEdge)
+                let mid = randomInteriorPoint(width: gridW, height: gridH, seed: seed ^ 0xCAFE &+ UInt64(attempts * 29))
+                let first = findPath(start: start, goal: mid, width: gridW, height: gridH)
+                let second = findPath(start: mid, goal: end, width: gridW, height: gridH)
+                pathCells = first + second.dropFirst()
+                if pathCells.count < 2 {
+                    attempts += 1
+                    continue
+                }
+                let waypoints = pathCells.map { cell in
+                    SIMD3<Float>(xRoads[cell.x], altitude, zRoads[cell.y])
+                }
+                let segmentLengths = computeSegmentLengths(waypoints: waypoints)
+                let totalLength = segmentLengths.reduce(0, +)
+                if totalLength >= minPathLength {
+                    let speed = 6.0 + randomUnit(seed: seed ^ 0xFACE) * 6.0
+                    let phase = randomUnit(seed: seed ^ 0xCAFE) * totalLength
+                    let scale = SIMD3<Float>(6.0, 0.6, 2.5)
+                    planePaths.append(PlanePath(waypoints: waypoints, segmentLengths: segmentLengths, totalLength: totalLength, speed: speed, phase: phase, scale: scale))
+                    break
+                }
+                attempts += 1
             }
-            let segmentLengths = computeSegmentLengths(waypoints: waypoints)
-            let totalLength = segmentLengths.reduce(0, +)
-            let speed = 6.0 + randomUnit(seed: seed ^ 0xFACE) * 6.0
-            let phase = randomUnit(seed: seed ^ 0xCAFE)
-            let scale = SIMD3<Float>(6.0, 0.6, 2.5)
-            planePaths.append(PlanePath(waypoints: waypoints, segmentLengths: segmentLengths, totalLength: totalLength, speed: speed, phase: phase, scale: scale))
         }
 
         planeInstanceCount = planePaths.count * 2
@@ -425,7 +442,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         let now = CACurrentMediaTime()
         let pointer = planeInstanceBuffer.contents().bindMemory(to: VoxelInstance.self, capacity: planeInstanceCount)
         for (index, path) in planePaths.enumerated() {
-            let distance = fmod(Float(now) * path.speed + path.phase * path.totalLength, path.totalLength)
+            let distance = fmod(Float(now) * path.speed + path.phase, path.totalLength)
             let position = positionAlongPath(path: path, distance: distance)
             let nextDistance = fmod(distance + 1.0, path.totalLength)
             let nextPosition = positionAlongPath(path: path, distance: nextDistance)
@@ -485,8 +502,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         return lengths
     }
 
-    private func randomPerimeterPoint(width: Int, height: Int, seed: UInt64) -> (x: Int, y: Int) {
-        let edge = Int(seed % 4)
+    private func randomPerimeterPoint(width: Int, height: Int, seed: UInt64, edge: Int) -> (x: Int, y: Int) {
         let pick = Int((seed >> 8) % UInt64(max(1, max(width, height))))
         switch edge {
         case 0:
@@ -498,6 +514,12 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         default:
             return (x: width - 1, y: min(pick, height - 1))
         }
+    }
+
+    private func randomInteriorPoint(width: Int, height: Int, seed: UInt64) -> (x: Int, y: Int) {
+        let ix = max(1, min(width - 2, Int(seed % UInt64(width))))
+        let iy = max(1, min(height - 2, Int((seed >> 8) % UInt64(height))))
+        return (x: ix, y: iy)
     }
 
     private func findPath(start: (x: Int, y: Int), goal: (x: Int, y: Int), width: Int, height: Int) -> [(x: Int, y: Int)] {
