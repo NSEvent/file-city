@@ -18,39 +18,231 @@ final class CityMapper {
             let footprint = footprintFor(node: node, rules: rules)
             let materialID = materialFor(node: node)
             let pinned = pinStore.isPinned(pathHash: PinStore.pathHash(node.url))
-            
-            // Determine shape
-            var shapeID: Int32 = 0
-            if node.type == .folder && height > 5 && footprint.x < 10 {
-                var hasher = Hasher()
-                hasher.combine(node.name)
-                // 5 shape types (0-4)
-                // 0: Standard, 1: Taper, 2: Pyramid, 3: SlantX, 4: SlantZ
-                // Let's bias towards 0 (Standard) for variety
-                let h = abs(hasher.finalize())
-                let rnd = h % 10
-                if rnd < 5 {
-                    shapeID = Int32(rnd) // 0, 1, 2, 3, 4
+            let seed = buildingSeed(node: node)
+            let basePosition = SIMD3<Float>(x, 0, z)
+            let textureIndex = textureIndexFor(node: node)
+
+            if shouldStackSkyscraper(node: node, height: height, footprint: footprint, seed: seed) {
+                let towerBlocks = buildSkyscraperBlocks(
+                    position: basePosition,
+                    nodeID: node.id,
+                    height: Int32(height),
+                    footprint: footprint,
+                    materialID: Int32(materialID),
+                    textureIndex: textureIndex,
+                    pinned: pinned,
+                    seed: seed
+                )
+                blocks.append(contentsOf: towerBlocks)
+            } else {
+                let block = CityBlock(
+                    id: UUID(),
+                    nodeID: node.id,
+                    position: basePosition,
+                    footprint: footprint,
+                    height: Int32(height),
+                    materialID: Int32(materialID),
+                    textureIndex: textureIndex,
+                    shapeID: shapeIDFor(node: node, height: height, footprint: footprint, seed: seed),
+                    isPinned: pinned
+                )
+                blocks.append(block)
+            }
+        }
+
+        return blocks
+    }
+
+    private func shouldStackSkyscraper(node: FileNode, height: Int, footprint: SIMD2<Int32>, seed: UInt32) -> Bool {
+        guard node.type == .folder else { return false }
+        let maxFootprint = max(footprint.x, footprint.y)
+        return height >= 14 && maxFootprint >= 6 && seed % 3 == 0
+    }
+
+    private func buildSkyscraperBlocks(
+        position: SIMD3<Float>,
+        nodeID: UUID,
+        height: Int32,
+        footprint: SIMD2<Int32>,
+        materialID: Int32,
+        textureIndex: Int32,
+        pinned: Bool,
+        seed: UInt32
+    ) -> [CityBlock] {
+        let tierCount = tierCountFor(height: height, seed: seed)
+
+        let baseHeight: Int32
+        let midHeight: Int32
+        let upperHeight: Int32
+        let crownHeight: Int32
+
+        if tierCount == 4 {
+            baseHeight = max(8, Int32(Float(height) * 0.45))
+            midHeight = max(6, Int32(Float(height) * 0.25))
+            upperHeight = max(5, Int32(Float(height) * 0.18))
+            crownHeight = max(3, height - baseHeight - midHeight - upperHeight)
+        } else if tierCount == 3 {
+            baseHeight = max(7, Int32(Float(height) * 0.55))
+            midHeight = max(5, Int32(Float(height) * 0.25))
+            upperHeight = 0
+            crownHeight = max(3, height - baseHeight - midHeight)
+        } else {
+            baseHeight = max(6, Int32(Float(height) * 0.7))
+            midHeight = 0
+            upperHeight = 0
+            crownHeight = max(3, height - baseHeight)
+        }
+
+        var heights: [Int32]
+        switch tierCount {
+        case 4:
+            heights = [baseHeight, midHeight, upperHeight, crownHeight]
+        case 3:
+            heights = [baseHeight, midHeight, crownHeight]
+        default:
+            heights = [baseHeight, crownHeight]
+        }
+        normalizeHeights(total: height, heights: &heights, minHeight: 3)
+
+        let baseFootprint = footprint
+        let midFootprint = shrinkFootprint(baseFootprint, by: 2, min: 4)
+        let upperFootprint = shrinkFootprint(midFootprint, by: 2, min: 3)
+        let crownFootprint = shrinkFootprint(upperFootprint, by: 2, min: 2)
+
+        var blocks: [CityBlock] = []
+        blocks.reserveCapacity(heights.count)
+
+        var currentY: Float = position.y
+        for (index, segmentHeight) in heights.enumerated() {
+            let segmentFootprint: SIMD2<Int32>
+            let shapeID: Int32
+
+            switch tierCount {
+            case 4:
+                switch index {
+                case 0:
+                    segmentFootprint = baseFootprint
+                    shapeID = 0
+                case 1:
+                    segmentFootprint = midFootprint
+                    shapeID = 0
+                case 2:
+                    segmentFootprint = upperFootprint
+                    shapeID = 0
+                default:
+                    segmentFootprint = crownFootprint
+                    shapeID = crownShape(seed: seed)
+                }
+            case 3:
+                switch index {
+                case 0:
+                    segmentFootprint = baseFootprint
+                    shapeID = 0
+                case 1:
+                    segmentFootprint = midFootprint
+                    shapeID = 0
+                default:
+                    segmentFootprint = crownFootprint
+                    shapeID = crownShape(seed: seed)
+                }
+            default:
+                if index == 0 {
+                    segmentFootprint = baseFootprint
+                    shapeID = 0
                 } else {
-                    shapeID = 0 // Extra weight for standard
+                    segmentFootprint = shrinkFootprint(baseFootprint, by: 2, min: 3)
+                    shapeID = crownShape(seed: seed)
                 }
             }
 
             let block = CityBlock(
                 id: UUID(),
-                nodeID: node.id,
-                position: SIMD3<Float>(x, 0, z),
-                footprint: footprint,
-                height: Int32(height),
-                materialID: Int32(materialID),
-                textureIndex: textureIndexFor(node: node),
+                nodeID: nodeID,
+                position: SIMD3<Float>(position.x, currentY, position.z),
+                footprint: segmentFootprint,
+                height: segmentHeight,
+                materialID: materialID,
+                textureIndex: textureIndex,
                 shapeID: shapeID,
                 isPinned: pinned
             )
             blocks.append(block)
+            currentY += Float(segmentHeight)
         }
 
         return blocks
+    }
+
+    private func tierCountFor(height: Int32, seed: UInt32) -> Int {
+        if height >= 40 {
+            return seed % 2 == 0 ? 4 : 3
+        }
+        if height >= 24 {
+            return seed % 2 == 0 ? 3 : 2
+        }
+        return 2
+    }
+
+    private func crownShape(seed: UInt32) -> Int32 {
+        if seed % 5 == 0 {
+            return 0
+        }
+        let pick = seed % 4
+        switch pick {
+        case 0:
+            return 1 // Taper
+        case 1:
+            return 2 // Pyramid
+        case 2:
+            return 3 // Slant X
+        default:
+            return 4 // Slant Z
+        }
+    }
+
+    private func normalizeHeights(total: Int32, heights: inout [Int32], minHeight: Int32) {
+        for index in heights.indices {
+            if heights[index] < minHeight {
+                heights[index] = minHeight
+            }
+        }
+
+        let sum = heights.reduce(0, +)
+        if sum < total {
+            heights[0] += total - sum
+            return
+        }
+
+        var excess = sum - total
+        for index in heights.indices {
+            let available = heights[index] - minHeight
+            if available <= 0 { continue }
+            let delta = min(available, excess)
+            heights[index] -= delta
+            excess -= delta
+            if excess == 0 { break }
+        }
+    }
+
+    private func shrinkFootprint(_ footprint: SIMD2<Int32>, by amount: Int32, min: Int32) -> SIMD2<Int32> {
+        let x = max(min, footprint.x - amount)
+        let z = max(min, footprint.y - amount)
+        return SIMD2<Int32>(x, z)
+    }
+
+    private func buildingSeed(node: FileNode) -> UInt32 {
+        var hasher = Hasher()
+        hasher.combine(node.name)
+        return UInt32(truncatingIfNeeded: hasher.finalize())
+    }
+
+    private func shapeIDFor(node: FileNode, height: Int, footprint: SIMD2<Int32>, seed: UInt32) -> Int32 {
+        guard node.type == .folder, height > 5, footprint.x < 10 else { return 0 }
+        let rnd = Int(seed % 10)
+        if rnd < 5 {
+            return Int32(rnd) // 0, 1, 2, 3, 4
+        }
+        return 0
     }
 
     private func textureIndexFor(node: FileNode) -> Int32 {

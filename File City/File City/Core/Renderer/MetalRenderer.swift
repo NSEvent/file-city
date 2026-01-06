@@ -139,7 +139,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         self.blocks = blocks
         let instances = blocks.map { block in
             VoxelInstance(
-                position: SIMD3<Float>(block.position.x, Float(block.height) * 0.5, block.position.z),
+                position: SIMD3<Float>(block.position.x, block.position.y + Float(block.height) * 0.5, block.position.z),
                 scale: SIMD3<Float>(Float(block.footprint.x), Float(block.height), Float(block.footprint.y)),
                 materialID: UInt32(block.materialID),
                 highlight: block.nodeID == selectedNodeID ? 1.0 : 0.0,

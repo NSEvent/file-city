@@ -53,6 +53,16 @@ final class RayTracerTests: XCTestCase {
         let hit = tracer.intersect(ray: ray, blocks: [block])
         XCTAssertNil(hit, "Should miss above the block")
     }
+
+    func testIntersectRaisedBlock() {
+        // Block base at y=10, height 10 -> top at y=20.
+        let block = createBlock(position: SIMD3<Float>(0, 10, 0), width: 10, height: 10, shapeID: 0)
+
+        let ray = RayTracer.Ray(origin: SIMD3<Float>(0, 15, 20), direction: SIMD3<Float>(0, 0, -1))
+        let hit = tracer.intersect(ray: ray, blocks: [block])
+
+        XCTAssertNotNil(hit, "Should hit a raised block")
+    }
     
     func testIntersectPyramidTip() {
         // Pyramid block: Height 10.

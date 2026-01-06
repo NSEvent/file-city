@@ -41,6 +41,7 @@ final class RayTracer {
         let halfX = Float(block.footprint.x) * 0.5
         let halfZ = Float(block.footprint.y) * 0.5
         let baseHeight = Float(block.height)
+        let baseY = block.position.y
         
         // Deformation height multiplier
         // Taper/Pyramid (1,2) add 0.5h -> 1.5h
@@ -50,8 +51,8 @@ final class RayTracer {
         // Let's use 2.0x to be safe.
         let heightMult: Float = block.shapeID > 0 ? 2.0 : 1.0
         
-        let minB = SIMD3<Float>(block.position.x - halfX, 0, block.position.z - halfZ)
-        let maxB = SIMD3<Float>(block.position.x + halfX, baseHeight * heightMult, block.position.z + halfZ)
+        let minB = SIMD3<Float>(block.position.x - halfX, baseY, block.position.z - halfZ)
+        let maxB = SIMD3<Float>(block.position.x + halfX, baseY + baseHeight * heightMult, block.position.z + halfZ)
         return (minB, maxB)
     }
 
@@ -75,18 +76,19 @@ final class RayTracer {
         let halfX = Float(block.footprint.x) * 0.5
         let halfZ = Float(block.footprint.y) * 0.5
         let height = Float(block.height)
+        let baseY = block.position.y
         
-        // Base vertices (Y=0)
-        let v0 = SIMD3<Float>(block.position.x - halfX, 0, block.position.z - halfZ) // Back Left
-        let v1 = SIMD3<Float>(block.position.x + halfX, 0, block.position.z - halfZ) // Back Right
-        let v2 = SIMD3<Float>(block.position.x + halfX, 0, block.position.z + halfZ) // Front Right
-        let v3 = SIMD3<Float>(block.position.x - halfX, 0, block.position.z + halfZ) // Front Left
+        // Base vertices (Y=base)
+        let v0 = SIMD3<Float>(block.position.x - halfX, baseY, block.position.z - halfZ) // Back Left
+        let v1 = SIMD3<Float>(block.position.x + halfX, baseY, block.position.z - halfZ) // Back Right
+        let v2 = SIMD3<Float>(block.position.x + halfX, baseY, block.position.z + halfZ) // Front Right
+        let v3 = SIMD3<Float>(block.position.x - halfX, baseY, block.position.z + halfZ) // Front Left
         
         // Top vertices (Y=height, potentially modified)
-        var t0 = SIMD3<Float>(block.position.x - halfX, height, block.position.z - halfZ)
-        var t1 = SIMD3<Float>(block.position.x + halfX, height, block.position.z - halfZ)
-        var t2 = SIMD3<Float>(block.position.x + halfX, height, block.position.z + halfZ)
-        var t3 = SIMD3<Float>(block.position.x - halfX, height, block.position.z + halfZ)
+        var t0 = SIMD3<Float>(block.position.x - halfX, baseY + height, block.position.z - halfZ)
+        var t1 = SIMD3<Float>(block.position.x + halfX, baseY + height, block.position.z - halfZ)
+        var t2 = SIMD3<Float>(block.position.x + halfX, baseY + height, block.position.z + halfZ)
+        var t3 = SIMD3<Float>(block.position.x - halfX, baseY + height, block.position.z + halfZ)
         
         if block.shapeID == 1 { // Taper
             // Top scaled by 0.4, moved up by 0.5h
@@ -113,7 +115,7 @@ final class RayTracer {
             
         } else if block.shapeID == 2 { // Pyramid
             // Collapses to center point, moved up by 0.5h
-            let center = SIMD3<Float>(block.position.x, height * 1.5, block.position.z)
+            let center = SIMD3<Float>(block.position.x, baseY + height * 1.5, block.position.z)
             t0 = center; t1 = center; t2 = center; t3 = center
             
         } else if block.shapeID == 3 { // Slant X
