@@ -22,7 +22,9 @@ final class RayTracerTests: XCTestCase {
             materialID: 0,
             textureIndex: 0,
             shapeID: shapeID,
-            isPinned: false
+            isPinned: false,
+            isGitRepo: false,
+            isGitClean: false
         )
     }
     

@@ -12,4 +12,23 @@ struct CityBlock: Identifiable, Hashable {
     let shapeID: Int32
     let isPinned: Bool
     let isGitRepo: Bool
+    let isGitClean: Bool
+}
+
+extension CityBlock {
+    func withGitClean(_ isGitClean: Bool) -> CityBlock {
+        CityBlock(
+            id: id,
+            nodeID: nodeID,
+            position: position,
+            footprint: footprint,
+            height: height,
+            materialID: materialID,
+            textureIndex: textureIndex,
+            shapeID: shapeID,
+            isPinned: isPinned,
+            isGitRepo: isGitRepo,
+            isGitClean: isGitClean
+        )
+    }
 }

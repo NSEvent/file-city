@@ -16,4 +16,5 @@ struct FileNode: Identifiable, Hashable {
     var children: [FileNode]
     var isHidden: Bool
     var isGitRepo: Bool
+    var isGitClean: Bool
 }

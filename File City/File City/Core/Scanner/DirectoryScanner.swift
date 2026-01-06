@@ -23,7 +23,8 @@ final class DirectoryScanner {
                 modifiedAt: Date(),
                 children: [],
                 isHidden: false,
-                isGitRepo: false
+                isGitRepo: false,
+                isGitClean: false
             )
         }
 
@@ -35,6 +36,7 @@ final class DirectoryScanner {
         var sizeBytes = Int64(values.fileSize ?? 0)
         let isHidden = values.isHidden ?? false
         let isGitRepo = isDirectory && isGitRepoDirectory(url)
+        let isGitClean = false
         let type: FileNode.NodeType = isSymlink ? .symlink : (isDirectory ? .folder : .file)
 
         var children: [FileNode] = []
@@ -59,7 +61,8 @@ final class DirectoryScanner {
             modifiedAt: modifiedAt,
             children: children,
             isHidden: isHidden,
-            isGitRepo: isGitRepo
+            isGitRepo: isGitRepo,
+            isGitClean: isGitClean
         )
     }
 
@@ -67,4 +70,5 @@ final class DirectoryScanner {
         let gitURL = url.appendingPathComponent(".git", isDirectory: false)
         return FileManager.default.fileExists(atPath: gitURL.path)
     }
+
 }

@@ -17,6 +17,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private let carTextureIndex: Int32 = 33
     private let planeTextureIndex: Int32 = 34
     private let gitTowerMaterialID: UInt32 = 8
+    private let gitCleanMaterialID: UInt32 = 6
     private var roadInstanceBuffer: MTLBuffer?
     private var roadInstanceCount: Int = 0
     private var carInstanceBuffer: MTLBuffer?
@@ -73,7 +74,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = library.makeFunction(name: "vertex_main")
-        descriptor.fragmentFunction = library.makeFunction(name: "fragment_main")
+        descriptor.fragmentFunction = library.makeFunction(name: "fragment_main_v2")
         descriptor.colorAttachments[0].pixelFormat = view.colorPixelFormat
         descriptor.depthAttachmentPixelFormat = view.depthStencilPixelFormat
         descriptor.vertexDescriptor = MetalRenderer.vertexDescriptor()
@@ -230,6 +231,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         var instances: [VoxelInstance] = []
         instances.reserveCapacity(topBlocks.count * 4)
         for block in topBlocks.values {
+            let towerMaterialID = block.isGitClean ? gitCleanMaterialID : gitTowerMaterialID
             let footprintX = Float(block.footprint.x)
             let footprintZ = Float(block.footprint.y)
             let baseTopY = block.position.y + Float(block.height)
@@ -279,7 +281,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             instances.append(VoxelInstance(
                 position: SIMD3<Float>(towerBaseX, baseY, towerBaseZ),
                 scale: SIMD3<Float>(towerSize * 0.55, towerSize * 0.2, towerSize * 0.55),
-                materialID: gitTowerMaterialID,
+                materialID: towerMaterialID,
                 textureIndex: -1,
                 shapeID: 5
             ))
@@ -287,7 +289,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             instances.append(VoxelInstance(
                 position: SIMD3<Float>(towerBaseX, mastY, towerBaseZ),
                 scale: SIMD3<Float>(towerSize * 0.18, towerHeight, towerSize * 0.18),
-                materialID: gitTowerMaterialID,
+                materialID: towerMaterialID,
                 textureIndex: -1,
                 shapeID: 5
             ))
@@ -297,7 +299,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             instances.append(VoxelInstance(
                 position: SIMD3<Float>(crossbarX, crossbarY, crossbarZ),
                 scale: SIMD3<Float>(towerSize * 0.55, towerSize * 0.06, towerSize * 0.55),
-                materialID: gitTowerMaterialID,
+                materialID: towerMaterialID,
                 textureIndex: -1,
                 shapeID: 0
             ))
@@ -305,9 +307,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             instances.append(VoxelInstance(
                 position: SIMD3<Float>(crossbarX, beaconY, crossbarZ),
                 scale: SIMD3<Float>(beaconSize, beaconSize, beaconSize),
-                materialID: gitTowerMaterialID,
+                materialID: towerMaterialID,
                 textureIndex: -1,
-                shapeID: 8
+                shapeID: block.isGitClean ? 9 : 8
             ))
 
             let nodeID = block.nodeID

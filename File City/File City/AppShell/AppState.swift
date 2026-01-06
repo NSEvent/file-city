@@ -20,6 +20,8 @@ final class AppState: ObservableObject {
     private let searchIndex = SearchIndex()
     private let pinStore = PinStore()
     private let rescanSubject = PassthroughSubject<Void, Never>()
+    private var gitStatusTask: Task<Void, Never>?
+    private var gitCleanByPath: [String: Bool] = [:]
     private var focusNodeIDByURL: [URL: UUID] = [:]
     private var nodeByID: [UUID: FileNode] = [:]
     private var nodeByURL: [URL: FileNode] = [:]
@@ -84,6 +86,8 @@ final class AppState: ObservableObject {
                 nodeByID = buildNodeIDMap(root: result.root)
                 nodeByURL = buildNodeURLMap(root: result.root)
                 selectedFocusNodeID = selectedURL.flatMap { focusNodeIDByURL[$0] }
+                applyCachedGitStatuses()
+                refreshGitStatuses()
             } catch {
                 nodeCount = 0
                 blocks = []
@@ -121,6 +125,8 @@ final class AppState: ObservableObject {
                 nodeByID = buildNodeIDMap(root: result.root)
                 nodeByURL = buildNodeURLMap(root: result.root)
                 selectedFocusNodeID = selectedURL.flatMap { focusNodeIDByURL[$0] }
+                applyCachedGitStatuses()
+                refreshGitStatuses()
             }
         }
     }
@@ -254,6 +260,63 @@ final class AppState: ObservableObject {
         let error = String(data: errorData, encoding: .utf8) ?? ""
         guard process.terminationStatus == 0 else { return ("", error) }
         return (output, error)
+    }
+
+    private func refreshGitStatuses() {
+        gitStatusTask?.cancel()
+        let nodes = nodeByID
+        let rootPath = rootURL?.path
+        gitStatusTask = Task.detached(priority: .utility) {
+            var results: [UUID: Bool] = [:]
+            results.reserveCapacity(nodes.count)
+            for node in nodes.values where node.isGitRepo {
+                if Task.isCancelled { return }
+                results[node.id] = AppState.isGitRepoClean(url: node.url)
+            }
+            await MainActor.run {
+                guard rootPath == self.rootURL?.path else { return }
+                for (nodeID, isClean) in results {
+                    if let url = self.nodeByID[nodeID]?.url {
+                        self.gitCleanByPath[url.path] = isClean
+                    }
+                }
+                self.blocks = self.blocks.map { block in
+                    guard let clean = results[block.nodeID] else { return block }
+                    return block.withGitClean(clean)
+                }
+            }
+        }
+    }
+
+    private func applyCachedGitStatuses() {
+        guard !gitCleanByPath.isEmpty else { return }
+        blocks = blocks.map { block in
+            guard let url = nodeByID[block.nodeID]?.url,
+                  let clean = gitCleanByPath[url.path] else {
+                return block
+            }
+            return block.withGitClean(clean)
+        }
+    }
+
+    nonisolated private static func isGitRepoClean(url: URL) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", url.path, "status", "--porcelain=1", "-b"]
+        let outputPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = Pipe()
+        do {
+            try process.run()
+        } catch {
+            return false
+        }
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { return false }
+        let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(data: data, encoding: .utf8) ?? ""
+        let lines = output.split(separator: "\n")
+        return lines.count <= 1
     }
 
 

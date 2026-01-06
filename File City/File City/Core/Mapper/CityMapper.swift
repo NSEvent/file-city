@@ -55,6 +55,7 @@ final class CityMapper {
                     textureIndex: textureIndex,
                     pinned: pinned,
                     isGitRepo: node.isGitRepo,
+                    isGitClean: node.isGitClean,
                     seed: seed
                 )
                 blocks.append(contentsOf: towerBlocks)
@@ -67,7 +68,8 @@ final class CityMapper {
                     materialID: Int32(materialID),
                     textureIndex: textureIndex,
                     pinned: pinned,
-                    isGitRepo: node.isGitRepo
+                    isGitRepo: node.isGitRepo,
+                    isGitClean: node.isGitClean
                 )
                 blocks.append(contentsOf: bulbousBlocks)
             } else {
@@ -81,7 +83,8 @@ final class CityMapper {
                     textureIndex: textureIndex,
                     shapeID: shapeIDFor(style: style),
                     isPinned: pinned,
-                    isGitRepo: node.isGitRepo
+                    isGitRepo: node.isGitRepo,
+                    isGitClean: node.isGitClean
                 )
                 blocks.append(block)
             }
@@ -125,6 +128,7 @@ final class CityMapper {
         textureIndex: Int32,
         pinned: Bool,
         isGitRepo: Bool,
+        isGitClean: Bool,
         seed: UInt32
     ) -> [CityBlock] {
         let tierCount = tierCountFor(height: height, seed: seed)
@@ -223,7 +227,8 @@ final class CityMapper {
                 textureIndex: textureIndex,
                 shapeID: shapeID,
                 isPinned: pinned,
-                isGitRepo: isGitRepo
+                isGitRepo: isGitRepo,
+                isGitClean: isGitClean
             )
             blocks.append(block)
             currentY += Float(segmentHeight)
@@ -240,7 +245,8 @@ final class CityMapper {
         materialID: Int32,
         textureIndex: Int32,
         pinned: Bool,
-        isGitRepo: Bool
+        isGitRepo: Bool,
+        isGitClean: Bool
     ) -> [CityBlock] {
         var heights: [Int32] = [
             max(4, Int32(Float(height) * 0.3)),
@@ -269,7 +275,8 @@ final class CityMapper {
                 textureIndex: textureIndex,
                 shapeID: 5,
                 isPinned: pinned,
-                isGitRepo: isGitRepo
+                isGitRepo: isGitRepo,
+                isGitClean: isGitClean
             )
             blocks.append(block)
             currentY += Float(segmentHeight)
