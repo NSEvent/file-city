@@ -216,56 +216,17 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         )
         let rayOrigin = nearPosition
         let rayDirection = simd_normalize(farPosition - nearPosition)
-        var bestBlock: CityBlock?
-        var bestDistance: Float = .greatestFiniteMagnitude
-
-        for block in blocks {
-            let halfSizeX = 0.5 * Float(block.footprint.x)
-            let halfSizeZ = 0.5 * Float(block.footprint.y)
-            let minBounds = SIMD3<Float>(
-                block.position.x - halfSizeX,
-                0,
-                block.position.z - halfSizeZ
-            )
-            
-            // Adjust AABB height for deformed shapes
-            var boundsHeight = Float(block.height)
-            if block.shapeID > 0 {
-                // Taper/Pyramid add 0.5 to local.y (which is 1.0h range). 
-                // Top becomes 1.5h. Slant might be more. 
-                // Let's use 1.75x to be safe for all deformations.
-                boundsHeight *= 1.75
-            }
-            
-            let maxBounds = SIMD3<Float>(
-                block.position.x + halfSizeX,
-                boundsHeight,
-                block.position.z + halfSizeZ
-            )
-            
-            // First check AABB
-            guard let distance = rayIntersectAABB(origin: rayOrigin, direction: rayDirection, minBounds: minBounds, maxBounds: maxBounds),
-                  distance < bestDistance else {
-                continue
-            }
-            
-            // If shape is non-standard, perform stricter check
-            // SIMPLIFIED: For now, trust the AABB for Taper (1) and Pyramid (2) to ensure hittability.
-            // The previous logic checked the AABB entry point, which is incorrect for a ray passing through to the center.
-            // A proper fix would require ray-cone/pyramid intersection.
-            // For UI feel, slightly larger hit area is better than unhittable tips.
-            
-            /*
-            if block.shapeID > 0 {
-                // ... (Removed strict check that was causing false negatives)
-            }
-            */
-
-            bestDistance = distance
-            bestBlock = block
+        
+        // Delegate to RayTracer
+        let ray = RayTracer.Ray(origin: rayOrigin, direction: rayDirection)
+        let tracer = RayTracer()
+        if let hit = tracer.intersect(ray: ray, blocks: blocks) {
+            // Find block by ID (this could be optimized if hit returned the block directly, 
+            // but we need to match the signature or keep RayTracer generic)
+            return blocks.first { $0.nodeID == hit.blockID }
         }
-
-        return bestBlock
+        
+        return nil
     }
 
     private func rayIntersectAABB(origin: SIMD3<Float>, direction: SIMD3<Float>, minBounds: SIMD3<Float>, maxBounds: SIMD3<Float>) -> Float? {
@@ -280,6 +241,34 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         let tMax = min(min(max(t1.x, t2.x), max(t1.y, t2.y)), max(t1.z, t2.z))
         if tMax < 0 || tMin > tMax { return nil }
         return tMin >= 0 ? tMin : tMax
+    }
+    
+    private func rayIntersectTriangle(origin: SIMD3<Float>, direction: SIMD3<Float>, v0: SIMD3<Float>, v1: SIMD3<Float>, v2: SIMD3<Float>) -> Float? {
+        let epsilon: Float = 0.0000001
+        let edge1 = v1 - v0
+        let edge2 = v2 - v0
+        let h = simd_cross(direction, edge2)
+        let a = simd_dot(edge1, h)
+        
+        if a > -epsilon && a < epsilon { return nil }
+        
+        let f = 1.0 / a
+        let s = origin - v0
+        let u = f * simd_dot(s, h)
+        
+        if u < 0.0 || u > 1.0 { return nil }
+        
+        let q = simd_cross(s, edge1)
+        let v = f * simd_dot(direction, q)
+        
+        if v < 0.0 || u + v > 1.0 { return nil }
+        
+        let t = f * simd_dot(edge2, q)
+        
+        if t > epsilon {
+            return t
+        }
+        return nil
     }
 
     private static func vertexDescriptor() -> MTLVertexDescriptor {
