@@ -183,45 +183,53 @@ final class AppState: ObservableObject {
         guard isDirectory(url) else {
             return [title, "Not a folder"]
         }
-        let output = runGitStatus(at: url)
-        guard !output.isEmpty else {
-            return [title, "Git status unavailable"]
+        let result = runGitStatus(at: url)
+        guard !result.output.isEmpty else {
+            if result.error.isEmpty {
+                return [title, "Git status unavailable"]
+            }
+            return [title, "Git status error", result.error]
         }
-        let lines = output
+        let lines = result.output
             .split(separator: "\n")
             .map { String($0) }
         guard let first = lines.first else {
             return [title, "Git status unavailable"]
         }
-        var result: [String] = [title]
+        var linesResult: [String] = [title]
         let branchLine = first.hasPrefix("## ") ? String(first.dropFirst(3)) : first
-        result.append(branchLine.isEmpty ? "Unknown branch" : branchLine)
+        linesResult.append(branchLine.isEmpty ? "Unknown branch" : branchLine)
         let changes = lines.dropFirst()
         if changes.isEmpty {
-            result.append("Clean")
+            linesResult.append("Clean")
         } else {
-            result.append(contentsOf: changes.prefix(5))
+            linesResult.append(contentsOf: changes.prefix(5))
         }
-        return result
+        return linesResult
     }
 
-    private func runGitStatus(at url: URL) -> String {
+    private func runGitStatus(at url: URL) -> (output: String, error: String) {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["git", "-C", url.path, "status", "--porcelain=1", "-b"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", url.path, "status", "--porcelain=1", "-b"]
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
         do {
             try process.run()
         } catch {
-            return ""
+            return ("", error.localizedDescription)
         }
         process.waitUntilExit()
-        guard process.terminationStatus == 0 else { return "" }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8) ?? ""
+        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(data: outputData, encoding: .utf8) ?? ""
+        let error = String(data: errorData, encoding: .utf8) ?? ""
+        guard process.terminationStatus == 0 else { return ("", error) }
+        return (output, error)
     }
+
 
     func actionContainerURL() -> URL? {
         guard let rootURL else { return nil }
