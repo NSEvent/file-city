@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import simd
 
 final class CityMapper {
@@ -13,7 +14,7 @@ final class CityMapper {
     }
 
     func map(root: FileNode, rules: LayoutRules, pinStore: PinStore) -> [CityBlock] {
-        let nodes = root.children
+        let nodes = root.children.sorted { $0.url.path < $1.url.path }
         let gridSize = Int(ceil(sqrt(Double(nodes.count))))
         let spacing = Float(rules.maxBlockSize + rules.roadWidth)
         var blocks: [CityBlock] = []
@@ -317,9 +318,7 @@ final class CityMapper {
     }
 
     private func buildingSeed(node: FileNode) -> UInt32 {
-        var hasher = Hasher()
-        hasher.combine(node.name)
-        return UInt32(truncatingIfNeeded: hasher.finalize())
+        return UInt32(truncatingIfNeeded: deterministicHash(node.url.path))
     }
 
     private func shapeIDFor(style: BuildingStyle) -> Int32 {
@@ -377,9 +376,7 @@ final class CityMapper {
         
         // Hash the name to pick a consistent texture from the remaining palette
         // We reserved 0-21 for semantics, use 22-31 for random styles
-        var hasher = Hasher()
-        hasher.combine(node.name)
-        let hash = abs(hasher.finalize())
+        let hash = abs(deterministicHash(node.name))
         return Int32(22 + (hash % 10))
     }
 
@@ -397,18 +394,22 @@ final class CityMapper {
     }
 
     private func materialFor(node: FileNode) -> Int {
-        var hasher = Hasher()
         switch node.type {
         case .folder:
-            hasher.combine(node.name.lowercased())
-            return abs(hasher.finalize() % 4)
+            return Int(abs(deterministicHash(node.url.path.lowercased())) % 4)
         case .symlink:
-            hasher.combine(node.name.lowercased())
             return 11
         case .file:
-            hasher.combine(node.url.pathExtension.lowercased())
-            let index = abs(hasher.finalize() % 8)
+            let index = Int(abs(deterministicHash(node.url.pathExtension.lowercased())) % 8)
             return 4 + index
+        }
+    }
+
+    private func deterministicHash(_ value: String) -> Int64 {
+        let data = value.data(using: .utf8) ?? Data()
+        let digest = SHA256.hash(data: data)
+        return digest.withUnsafeBytes { ptr in
+            ptr.load(as: Int64.self)
         }
     }
 }
