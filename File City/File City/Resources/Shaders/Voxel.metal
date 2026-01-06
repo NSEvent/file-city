@@ -50,6 +50,19 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
             local.x *= scale;
             local.z *= scale;
         }
+    } else if (instance.shapeID == 6) {
+        float wingBand = 0.35;
+        float wingScale = 3.6;
+        float bodyScaleZ = 0.25;
+        float bodyScaleX = 0.7;
+        if (abs(local.y) < wingBand) {
+            // Wings extend perpendicular to body (Z axis)
+            local.x *= 0.5;
+            local.z *= wingScale;
+        } else {
+            local.x *= bodyScaleX;
+            local.z *= bodyScaleZ;
+        }
     } else if (instance.shapeID > 0 && local.y > 0.0) {
         if (instance.shapeID == 1) {
             // Tapered Spire

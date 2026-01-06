@@ -15,8 +15,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private var instanceCount: Int = 0
     private let roadTextureIndex: Int32 = 32
     private let carTextureIndex: Int32 = 33
-    private let sunTextureIndex: Int32 = 34
-    private let planeTextureIndex: Int32 = 35
+    private let planeTextureIndex: Int32 = 34
     private var roadInstanceBuffer: MTLBuffer?
     private var roadInstanceCount: Int = 0
     private var carInstanceBuffer: MTLBuffer?
@@ -25,8 +24,6 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private var planeInstanceBuffer: MTLBuffer?
     private var planeInstanceCount: Int = 0
     private var planePaths: [CarPath] = []
-    private var sunInstanceBuffer: MTLBuffer?
-    private var sunInstanceCount: Int = 0
     private var blocks: [CityBlock] = []
     let camera = Camera()
 
@@ -103,7 +100,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
     private func loadTextures() {
         var sourceTextures: [MTLTexture] = []
-        let textureCount = 36
+        let textureCount = 35
         
         // Semantic names we want to ensure are in the palette
         let semanticNames = [
@@ -122,8 +119,6 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 seed = "road-asphalt"
             } else if i == Int(carTextureIndex) {
                 seed = "car-paint"
-            } else if i == Int(sunTextureIndex) {
-                seed = "sun-sky"
             } else if i == Int(planeTextureIndex) {
                 seed = "plane-body"
             } else {
@@ -236,10 +231,6 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 36, instanceCount: planeInstanceCount)
         }
 
-        if let sunInstanceBuffer, sunInstanceCount > 0 {
-            encoder?.setVertexBuffer(sunInstanceBuffer, offset: 0, index: 1)
-            encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 36, instanceCount: sunInstanceCount)
-        }
         encoder?.endEncoding()
         commandBuffer.present(drawable)
         commandBuffer.commit()
@@ -254,8 +245,6 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         planeInstanceBuffer = nil
         planeInstanceCount = 0
         planePaths.removeAll()
-        sunInstanceBuffer = nil
-        sunInstanceCount = 0
 
         guard blocks.count > 3 else { return }
 
@@ -309,7 +298,6 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         buildCarPaths(xs: xs, zs: zs, stepX: stepX, stepZ: stepZ, spanX: spanX, spanZ: spanZ, roadWidth: roadWidth)
         let maxY = maxHeight(blocks: blocks)
         buildPlanePaths(minX: xs.first ?? 0, maxX: xs.last ?? 0, minZ: zs.first ?? 0, maxZ: zs.last ?? 0, maxHeight: maxY)
-        buildSunInstance(centerX: centerX, centerZ: centerZ, spanX: spanX, spanZ: spanZ, maxHeight: maxY)
     }
 
     private func maxHeight(blocks: [CityBlock]) -> Float {
@@ -375,30 +363,14 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             let offsetZ = minZ + randomUnit(seed: seed ^ 0xCAFE) * max(10.0, spanZ)
             let start = SIMD3<Float>(minX - 20, altitude + Float(index % 3) * 4.0, offsetZ)
             let end = SIMD3<Float>(maxX + 20, altitude + Float(index % 3) * 4.0, offsetZ)
-            let scale = SIMD3<Float>(6.0, 1.6, 2.5)
+            let scale = SIMD3<Float>(6.0, 0.6, 2.5)
             planePaths.append(CarPath(start: start, end: end, speed: speed, phase: phase, scale: scale))
         }
 
-        planeInstanceCount = planePaths.count
+        planeInstanceCount = planePaths.count * 2
         if planeInstanceCount > 0 {
             planeInstanceBuffer = device.makeBuffer(length: MemoryLayout<VoxelInstance>.stride * planeInstanceCount, options: [])
         }
-    }
-
-    private func buildSunInstance(centerX: Float, centerZ: Float, spanX: Float, spanZ: Float, maxHeight: Float) {
-        let sunY = maxHeight + 50
-        let offsetX = spanX * 0.35
-        let offsetZ = spanZ * -0.35
-        let sunScale = max(18.0, min(spanX, spanZ) * 0.18)
-        let instance = VoxelInstance(
-            position: SIMD3<Float>(centerX + offsetX, sunY, centerZ + offsetZ),
-            scale: SIMD3<Float>(sunScale, sunScale, sunScale),
-            materialID: 0,
-            textureIndex: sunTextureIndex,
-            shapeID: 0
-        )
-        sunInstanceCount = 1
-        sunInstanceBuffer = device.makeBuffer(bytes: [instance], length: MemoryLayout<VoxelInstance>.stride, options: [])
     }
 
     private func updateCarInstances() {
@@ -421,13 +393,21 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private func updatePlaneInstances() {
         guard let planeInstanceBuffer, !planePaths.isEmpty else { return }
         let now = CACurrentMediaTime()
-        let pointer = planeInstanceBuffer.contents().bindMemory(to: VoxelInstance.self, capacity: planePaths.count)
+        let pointer = planeInstanceBuffer.contents().bindMemory(to: VoxelInstance.self, capacity: planeInstanceCount)
         for (index, path) in planePaths.enumerated() {
             let t = fmod(Float(now) * path.speed + path.phase, 1.0)
             let position = path.start + (path.end - path.start) * t
-            pointer[index] = VoxelInstance(
+            let baseIndex = index * 2
+            pointer[baseIndex] = VoxelInstance(
                 position: position,
                 scale: path.scale,
+                materialID: 0,
+                textureIndex: planeTextureIndex,
+                shapeID: 6
+            )
+            pointer[baseIndex + 1] = VoxelInstance(
+                position: SIMD3<Float>(position.x, position.y + 0.1, position.z),
+                scale: SIMD3<Float>(1.4, 0.08, 6.3),
                 materialID: 0,
                 textureIndex: planeTextureIndex,
                 shapeID: 0
