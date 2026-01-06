@@ -278,7 +278,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         for zIndex in 0..<(zs.count - 1) {
             let roadZ = zs[zIndex] + stepZ * 0.5
             let instance = VoxelInstance(
-                position: SIMD3<Float>(centerX, 0.5, roadZ),
+                position: SIMD3<Float>(centerX, -0.6, roadZ),
                 scale: SIMD3<Float>(spanX, 1.0, Float(roadWidth)),
                 materialID: 0,
                 textureIndex: roadTextureIndex,
@@ -290,7 +290,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         for xIndex in 0..<(xs.count - 1) {
             let roadX = xs[xIndex] + stepX * 0.5
             let instance = VoxelInstance(
-                position: SIMD3<Float>(roadX, 0.5, centerZ),
+                position: SIMD3<Float>(roadX, -0.6, centerZ),
                 scale: SIMD3<Float>(Float(roadWidth), 1.0, spanZ),
                 materialID: 0,
                 textureIndex: roadTextureIndex,
@@ -330,8 +330,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 let speed = (2.0 + randomUnit(seed: seed) * 3.0) / distance
                 let phase = randomUnit(seed: seed ^ 0xCAFE)
                 let forward = (index % 2 == 0)
-                let start = SIMD3<Float>(forward ? minX - 2.0 : maxX + 2.0, 0.6, roadZ + laneOffset)
-                let end = SIMD3<Float>(forward ? maxX + 2.0 : minX - 2.0, 0.6, roadZ + laneOffset)
+                let start = SIMD3<Float>(forward ? minX - 2.0 : maxX + 2.0, 0.5, roadZ + laneOffset)
+                let end = SIMD3<Float>(forward ? maxX + 2.0 : minX - 2.0, 0.5, roadZ + laneOffset)
                 let scale = SIMD3<Float>(3.2, 1.2, 1.6)
                 carPaths.append(CarPath(start: start, end: end, speed: speed, phase: phase, scale: scale))
             }
@@ -346,8 +346,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 let speed = (2.0 + randomUnit(seed: seed) * 3.0) / distance
                 let phase = randomUnit(seed: seed ^ 0xBEEF)
                 let forward = (index % 2 == 0)
-                let start = SIMD3<Float>(roadX - laneOffset, 0.6, forward ? minZ - 2.0 : maxZ + 2.0)
-                let end = SIMD3<Float>(roadX - laneOffset, 0.6, forward ? maxZ + 2.0 : minZ - 2.0)
+                let start = SIMD3<Float>(roadX - laneOffset, 0.5, forward ? minZ - 2.0 : maxZ + 2.0)
+                let end = SIMD3<Float>(roadX - laneOffset, 0.5, forward ? maxZ + 2.0 : minZ - 2.0)
                 let scale = SIMD3<Float>(1.6, 1.2, 3.2)
                 carPaths.append(CarPath(start: start, end: end, speed: speed, phase: phase, scale: scale))
             }
