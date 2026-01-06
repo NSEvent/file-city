@@ -32,6 +32,7 @@ struct VertexOut {
     float3 scale [[flat]];
     int textureIndex [[flat]];
     uint materialID [[flat]];
+    int shapeID [[flat]];
     float highlight;
     float hover;
 };
@@ -65,6 +66,12 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
             local.x *= bodyScaleX;
             local.z *= bodyScaleZ;
         }
+    } else if (instance.shapeID == 7) {
+        float t = saturate((local.x + 0.5));
+        float shrink = 1.0 - t;
+        local.y *= (0.3 + 0.7 * shrink);
+        local.z *= (0.3 + 0.7 * shrink);
+        local.x *= 1.2;
     } else if (instance.shapeID > 0 && local.y > 0.0) {
         if (instance.shapeID == 1) {
             // Tapered Spire
@@ -112,6 +119,7 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
     out.scale = instance.scale;
     out.textureIndex = instance.textureIndex;
     out.materialID = instance.materialID;
+    out.shapeID = instance.shapeID;
     out.highlight = instance.highlight;
     out.hover = instance.hover;
     return out;
@@ -137,6 +145,12 @@ fragment float4 fragment_main(VertexOut in [[stage_in]],
     };
     
     float3 baseColor = palette[in.materialID % 12];
+
+    if (in.shapeID == 7) {
+        float flicker = 0.75 + 0.25 * sin((in.uv.x + in.uv.y) * 28.0);
+        float heat = saturate(in.hover);
+        baseColor = float3(1.0, 0.45, 0.1) * (0.6 + 0.4 * flicker) * (0.6 + 0.8 * heat);
+    }
     
     // Sample texture if index is valid (>= 0)
     if (in.textureIndex >= 0) {

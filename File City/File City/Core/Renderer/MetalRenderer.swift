@@ -447,7 +447,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
         }
 
-        planeInstanceCount = planePaths.count * 4
+        planeInstanceCount = planePaths.count * 6
         if planeInstanceCount > 0 {
             planeInstanceBuffer = device.makeBuffer(length: MemoryLayout<VoxelInstance>.stride * planeInstanceCount, options: [])
         }
@@ -494,7 +494,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             let right = simd_normalize(SIMD3<Float>(-direction.z, 0, direction.x))
             let rotationY = atan2(direction.z, direction.x)
             let glow = isHovered ? (0.6 + 0.4 * sin(Float(now) * 18.0)) : 0.0
-            let baseIndex = index * 4
+            let baseIndex = index * 6
             pointer[baseIndex] = VoxelInstance(
                 position: position,
                 _pad0: 0,
@@ -548,6 +548,34 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 hover: glow,
                 textureIndex: planeTextureIndex,
                 shapeID: 0
+            )
+            let flameScale = isHovered ? SIMD3<Float>(0.9, 0.25, 0.25) : SIMD3<Float>(0, 0, 0)
+            let flameBack = thrusterBack + path.scale.x * 0.18
+            pointer[baseIndex + 4] = VoxelInstance(
+                position: position - direction * flameBack + right * thrusterOffset - SIMD3<Float>(0, 0.1, 0),
+                _pad0: 0,
+                scale: flameScale,
+                _pad1: 0,
+                rotationY: rotationY,
+                _pad2: 0,
+                materialID: 0,
+                highlight: 0,
+                hover: glow,
+                textureIndex: -1,
+                shapeID: 7
+            )
+            pointer[baseIndex + 5] = VoxelInstance(
+                position: position - direction * flameBack - right * thrusterOffset - SIMD3<Float>(0, 0.1, 0),
+                _pad0: 0,
+                scale: flameScale,
+                _pad1: 0,
+                rotationY: rotationY,
+                _pad2: 0,
+                materialID: 0,
+                highlight: 0,
+                hover: glow,
+                textureIndex: -1,
+                shapeID: 7
             )
         }
     }
