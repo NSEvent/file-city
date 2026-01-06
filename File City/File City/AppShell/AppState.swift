@@ -47,10 +47,13 @@ final class AppState: ObservableObject {
             }
             .store(in: &cancellables)
 
-        if let defaultRoot = defaultRootURL() {
-            rootURL = defaultRoot
-            scanRoot()
-            startWatchingRoot()
+        // Skip automatic setup if running tests to prevent hangs
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+            if let defaultRoot = defaultRootURL() {
+                rootURL = defaultRoot
+                scanRoot()
+                startWatchingRoot()
+            }
         }
     }
 

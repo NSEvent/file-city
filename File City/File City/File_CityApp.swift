@@ -7,7 +7,6 @@
 
 import SwiftUI
 
-@main
 struct File_CityApp: App {
     @StateObject private var appState = AppState()
 
