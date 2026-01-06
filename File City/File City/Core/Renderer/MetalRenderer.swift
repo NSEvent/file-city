@@ -175,10 +175,13 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     func updateInstances(blocks: [CityBlock], selectedNodeID: UUID?, hoveredNodeID: UUID?) {
         let blocksChanged = blocks != self.blocks
         self.blocks = blocks
-        var instances = blocks.map { block in
-            VoxelInstance(
+        let cameraYaw = camera.yaw
+        var instances: [VoxelInstance] = blocks.map { block in
+            let rotationY = rotationYForWedge(block: block, cameraYaw: cameraYaw)
+            return VoxelInstance(
                 position: SIMD3<Float>(block.position.x, block.position.y + Float(block.height) * 0.5, block.position.z),
                 scale: SIMD3<Float>(Float(block.footprint.x), Float(block.height), Float(block.footprint.y)),
+                rotationY: rotationY,
                 materialID: UInt32(block.materialID),
                 highlight: block.nodeID == selectedNodeID ? 1.0 : 0.0,
                 hover: block.nodeID == hoveredNodeID ? 1.0 : 0.0,
@@ -200,6 +203,16 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             rebuildRoadsAndCars(blocks: blocks)
         }
         instanceBuffer = device.makeBuffer(bytes: instances, length: MemoryLayout<VoxelInstance>.stride * instances.count, options: [])
+    }
+
+    private func rotationYForWedge(block: CityBlock, cameraYaw: Float) -> Float {
+        guard block.shapeID == 3 || block.shapeID == 4 else { return 0 }
+        let cameraX = sin(cameraYaw)
+        let cameraZ = cos(cameraYaw)
+        if block.shapeID == 3 {
+            return cameraX >= 0 ? .pi : 0
+        }
+        return cameraZ >= 0 ? .pi : 0
     }
 
     private func buildGitTowerInstances(blocks: [CityBlock]) -> [VoxelInstance] {
@@ -229,21 +242,33 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             let baseX = block.position.x
             let baseZ = block.position.z
             let towerSize: Float = max(1.2, min(2.6, min(footprintX, footprintZ) * 0.35))
-            let towerHeight: Float = max(2.0, towerSize * 2.2)
+            var towerHeight: Float = max(2.0, towerSize * 2.2)
             let basePad: Float = 0.15
-            let baseY = roofY + basePad
-            let mastY = baseY + towerHeight * 0.5
-            let crossbarY = baseY + towerHeight * 0.8
+            var baseY = roofY + basePad
             let beaconSize = towerSize * 0.16
-            var beaconY = baseY + towerHeight + beaconSize * 0.5
             var beaconOffsetX: Float = 0
             var beaconOffsetZ: Float = 0
+            let rotationY = rotationYForWedge(block: block, cameraYaw: camera.yaw)
+            if block.shapeID == 3 {
+                beaconOffsetX = footprintX * 0.45
+            } else if block.shapeID == 4 {
+                beaconOffsetZ = footprintZ * 0.45
+            }
+            if block.shapeID == 3 || block.shapeID == 4 {
+                let c = cos(rotationY)
+                let s = sin(rotationY)
+                let rotatedX = beaconOffsetX * c - beaconOffsetZ * s
+                let rotatedZ = beaconOffsetX * s + beaconOffsetZ * c
+                beaconOffsetX = rotatedX
+                beaconOffsetZ = rotatedZ
+                towerHeight *= 1.25
+                baseY += towerSize * 0.25
+            }
+            let mastY = baseY + towerHeight * 0.5
+            let crossbarY = baseY + towerHeight * 0.8
+            var beaconY = baseY + towerHeight + beaconSize * 0.5
             if block.shapeID == 2 {
                 beaconY = min(beaconY, baseTopY + towerSize * 0.45)
-            } else if block.shapeID == 3 {
-                beaconOffsetX = footprintX * 0.25
-            } else if block.shapeID == 4 {
-                beaconOffsetZ = footprintZ * 0.25
             }
             let towerBaseX = baseX + beaconOffsetX
             let towerBaseZ = baseZ + beaconOffsetZ
