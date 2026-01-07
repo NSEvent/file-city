@@ -344,19 +344,24 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
             // pad0 is offset, pad1 is width
             // in.uv.x is 0..1 per segment.
             
-            // Detect face orientation to fix text mirroring on back face
-            // Analysis suggests both faces map R->L (mirrored) by default due to quad vertex order.
-            // Attempt 2 (Front 1-x, Back x) -> One side reversed (Back).
-            // Attempt 3 (Front x, Back 1-x) -> Both reversed (Front mirrored, Back... maybe user confused or I am).
-            // Logic dictates if Back(x) is mirrored, Back(1-x) should be correct.
-            // And Front(1-x) was correct in Attempt 2.
-            // So try 1-x for BOTH.
-            float segmentU = 1.0 - in.uv.x;
+            // Detect face orientation to fix text mirroring and word order
+            bool isFrontFace = (in.localNormal.z > 0.0);
+            
+            float segmentU;
+            float globalU;
             
             float uOffset = in.highlight;
             float uWidth = in.activity;
-            
-            float globalU = uOffset + segmentU * uWidth;
+
+            if (isFrontFace) {
+                // Front Face: Standard L->R reading
+                segmentU = 1.0 - in.uv.x;
+                globalU = uOffset + segmentU * uWidth;
+            } else {
+                // Back Face: Invert word order and letter mapping
+                segmentU = in.uv.x;
+                globalU = 1.0 - (uOffset + segmentU * uWidth);
+            }
             
             float2 finalUV = float2(globalU, in.uv.y);
             
