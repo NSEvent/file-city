@@ -1240,21 +1240,23 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             }
         }
 
-        guard !labelTextures.isEmpty, let first = labelTextures.first else { return }
+        guard !labelTextures.isEmpty, let first = labelTextures.first,
+              first.width > 0, first.height > 0 else { return }
 
-        // Generate Banner Texture
+        // Metal texture arrays have a max arrayLength of 2048
+        // Reserve 1 slot for banner, so limit labels to 2047
+        let maxLabels = 2047
+        if labelTextures.count > maxLabels {
+            labelTextures = Array(labelTextures.prefix(maxLabels))
+            // Also trim the mapping dictionary to match
+            let validNodeIDs = Set(signLabelIndexByNodeID.filter { $0.value < maxLabels }.keys)
+            signLabelIndexByNodeID = signLabelIndexByNodeID.filter { validNodeIDs.contains($0.key) }
+        }
+
+        // Generate Banner Texture (must match sign label dimensions for texture array)
         if !bannerText.isEmpty {
-            if let bannerTex = TextureGenerator.generateBanner(device: device, text: bannerText) {
-                // Ensure dimensions match for texture array (256x64 vs 512x64)
-                // TextureGenerator.generateSignLabel makes 256x64.
-                // TextureGenerator.generateBanner makes 512x64.
-                // Metal texture arrays must have same dimensions.
-                // We must standardise. Let's make sign labels 512 wide too? Or make banner 256 wide?
-                // Banner text is directory name, can be long. 512 is better.
-                // Let's check generateSignLabel. It uses 256.
-                // I should update generateSignLabel to 512 width to match banner, or allow mixed sizes (not possible in texture array).
-                // Let's update generateSignLabel to 512 in TextureGenerator.swift separately.
-                // Assuming they match now:
+            if let bannerTex = TextureGenerator.generateBanner(device: device, text: bannerText),
+               bannerTex.width == first.width, bannerTex.height == first.height {
                 bannerTextureIndex = labelTextures.count
                 labelTextures.append(bannerTex)
             } else {
@@ -1265,11 +1267,23 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
 
         // Create texture array for sign labels
+        // Validate all textures have matching dimensions before creating array
+        let expectedWidth = first.width
+        let expectedHeight = first.height
+        for (i, tex) in labelTextures.enumerated() {
+            if tex.width != expectedWidth || tex.height != expectedHeight {
+                NSLog("[MetalRenderer] Texture \(i) has mismatched dimensions: \(tex.width)x\(tex.height) vs expected \(expectedWidth)x\(expectedHeight)")
+                return
+            }
+        }
+
+        guard labelTextures.count > 0, expectedWidth > 0, expectedHeight > 0 else { return }
+
         let descriptor = MTLTextureDescriptor()
         descriptor.textureType = .type2DArray
         descriptor.pixelFormat = first.pixelFormat
-        descriptor.width = first.width
-        descriptor.height = first.height
+        descriptor.width = expectedWidth
+        descriptor.height = expectedHeight
         descriptor.arrayLength = labelTextures.count
         descriptor.usage = .shaderRead
 
