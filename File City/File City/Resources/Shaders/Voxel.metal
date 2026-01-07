@@ -13,6 +13,8 @@ struct InstanceData {
     float3 scale;
     float pad1;
     float rotationY;
+    float rotationX;
+    float rotationZ;
     float pad2;
     uint materialID;
     float highlight;
@@ -80,7 +82,7 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
         local.x *= 1.2;
     } else if (instance.shapeID > 0 && local.y > 0.0) {
         if (instance.shapeID == 1) {
-            // Tapered Spire
+            // tapered Spire
             local.x *= 0.4;
             local.z *= 0.4;
             local.y += 0.5;
@@ -99,27 +101,55 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
     }
 
     float3 scaled = local * instance.scale;
+    float3 normal = in.normal;
+
+    // Apply rotations: Z, then X, then Y
+    if (instance.rotationZ != 0.0) {
+        float c = cos(instance.rotationZ);
+        float s = sin(instance.rotationZ);
+        
+        float x = scaled.x * c - scaled.y * s;
+        float y = scaled.x * s + scaled.y * c;
+        scaled.x = x;
+        scaled.y = y;
+        
+        float nx = normal.x * c - normal.y * s;
+        float ny = normal.x * s + normal.y * c;
+        normal.x = nx;
+        normal.y = ny;
+    }
+    if (instance.rotationX != 0.0) {
+        float c = cos(instance.rotationX);
+        float s = sin(instance.rotationX);
+        
+        float y = scaled.y * c - scaled.z * s;
+        float z = scaled.y * s + scaled.z * c;
+        scaled.y = y;
+        scaled.z = z;
+        
+        float ny = normal.y * c - normal.z * s;
+        float nz = normal.y * s + normal.z * c;
+        normal.y = ny;
+        normal.z = nz;
+    }
     if (instance.rotationY != 0.0) {
         float c = cos(instance.rotationY);
         float s = sin(instance.rotationY);
+        
         float x = scaled.x * c - scaled.z * s;
         float z = scaled.x * s + scaled.z * c;
         scaled.x = x;
         scaled.z = z;
-    }
-
-    float3 world = scaled + instance.position;
-    VertexOut out;
-    out.position = uniforms.viewProjection * float4(world, 1.0);
-    float3 normal = in.normal;
-    if (instance.rotationY != 0.0) {
-        float c = cos(instance.rotationY);
-        float s = sin(instance.rotationY);
+        
         float nx = normal.x * c - normal.z * s;
         float nz = normal.x * s + normal.z * c;
         normal.x = nx;
         normal.z = nz;
     }
+
+    float3 world = scaled + instance.position;
+    VertexOut out;
+    out.position = uniforms.viewProjection * float4(world, 1.0);
     out.normal = normal;
     out.uv = in.uv;
     out.scale = instance.scale;

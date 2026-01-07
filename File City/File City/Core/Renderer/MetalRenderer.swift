@@ -220,6 +220,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 position: SIMD3<Float>(block.position.x, block.position.y + Float(block.height) * 0.5, block.position.z),
                 scale: SIMD3<Float>(Float(block.footprint.x), Float(block.height), Float(block.footprint.y)),
                 rotationY: rotationY,
+                rotationX: 0,
+                rotationZ: 0,
                 materialID: UInt32(block.materialID),
                 highlight: block.nodeID == selectedNodeID ? 1.0 : 0.0,
                 hover: isHovering ? 1.0 : 0.0,
@@ -317,6 +319,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             instances.append(VoxelInstance(
                 position: SIMD3<Float>(towerBaseX, baseY, towerBaseZ),
                 scale: SIMD3<Float>(towerSize * 0.55, towerSize * 0.2, towerSize * 0.55),
+                rotationY: 0,
+                rotationX: 0,
+                rotationZ: 0,
                 materialID: towerMaterialID,
                 highlight: beaconHighlight,
                 textureIndex: -1,
@@ -326,6 +331,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             instances.append(VoxelInstance(
                 position: SIMD3<Float>(towerBaseX, mastY, towerBaseZ),
                 scale: SIMD3<Float>(towerSize * 0.18, towerHeight, towerSize * 0.18),
+                rotationY: 0,
+                rotationX: 0,
+                rotationZ: 0,
                 materialID: towerMaterialID,
                 highlight: beaconHighlight,
                 textureIndex: -1,
@@ -337,6 +345,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             instances.append(VoxelInstance(
                 position: SIMD3<Float>(crossbarX, crossbarY, crossbarZ),
                 scale: SIMD3<Float>(towerSize * 0.55, towerSize * 0.06, towerSize * 0.55),
+                rotationY: 0,
+                rotationX: 0,
+                rotationZ: 0,
                 materialID: towerMaterialID,
                 highlight: beaconHighlight,
                 textureIndex: -1,
@@ -346,6 +357,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             instances.append(VoxelInstance(
                 position: SIMD3<Float>(crossbarX, beaconY, crossbarZ),
                 scale: SIMD3<Float>(beaconSize, beaconSize, beaconSize),
+                rotationY: 0,
+                rotationX: 0,
+                rotationZ: 0,
                 materialID: towerMaterialID,
                 highlight: beaconHighlight,
                 textureIndex: -1,
@@ -530,6 +544,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             let instance = VoxelInstance(
                 position: SIMD3<Float>(centerX, -0.6, roadZ),
                 scale: SIMD3<Float>(spanX, 1.0, Float(roadWidth)),
+                rotationY: 0,
+                rotationX: 0,
+                rotationZ: 0,
                 materialID: 0,
                 textureIndex: roadTextureIndex,
                 shapeID: 0
@@ -542,6 +559,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             let instance = VoxelInstance(
                 position: SIMD3<Float>(roadX, -0.6, centerZ),
                 scale: SIMD3<Float>(Float(roadWidth), 1.0, spanZ),
+                rotationY: 0,
+                rotationX: 0,
+                rotationZ: 0,
                 materialID: 0,
                 textureIndex: roadTextureIndex,
                 shapeID: 0
@@ -755,6 +775,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             instances.append(VoxelInstance(
                 position: SIMD3<Float>(signX, baseY + postHeight * 0.5, signZ),
                 scale: SIMD3<Float>(postWidth, postHeight, postWidth),
+                rotationY: 0,
+                rotationX: 0,
+                rotationZ: 0,
                 materialID: 10,
                 textureIndex: -1,
                 shapeID: 0
@@ -765,6 +788,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             instances.append(VoxelInstance(
                 position: SIMD3<Float>(signX + 0.1, boardY, signZ),
                 scale: SIMD3<Float>(0.1, signboardHeight, signboardWidth),
+                rotationY: 0,
+                rotationX: 0,
+                rotationZ: 0,
                 materialID: 0,
                 textureIndex: Int32(texIndex),
                 shapeID: 11
@@ -784,9 +810,14 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         for (index, path) in carPaths.enumerated() {
             let t = fmod(Float(now) * path.speed + path.phase, 1.0)
             let position = path.start + (path.end - path.start) * t
+            let direction = normalize(path.end - path.start)
+            let rotationY = atan2(direction.x, direction.z)
             pointer[index] = VoxelInstance(
                 position: position,
                 scale: path.scale,
+                rotationY: rotationY,
+                rotationX: 0,
+                rotationZ: 0,
                 materialID: 0,
                 textureIndex: carTextureIndex,
                 shapeID: 0
@@ -824,6 +855,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 scale: path.scale,
                 _pad1: 0,
                 rotationY: rotationY,
+                rotationX: 0,
+                rotationZ: 0,
                 _pad2: 0,
                 materialID: 0,
                 highlight: 0,
@@ -837,6 +870,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 scale: SIMD3<Float>(1.4, 0.08, 6.3),
                 _pad1: 0,
                 rotationY: rotationY,
+                rotationX: 0,
+                rotationZ: 0,
                 _pad2: 0,
                 materialID: 0,
                 highlight: 0,
@@ -852,6 +887,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 scale: SIMD3<Float>(0.55, 0.25, 0.55),
                 _pad1: 0,
                 rotationY: rotationY,
+                rotationX: 0,
+                rotationZ: 0,
                 _pad2: 0,
                 materialID: 0,
                 highlight: 0,
@@ -865,6 +902,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 scale: SIMD3<Float>(0.55, 0.25, 0.55),
                 _pad1: 0,
                 rotationY: rotationY,
+                rotationX: 0,
+                rotationZ: 0,
                 _pad2: 0,
                 materialID: 0,
                 highlight: 0,
@@ -880,6 +919,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 scale: flameScale,
                 _pad1: 0,
                 rotationY: rotationY,
+                rotationX: 0,
+                rotationZ: 0,
                 _pad2: 0,
                 materialID: 0,
                 highlight: 0,
@@ -893,6 +934,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 scale: flameScale,
                 _pad1: 0,
                 rotationY: rotationY,
+                rotationX: 0,
+                rotationZ: 0,
                 _pad2: 0,
                 materialID: 0,
                 highlight: 0,
@@ -908,6 +951,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 scale: SIMD3<Float>(1.0, 0.06, 2.8),
                 _pad1: 0,
                 rotationY: rotationY,
+                rotationX: 0,
+                rotationZ: 0,
                 _pad2: 0,
                 materialID: 0,
                 highlight: 0,
@@ -922,6 +967,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 scale: SIMD3<Float>(1.2, 0.9, 0.08),
                 _pad1: 0,
                 rotationY: rotationY,
+                rotationX: 0,
+                rotationZ: 0,
                 _pad2: 0,
                 materialID: 0,
                 highlight: 0,
