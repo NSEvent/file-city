@@ -1,0 +1,2 @@
+# Common mistakes
+- When calculating fly-over heights for vehicles (like helicopters) in File City, always account for: 1) Shape-specific height boosts (Wedges use 0.75 * height due to 1.5 slope factor, Pyramids use 0.5 * height). 2) Stacked/Compound buildings: scan all blocks at the target (x, z) coordinates to find the global maximum visual height of the entire structure to prevent collisions with upper layers.
