@@ -6,6 +6,12 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		6AD56D2413D44C82B0F87814 /* com.kevintang.filecity.helper in Copy Files */ = {isa = PBXBuildFile; fileRef = 334B78E1F3E04CBE8A62EDF4 /* com.kevintang.filecity.helper */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		B0416F36E077444286A7FB6B /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9C30F03A33540A29F9C62F5 /* main.swift */; };
+		B3DD8B9920B549BFADAFD72B /* HelperProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD14B56231CA40EF91179A9C /* HelperProtocol.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		0A789B312F0C454F0022B708 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -26,19 +32,33 @@
 			containerPortal = 0A789B1B2F0C454E0022B708 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = C08D2B70245A4F9691AA869B;
-			remoteInfo = "com.kevintang.filecity.helper";
+			remoteInfo = com.kevintang.filecity.helper;
 		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		0441CE99660747BB95839A51 /* Copy Files */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Library/LaunchServices;
+			dstSubfolderSpec = 1;
+			files = (
+				6AD56D2413D44C82B0F87814 /* com.kevintang.filecity.helper in Copy Files */,
+			);
+			name = "Copy Files";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		0A789B232F0C454E0022B708 /* File City.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "File City.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		0A789B302F0C454F0022B708 /* File CityTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "File CityTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		0A789B3A2F0C454F0022B708 /* File CityUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "File CityUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		334B78E1F3E04CBE8A62EDF4 /* com.kevintang.filecity.helper */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "com.kevintang.filecity.helper"; sourceTree = BUILT_PRODUCTS_DIR; };
+		334B78E1F3E04CBE8A62EDF4 /* com.kevintang.filecity.helper */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = com.kevintang.filecity.helper; sourceTree = BUILT_PRODUCTS_DIR; };
+		A8865E48544644FB999AC167 /* launchd.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = launchd.plist; sourceTree = "<group>"; };
+		B887DCA613A24B6BBECD8AC2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B9C30F03A33540A29F9C62F5 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		BD14B56231CA40EF91179A9C /* HelperProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperProtocol.swift; sourceTree = "<group>"; };
-		B887DCA613A24B6BBECD8AC2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		A8865E48544644FB999AC167 /* launchd.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = launchd.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -75,6 +95,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		0A789B372F0C454F0022B708 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B2C1AF2CB87A4FB2B692C415 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -144,22 +171,6 @@
 			productReference = 0A789B232F0C454E0022B708 /* File City.app */;
 			productType = "com.apple.product-type.application";
 		};
-		C08D2B70245A4F9691AA869B /* com.kevintang.filecity.helper */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = A48332CC4FB4429384417594 /* Build configuration list for PBXNativeTarget "com.kevintang.filecity.helper" */;
-			buildPhases = (
-				D383993005F948BCAF853421 /* Sources */,
-				B2C1AF2CB87A4FB2B692C415 /* Frameworks */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = "com.kevintang.filecity.helper";
-			productName = "com.kevintang.filecity.helper";
-			productReference = 334B78E1F3E04CBE8A62EDF4 /* com.kevintang.filecity.helper */;
-			productType = "com.apple.product-type.tool";
-		};
 		0A789B2F2F0C454F0022B708 /* File CityTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 0A789B472F0C454F0022B708 /* Build configuration list for PBXNativeTarget "File CityTests" */;
@@ -206,6 +217,22 @@
 			productReference = 0A789B3A2F0C454F0022B708 /* File CityUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		C08D2B70245A4F9691AA869B /* com.kevintang.filecity.helper */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A48332CC4FB4429384417594 /* Build configuration list for PBXNativeTarget "com.kevintang.filecity.helper" */;
+			buildPhases = (
+				D383993005F948BCAF853421 /* Sources */,
+				B2C1AF2CB87A4FB2B692C415 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = com.kevintang.filecity.helper;
+			productName = com.kevintang.filecity.helper;
+			productReference = 334B78E1F3E04CBE8A62EDF4 /* com.kevintang.filecity.helper */;
+			productType = "com.apple.product-type.tool";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -219,9 +246,6 @@
 					0A789B222F0C454E0022B708 = {
 						CreatedOnToolsVersion = 26.2;
 					};
-					C08D2B70245A4F9691AA869B = {
-						CreatedOnToolsVersion = 26.2;
-					};
 					0A789B2F2F0C454F0022B708 = {
 						CreatedOnToolsVersion = 26.2;
 						TestTargetID = 0A789B222F0C454E0022B708;
@@ -229,6 +253,9 @@
 					0A789B392F0C454F0022B708 = {
 						CreatedOnToolsVersion = 26.2;
 						TestTargetID = 0A789B222F0C454E0022B708;
+					};
+					C08D2B70245A4F9691AA869B = {
+						CreatedOnToolsVersion = 26.2;
 					};
 				};
 			};
@@ -278,43 +305,7 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
-/* Begin PBXCopyFilesBuildPhase section */
-		0441CE99660747BB95839A51 /* Copy Files */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "Contents/Library/LaunchServices";
-			dstSubfolderSpec = 1;
-			files = (
-				6AD56D2413D44C82B0F87814 /* com.kevintang.filecity.helper in Copy Files */,
-			);
-			name = "Copy Files";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
-
-/* Begin PBXBuildFile section */
-		B0416F36E077444286A7FB6B /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9C30F03A33540A29F9C62F5 /* main.swift */; };
-		B3DD8B9920B549BFADAFD72B /* HelperProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD14B56231CA40EF91179A9C /* HelperProtocol.swift */; };
-		6AD56D2413D44C82B0F87814 /* com.kevintang.filecity.helper in Copy Files */ = {isa = PBXBuildFile; fileRef = 334B78E1F3E04CBE8A62EDF4 /* com.kevintang.filecity.helper */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
-/* End PBXBuildFile section */
-
 /* Begin PBXSourcesBuildPhase section */
-		D383993005F948BCAF853421 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				B0416F36E077444286A7FB6B /* main.swift in Sources */,
-				B3DD8B9920B549BFADAFD72B /* HelperProtocol.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		B2C1AF2CB87A4FB2B692C415 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		0A789B1F2F0C454E0022B708 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -336,9 +327,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D383993005F948BCAF853421 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B0416F36E077444286A7FB6B /* main.swift in Sources */,
+				B3DD8B9920B549BFADAFD72B /* HelperProtocol.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		072358D4DFFE41C68FD06DC6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C08D2B70245A4F9691AA869B /* com.kevintang.filecity.helper */;
+			targetProxy = 4585A6BC63AB4246BA73398E /* PBXContainerItemProxy */;
+		};
 		0A789B322F0C454F0022B708 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 0A789B222F0C454E0022B708 /* File City */;
@@ -349,14 +354,35 @@
 			target = 0A789B222F0C454E0022B708 /* File City */;
 			targetProxy = 0A789B3B2F0C454F0022B708 /* PBXContainerItemProxy */;
 		};
-		072358D4DFFE41C68FD06DC6 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = C08D2B70245A4F9691AA869B /* com.kevintang.filecity.helper */;
-			targetProxy = 4585A6BC63AB4246BA73398E /* PBXContainerItemProxy */;
-		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		04169986CBC54E8CA89991F9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 542GXYT5Z2;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = Helper/Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-sectcreate",
+					__TEXT,
+					__launchd_plist,
+					"$(SRCROOT)/Helper/launchd.plist",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.kevintang.filecity.helper;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
 		0A789B422F0C454F0022B708 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -647,32 +673,6 @@
 			};
 			name = Release;
 		};
-		04169986CBC54E8CA89991F9 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 542GXYT5Z2;
-				ENABLE_HARDENED_RUNTIME = YES;
-				INFOPLIST_FILE = Helper/Info.plist;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
-				OTHER_LDFLAGS = (
-					"-sectcreate",
-					__TEXT,
-					__launchd_plist,
-					"$(SRCROOT)/Helper/launchd.plist",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.kevintang.filecity.helper";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SKIP_INSTALL = YES;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_VERSION = 5.0;
-			};
-			name = Debug;
-		};
 		28F57168EB7C468380927B8E /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -691,7 +691,7 @@
 					__launchd_plist,
 					"$(SRCROOT)/Helper/launchd.plist",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.kevintang.filecity.helper";
+				PRODUCT_BUNDLE_IDENTIFIER = com.kevintang.filecity.helper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;

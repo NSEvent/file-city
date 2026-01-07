@@ -25,6 +25,7 @@ final class AppState: ObservableObject {
     private let searchIndex = SearchIndex()
     private let pinStore = PinStore()
     private let rescanSubject = PassthroughSubject<Void, Never>()
+    let fileWriteSubject = PassthroughSubject<UUID, Never>()
     private var gitStatusTask: Task<Void, Never>?
     private var gitCleanByPath: [String: Bool] = [:]
     private var focusNodeIDByURL: [URL: UUID] = [:]
@@ -523,6 +524,11 @@ final class AppState: ObservableObject {
             processName: "Test",
             url: url
         )
+        if kind == .write {
+            if let nodeID = resolveActivityNodeID(url: url) {
+                fileWriteSubject.send(nodeID)
+            }
+        }
         let verb = kind == .write ? "Write" : "Read"
         let pathLine = relativePath(for: url) ?? url.lastPathComponent
         activityInfoLines = [
@@ -580,6 +586,11 @@ final class AppState: ObservableObject {
             processName: "FSEvents",
             url: url
         )
+        if kind == .write {
+            if let nodeID = resolveActivityNodeID(url: url) {
+                fileWriteSubject.send(nodeID)
+            }
+        }
         activityVersion &+= 1
     }
 
@@ -591,6 +602,11 @@ final class AppState: ObservableObject {
             processName: event.processName,
             url: event.url
         )
+        if event.kind == .write {
+            if let nodeID = resolveActivityNodeID(url: event.url) {
+                fileWriteSubject.send(nodeID)
+            }
+        }
         activityVersion &+= 1
         let verb = event.kind == .write ? "Write" : "Read"
         let pathLine = relativePath(for: event.url) ?? event.url.lastPathComponent

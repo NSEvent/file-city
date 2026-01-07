@@ -34,6 +34,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private var planeOffsets: [Float] = []
     private var lastPlaneUpdateTime: CFTimeInterval = CACurrentMediaTime()
     private var hoveredPlaneIndex: Int?
+    private let helicopterManager = HelicopterManager()
+    private var helicopterInstanceBuffer: MTLBuffer?
+    private var helicopterInstanceCount: Int = 0
     private var gitBeaconBoxes: [BeaconPicker.Box] = []
     private let beaconHitInflation: Float = 1.0
     private var blocks: [CityBlock] = []
@@ -411,6 +414,12 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         return closest?.index
     }
 
+    func spawnHelicopter(at block: CityBlock) {
+        let topY = visualTopY(for: block)
+        let target = SIMD3<Float>(block.position.x, topY, block.position.z)
+        helicopterManager.spawn(at: target, textureIndex: block.textureIndex)
+    }
+
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         camera.aspect = Float(size.width / max(size.height, 1))
     }
@@ -457,6 +466,17 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         if let planeInstanceBuffer, planeInstanceCount > 0 {
             encoder?.setVertexBuffer(planeInstanceBuffer, offset: 0, index: 1)
             encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 36, instanceCount: planeInstanceCount)
+        }
+
+        helicopterManager.update()
+        let heliInstances = helicopterManager.buildInstances()
+        helicopterInstanceCount = heliInstances.count
+        if helicopterInstanceCount > 0 {
+            helicopterInstanceBuffer = device.makeBuffer(bytes: heliInstances, length: MemoryLayout<VoxelInstance>.stride * helicopterInstanceCount, options: [])
+            if let buffer = helicopterInstanceBuffer {
+                encoder?.setVertexBuffer(buffer, offset: 0, index: 1)
+                encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 36, instanceCount: helicopterInstanceCount)
+            }
         }
 
         if let signpostInstanceBuffer, signpostInstanceCount > 0 {

@@ -100,6 +100,20 @@ struct MetalCityView: NSViewRepresentable {
                     self?.handleActivityChange()
                 }
                 .store(in: &cancellables)
+
+            appState.fileWriteSubject
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] nodeID in
+                    self?.handleFileWrite(nodeID: nodeID)
+                }
+                .store(in: &cancellables)
+        }
+
+        private func handleFileWrite(nodeID: UUID) {
+            guard let appState, let renderer else { return }
+            if let block = appState.blocks.first(where: { $0.nodeID == nodeID }) {
+                renderer.spawnHelicopter(at: block)
+            }
         }
 
         private func handleActivityChange() {
@@ -253,7 +267,13 @@ struct MetalCityView: NSViewRepresentable {
         func handleKey(_ key: String) {
             switch key {
             case "1":
-                appState?.triggerTestActivity(kind: .read)
+                let targetID = hoveredNodeID ?? hoveredBeaconNodeID
+                if let targetID,
+                   let block = appState?.blocks.first(where: { $0.nodeID == targetID }) {
+                    renderer?.spawnHelicopter(at: block)
+                } else {
+                    appState?.triggerTestActivity(kind: .read)
+                }
             case "2":
                 appState?.triggerTestActivity(kind: .write)
             default:
