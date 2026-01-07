@@ -345,9 +345,13 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
             // in.uv.x is 0..1 per segment.
             
             // Detect face orientation to fix text mirroring on back face
-            // User reported previous logic (1-x for front, x for back) was reversed on both.
-            // Swapping logic: x for front, 1-x for back.
-            float segmentU = (in.localNormal.z > 0.0) ? in.uv.x : (1.0 - in.uv.x);
+            // Analysis suggests both faces map R->L (mirrored) by default due to quad vertex order.
+            // Attempt 2 (Front 1-x, Back x) -> One side reversed (Back).
+            // Attempt 3 (Front x, Back 1-x) -> Both reversed (Front mirrored, Back... maybe user confused or I am).
+            // Logic dictates if Back(x) is mirrored, Back(1-x) should be correct.
+            // And Front(1-x) was correct in Attempt 2.
+            // So try 1-x for BOTH.
+            float segmentU = 1.0 - in.uv.x;
             
             float uOffset = in.highlight;
             float uWidth = in.activity;
