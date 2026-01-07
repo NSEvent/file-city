@@ -148,10 +148,21 @@ final class HelicopterManager {
             let rotationY: Float
             if simd_length_squared(heli.velocity) > 0.1 {
                 let dir = simd_normalize(heli.velocity)
-                rotationY = atan2(dir.x, dir.z)
+                // Shader rotates (0,0,1) to (-sin, 0, cos). To face dir, we need correct angle.
+                // atan2(-x, z) gives us the angle that results in proper orientation
+                rotationY = atan2(-dir.x, dir.z)
             } else {
-                rotationY = 0 // Keep previous or default? 0 is fine for hover default if not persisting
+                rotationY = 0
             }
+            
+            // Calculate forward vector based on shader's rotation logic:
+            // x' = x*c - z*s
+            // z' = x*s + z*c
+            // Local forward (0,0,1) becomes (-sin(r), 0, cos(r))
+            let s = sin(rotationY)
+            let c = cos(rotationY)
+            let forward = SIMD3<Float>(-s, 0, c)
+            let right = SIMD3<Float>(c, 0, s) // Local (1,0,0) -> (c, 0, s)
             
             // Body
             instances.append(VoxelInstance(
@@ -162,12 +173,12 @@ final class HelicopterManager {
                 rotationZ: 0,
                 materialID: 0, 
                 textureIndex: heli.textureIndex,
-                shapeID: 6 // Plane body shape might look okay-ish, or just 0
+                shapeID: 6
             ))
             
             // Tail
-            let tailDir = SIMD3<Float>(sin(rotationY), 0, cos(rotationY))
-            let tailOffset = tailDir * -2.2
+            // Tail is behind, so -forward
+            let tailOffset = forward * -2.2
             instances.append(VoxelInstance(
                 position: heli.position + tailOffset + SIMD3<Float>(0, 0.5, 0),
                 scale: SIMD3<Float>(0.4, 0.4, 2.5),
@@ -180,8 +191,8 @@ final class HelicopterManager {
             ))
 
             // Tail Rotor (perpendicular to main)
-            let sideDir = SIMD3<Float>(sin(rotationY + .pi/2), 0, cos(rotationY + .pi/2))
-            let tailRotorPos = heli.position + tailOffset * 1.4 + sideDir * 0.25 + SIMD3<Float>(0, 0.6, 0)
+            // Offset slightly right of the tail
+            let tailRotorPos = heli.position + tailOffset * 1.4 + right * 0.25 + SIMD3<Float>(0, 0.6, 0)
             let tailRotorSpin = Float(now * 40.0)
             
             instances.append(VoxelInstance(
