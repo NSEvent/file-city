@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var searchQuery: String = ""
     @State private var isSearchExpanded: Bool = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var keyboardMonitor: Any?
     @FocusState private var isSearchFocused: Bool
 
     var body: some View {
@@ -38,17 +39,11 @@ struct ContentView: View {
         }
         .onAppear {
             bringToFront()
+            setupKeyboardMonitor()
         }
-        .background(KeyboardShortcutHandler(
-            onCmdF: {
-                withAnimation {
-                    isSearchExpanded = true
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    isSearchFocused = true
-                }
-            }
-        ))
+        .onDisappear {
+            removeKeyboardMonitor()
+        }
     }
 
     private func bringToFront() {
@@ -58,6 +53,28 @@ struct ContentView: View {
             for window in NSApp.windows {
                 window.makeKeyAndOrderFront(nil)
             }
+        }
+    }
+
+    private func setupKeyboardMonitor() {
+        keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "f" {
+                withAnimation {
+                    isSearchExpanded = true
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    isSearchFocused = true
+                }
+                return nil  // Consume the event
+            }
+            return event
+        }
+    }
+
+    private func removeKeyboardMonitor() {
+        if let monitor = keyboardMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyboardMonitor = nil
         }
     }
 }
@@ -297,35 +314,5 @@ private struct SidebarToolbar: View {
             searchQuery = ""
         }
         isSearchFocused = false
-    }
-}
-
-// MARK: - Keyboard Shortcut Handler
-
-private struct KeyboardShortcutHandler: NSViewRepresentable {
-    let onCmdF: () -> Void
-
-    func makeNSView(context: Context) -> KeyboardHandlerView {
-        let view = KeyboardHandlerView()
-        view.onCmdF = onCmdF
-        return view
-    }
-
-    func updateNSView(_ nsView: KeyboardHandlerView, context: Context) {
-        nsView.onCmdF = onCmdF
-    }
-
-    class KeyboardHandlerView: NSView {
-        var onCmdF: (() -> Void)?
-
-        override var acceptsFirstResponder: Bool { true }
-
-        override func keyDown(with event: NSEvent) {
-            if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "f" {
-                onCmdF?()
-                return
-            }
-            super.keyDown(with: event)
-        }
     }
 }
