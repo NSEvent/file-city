@@ -1203,10 +1203,15 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                     let dir = simd_normalize(nextPos - pos)
                     let rotY = atan2(dir.z, dir.x)
                     
-                    // Flip U? If text is backwards, flip range here?
-                    // Let's pass 0..1 range properly.
-                    // uOffset = float(i) * uWidth
-                    let uOffset = Float(i) * uWidth
+                    // uOffset calculation:
+                    // Segments are 0..7. 0 is trailing the plane (Right side in World Space for L->R flight).
+                    // 7 is the tail end (Left side).
+                    // Text "Directory" reads L->R (0->1).
+                    // So Seg 7 should correspond to U=0. Seg 0 should correspond to U=1.
+                    // uOffset = (7 - i) * uWidth.
+                    // i=0 -> 7 * 0.125 = 0.875.
+                    // i=7 -> 0 * 0.125 = 0.0.
+                    let uOffset = Float(segmentCount - 1 - i) * uWidth
                     
                     pointer[baseIndex + 8 + i] = VoxelInstance(
                         position: pos,

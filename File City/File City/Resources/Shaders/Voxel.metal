@@ -350,21 +350,34 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
             float uOffset = in.highlight;
             float uWidth = in.activity;
             
-            // Standardize local U to run Left->Right visually on the segment face
-            // Based on previous iterations, 1.0 - x seems to provide correct char orientation
-            float localU = 1.0 - in.uv.x; 
+            // localU: 0.0 (Visual Left) -> 1.0 (Visual Right)
+            // Empirically, 1.0 - in.uv.x provides this for Front Face (pZ).
+            // For Back Face (nZ): v0(LocL, VisR) is U=0. v1(LocR, VisL) is U=1.
+            // Vis L(1) -> Vis R(0). in.uv.x goes 1->0.
+            // So 1.0 - in.uv.x goes 0->1 (Vis L -> Vis R).
+            // So 1.0 - in.uv.x works for BOTH faces to map Vis Left -> Vis Right.
+            float localU = 1.0 - in.uv.x;
 
             float globalU;
             if (isFrontFace) {
-                // Front Face: Segments ordered L->R (Start->End)
+                // Front Face: Standard mapping
                 globalU = uOffset + localU * uWidth;
             } else {
-                // Back Face: Segments visually ordered L->R (End->Start)
-                // We must invert the segment mapping logic so the "End" segment (Seg 7) 
-                // draws the "Start" of the texture (U=0), and "Start" segment (Seg 0) draws "End".
-                // Inverted Offset = 1.0 - (Start + Width)
-                float invertedOffset = 1.0 - (uOffset + uWidth);
-                globalU = invertedOffset + localU * uWidth;
+                // Back Face: "Move" the segment window to the opposite side of the texture
+                // If Seg 0 (Offset 0.875) is Right-most in World...
+                // From Back, Seg 0 is Left-most on screen.
+                // We want Left-most on screen to show "D" (Offset 0).
+                // So we map Offset 0.875 -> 0.0.
+                // If Seg 7 (Offset 0) is Left-most in World...
+                // From Back, Seg 7 is Right-most on screen.
+                // We want Right-most on screen to show "y" (Offset 0.875).
+                // So we map Offset 0.0 -> 0.875.
+                // Formula: newBase = 1.0 - (uOffset + uWidth).
+                // Check Seg 0: 1.0 - (0.875 + 0.125) = 0. Correct.
+                // Check Seg 7: 1.0 - (0 + 0.125) = 0.875. Correct.
+                
+                float invertedBase = 1.0 - (uOffset + uWidth);
+                globalU = invertedBase + localU * uWidth;
             }
             
             float2 finalUV = float2(globalU, in.uv.y);
