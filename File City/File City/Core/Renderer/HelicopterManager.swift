@@ -47,9 +47,9 @@ final class HelicopterManager {
         // Spawn high up and away
         let angle = Float.random(in: 0...Float.pi * 2)
         let distance: Float = 100.0
-        let height: Float = 40.0
-        let startPos = target + SIMD3<Float>(cos(angle) * distance, height, sin(angle) * distance)
-        let hoverHeight: Float = 12.0
+        let hoverHeight = Float.random(in: 12.0...35.0)
+        let startHeight = Float.random(in: 40.0...70.0)
+        let startPos = target + SIMD3<Float>(cos(angle) * distance, startHeight, sin(angle) * distance)
         
         let heli = Helicopter(
             position: startPos,
@@ -126,7 +126,8 @@ final class HelicopterManager {
                     heli.state = .outbound
                     // Pick a random exit point (continue in roughly same direction or random)
                     let angle = Float.random(in: 0...Float.pi * 2)
-                    let exitDest = heli.position + SIMD3<Float>(cos(angle) * 150, 20, sin(angle) * 150)
+                    let exitClimb = Float.random(in: 15.0...45.0)
+                    let exitDest = heli.position + SIMD3<Float>(cos(angle) * 150, exitClimb, sin(angle) * 150)
                     
                     // We hijack target to store exit destination
                     // Re-construct with new target
