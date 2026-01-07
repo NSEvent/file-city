@@ -817,9 +817,14 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         let stepZ = minSpacing(values: zs)
         guard stepX > 0, stepZ > 0 else { return }
 
-        let xRoads = (0..<(xs.count - 1)).map { xs[$0] + stepX * 0.5 }
-        let zRoads = (0..<(zs.count - 1)).map { zs[$0] + stepZ * 0.5 }
-        guard !xRoads.isEmpty, !zRoads.isEmpty else { return }
+        let xRoadsSource = (0..<(xs.count - 1)).map { xs[$0] + stepX * 0.5 }
+        let zRoadsSource = (0..<(zs.count - 1)).map { zs[$0] + stepZ * 0.5 }
+        guard !xRoadsSource.isEmpty, !zRoadsSource.isEmpty else { return }
+
+        // Expand the perimeter for planes to fly in from further away
+        let outerPadding: Float = 150.0
+        let xRoads = [xRoadsSource[0] - outerPadding] + xRoadsSource + [xRoadsSource.last! + outerPadding]
+        let zRoads = [zRoadsSource[0] - outerPadding] + zRoadsSource + [zRoadsSource.last! + outerPadding]
 
         let gridW = xRoads.count
         let gridH = zRoads.count
@@ -1174,8 +1179,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 shapeID: 0
             )
             
-            // Banner (Only for the first plane, if texture exists)
-            if index == 0 && bannerTextureIndex >= 0 {
+            // Banner (Attach to all planes if texture exists)
+            if bannerTextureIndex >= 0 {
                 let ropeLen: Float = 2.5
                 let segmentCount = 8
                 let segmentLen: Float = 1.5
@@ -1222,23 +1227,11 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                     )
                 }
             } else {
-                // Zero out unused slots (8..16) if we allocated 9?
-                // Wait, I allocated `planeInstanceCount * 9`?
-                // `planeInstanceCount = planePaths.count * 9` in `buildPlanePaths`.
-                // `baseIndex = index * 9`.
-                // Indices 0..7 are plane parts.
-                // 8 is the start of banner.
-                // I need indices 8..(8+segmentCount).
-                // I only have 1 slot (8) allocated per plane!
-                // CRITICAL FIX needed: I need to increase allocation to 8 + 8 = 16 slots per plane.
-                // Or just allocate extra for the first plane?
-                // Easier to uniform allocate.
-                
-                // I need to update `buildPlanePaths` allocation first.
-                // Assuming I will do that next.
-                
-                // Temporary safety: only write to +8 if I haven't reallocated yet?
-                // No, I must reallocate.
+                // Zero out unused slots (8..16)
+                // Actually 8..(8+segmentCount). Max 16 allocated.
+                for i in 0..<8 {
+                     pointer[baseIndex + 8 + i] = VoxelInstance(position: .zero, scale: .zero, rotationY: 0, rotationX: 0, rotationZ: 0, materialID: 0, textureIndex: -1, shapeID: 0)
+                }
             }
         }
     }
