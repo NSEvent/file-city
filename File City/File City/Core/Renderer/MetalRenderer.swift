@@ -811,7 +811,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             let t = fmod(Float(now) * path.speed + path.phase, 1.0)
             let position = path.start + (path.end - path.start) * t
             let direction = normalize(path.end - path.start)
-            let rotationY = atan2(direction.x, direction.z)
+            let rotationY = atan2(-direction.x, direction.z)
             pointer[index] = VoxelInstance(
                 position: position,
                 scale: path.scale,

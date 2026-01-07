@@ -177,11 +177,11 @@ final class HelicopterManager {
             ))
             
             // Tail
-            // Tail is behind, so -forward
-            let tailOffset = forward * -2.2
+            // Tail is behind, so -forward. Increased length and adjusted offset to ensure connection.
+            let tailOffset = forward * -2.5
             instances.append(VoxelInstance(
                 position: heli.position + tailOffset + SIMD3<Float>(0, 0.5, 0),
-                scale: SIMD3<Float>(0.4, 0.4, 2.5),
+                scale: SIMD3<Float>(0.4, 0.4, 3.8),
                 rotationY: rotationY,
                 rotationX: 0,
                 rotationZ: 0,
@@ -191,8 +191,8 @@ final class HelicopterManager {
             ))
 
             // Tail Rotor (perpendicular to main)
-            // Offset slightly right of the tail
-            let tailRotorPos = heli.position + tailOffset * 1.4 + right * 0.25 + SIMD3<Float>(0, 0.6, 0)
+            // Position at the end of the tail boom (-2.5 - 1.9 = -4.4)
+            let tailRotorPos = heli.position + forward * -4.4 + right * 0.25 + SIMD3<Float>(0, 0.6, 0)
             let tailRotorSpin = Float(now * 40.0)
             
             instances.append(VoxelInstance(
