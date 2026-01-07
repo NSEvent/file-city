@@ -1172,14 +1172,30 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             
             // Banner (Only for the first plane, if texture exists)
             if index == 0 && bannerTextureIndex >= 0 {
-                let ropeLen: Float = 3.5
-                let bannerPos = position - bodyOffset - direction * (tailBack + ropeLen)
+                let ropeLen: Float = 2.5
+                // Plane body is aligned with X axis (scale.x is length).
+                // Tail is at negative local X relative to center? 
+                // In updatePlaneInstances: `bodyOffset` shifts body back.
+                // We want to attach to the tail end.
+                // Direction is the forward vector.
+                // If plane geometry is "Long X", and it faces `direction`, then `rotationY` aligns X with direction.
+                // So "Behind" is `-direction`.
+                
+                // Calculate tail tip position in world space
+                // position is center of path segment? No, `position` is plane center.
+                // `tailBack` is distance from center to tail.
+                // Banner center should be: position - direction * (tailBack + ropeLen + bannerLength/2)
+                
+                let bannerLength: Float = 12.0
+                let bannerOffsetDist = tailBack + ropeLen + bannerLength * 0.5
+                let bannerPos = position - bodyOffset - direction * bannerOffsetDist
                 
                 // Shape 13: Waving Banner
+                // Scale X: 12.0 (Length), Y: 1.5 (Height), Z: 0.1 (Thickness)
                 pointer[baseIndex + 8] = VoxelInstance(
                     position: bannerPos,
                     _pad0: 0,
-                    scale: SIMD3<Float>(0.1, 1.2, 6.0), // Thin, Tallish, Long
+                    scale: SIMD3<Float>(bannerLength, 1.5, 0.1),
                     _pad1: 0,
                     rotationY: rotationY,
                     rotationX: 0,

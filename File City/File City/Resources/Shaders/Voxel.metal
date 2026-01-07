@@ -104,9 +104,12 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
         local.y += 0.5;
     } else if (instance.shapeID == 13) {
         // Waving Banner
-        // Wave along Z (length), displace X (side)
-        float wave = sin(local.z * 1.5 + uniforms.time * 8.0);
-        local.x += wave * 0.15;
+        // Banner is long along X. Wave displacement in Z (sideways).
+        // Wave propagates along X.
+        float wave = sin(local.x * 0.8 + uniforms.time * 12.0);
+        local.z += wave * 0.25;
+        // Slight vertical flutter
+        local.y += sin(local.x * 1.5 + uniforms.time * 15.0) * 0.05;
     }
 
     float3 scaled = local * instance.scale;
@@ -329,25 +332,50 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
         return float4(finalColor, alpha * edgeFade * 0.9);
     } else if (in.shapeID == 13) {
         // Banner - Sample from signLabels array
-        // Use textureIndex from instance
         if (in.textureIndex >= 0) {
-            // Standard UVs are 0..1 per face.
-            // On the side face (Normal X), this covers the whole side.
-            // Flip U if needed (often needed for these cube mappings)
-            float2 flippedUV = float2(1.0 - in.uv.x, in.uv.y);
-            
-            // Adjust for side? If we see the "back" side of the banner, text is mirrored.
-            // Normal.x > 0 vs < 0.
-            // If normal.x < 0 (left side), maybe flip back?
-            // Actually, for a thin banner, we might see both sides.
-            // Let's assume standard flip is okay.
-            
-            float4 texColor = signLabels.sample(textureSampler, flippedUV, uint(in.textureIndex));
-            finalColor = texColor.rgb;
-            
-            // Cloth texture/shading
-            float fabric = 0.9 + 0.1 * sin((in.uv.x + in.uv.y) * 100.0);
-            finalColor *= fabric;
+            // Banner is scaled in X (Length) and Y (Height). Flat in Z.
+            // Major faces have Normal Z or -Z.
+            // Check if we are viewing the "face" of the banner
+            if (abs(in.normal.z) > 0.5) {
+                float2 uv = in.uv;
+                
+                // If viewing back face (Normal -Z), mirror U to make text readable
+                // Standard cube Back face UVs might already be mirrored relative to Front?
+                // Let's assume we need to flip one side to match.
+                // Or just try: Flip X if normal.z < 0?
+                // Typically front face UVs go 0->1 L->R.
+                // Back face UVs go 0->1 R->L (in world space) if wrapped?
+                // Let's force consistency.
+                if (in.normal.z < 0.0) {
+                    uv.x = 1.0 - uv.x;
+                } else {
+                    // Front face: might need flip depending on how "quad" was built.
+                    // nZ face (0,0,-1) is Back? pZ (0,0,1) is Front.
+                    // pZ quad: v5, v4, v7, v6.
+                    // v5(p,-p,p), v4(-p,-p,p). 5->4 is Right->Left?
+                    // Let's just flip both and verify. Usually 1.0 - x corrects "inner" mapping.
+                    uv.x = 1.0 - uv.x; 
+                }
+                
+                // Flip V because texture coords are top-down vs metal bottom-up
+                uv.y = 1.0 - uv.y; // Or don't flip if already correct? signLabels generated with NSImage (top-left?). Metal textures are usually 0,0 top-left if loaded that way? No, standard is 0,0 bottom-left.
+                // Actually, fragment_main_v2 usually does `float2(1.0 - in.uv.x, in.uv.y)` for other signs.
+                // Let's stick to that convention first.
+                // Reverting previous logic to match existing sign logic but applied to Z face.
+                
+                float2 finalUV = float2(1.0 - in.uv.x, in.uv.y);
+                if (in.normal.z < 0.0) finalUV.x = 1.0 - finalUV.x; // Un-flip for back face?
+                
+                float4 texColor = signLabels.sample(textureSampler, finalUV, uint(in.textureIndex));
+                finalColor = texColor.rgb;
+                
+                // Fabric shading
+                float fold = sin(in.uv.x * 20.0 + uniforms.time * 5.0);
+                finalColor *= (0.9 + 0.1 * fold);
+            } else {
+                // Edge color (white)
+                finalColor = float3(0.95, 0.95, 0.95);
+            }
         }
     }
     return float4(finalColor, 1.0);
