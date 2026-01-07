@@ -1156,10 +1156,12 @@ final class TextureGenerator {
     }
 
     // MARK: - Sign Labels
-    /// Generates a pre-baked texture for a sign label (128x32 pixels)
+    /// Generates a pre-baked texture for a sign label (256x64 pixels)
     static func generateSignLabel(device: MTLDevice, text: String) -> MTLTexture? {
-        let width = 128
-        let height = 32
+        let width = 256
+        let height = 64
+        let maxTextWidth = CGFloat(width - 16) // Padding on sides
+        let maxTextHeight = CGFloat(height - 8)
 
         let image = NSImage(size: NSSize(width: width, height: height))
         image.lockFocus()
@@ -1168,15 +1170,24 @@ final class TextureGenerator {
         NSColor(red: 0.2, green: 0.18, blue: 0.15, alpha: 1.0).setFill()
         NSRect(x: 0, y: 0, width: width, height: height).fill()
 
-        // Draw text centered
-        let displayText = String(text.prefix(10))
-        let font = NSFont.systemFont(ofSize: 14, weight: .bold)
-        let attributes: [NSAttributedString.Key: Any] = [
+        // Find font size that fits
+        let displayText = text
+        var fontSize: CGFloat = 32
+        var font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
+        var attributes: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: NSColor.white
         ]
+        var textSize = displayText.size(withAttributes: attributes)
 
-        let textSize = displayText.size(withAttributes: attributes)
+        // Reduce font size until text fits
+        while (textSize.width > maxTextWidth || textSize.height > maxTextHeight) && fontSize > 10 {
+            fontSize -= 2
+            font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
+            attributes[.font] = font
+            textSize = displayText.size(withAttributes: attributes)
+        }
+
         let x = (CGFloat(width) - textSize.width) / 2
         let y = (CGFloat(height) - textSize.height) / 2
         displayText.draw(at: NSPoint(x: x, y: y), withAttributes: attributes)

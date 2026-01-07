@@ -718,10 +718,10 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         var instances: [VoxelInstance] = []
         instances.reserveCapacity(groundBlocks.count * 2)
 
-        let postHeight: Float = 2.0
-        let postWidth: Float = 0.3
-        let signboardHeight: Float = 0.8
-        let signboardWidth: Float = 3.2
+        let postHeight: Float = 3.0
+        let postWidth: Float = 0.4
+        let signboardHeight: Float = 1.5
+        let signboardWidth: Float = 6.0
 
         for block in groundBlocks.values {
             guard let texIndex = signLabelIndexByNodeID[block.nodeID] else { continue }
