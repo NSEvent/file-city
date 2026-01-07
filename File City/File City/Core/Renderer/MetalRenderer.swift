@@ -16,6 +16,11 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private let roadTextureIndex: Int32 = 32
     private let carTextureIndex: Int32 = 33
     private let planeTextureIndex: Int32 = 34
+    private let fontTextureIndex: Int32 = 35
+    private var signpostInstanceBuffer: MTLBuffer?
+    private var signpostInstanceCount: Int = 0
+    private var signLabelTextureArray: MTLTexture?
+    private var signLabelIndexByNodeID: [UUID: Int] = [:]
     private let gitTowerMaterialID: UInt32 = 8
     private let gitCleanMaterialID: UInt32 = 6
     private var roadInstanceBuffer: MTLBuffer?
@@ -118,17 +123,17 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
     private func loadTextures() {
         var sourceTextures: [MTLTexture] = []
-        let textureCount = 35
-        
+        let textureCount = 36  // +1 for font atlas
+
         // Semantic names we want to ensure are in the palette
         let semanticNames = [
-            "File City", "AppShell", "Core", 
+            "File City", "AppShell", "Core",
             "tiktok-peter", "imsg", "pokemon-red-rust", "bloom-filter-python", "rust",
             "ai-bot", "bank-finance", "real-estate", "audio-voice", "camera-photo", "web-chrome",
             "swift-file", "code-json", "text-doc", "image-file-png",
             "audio_file_mp3", "video_file_mp4", "archive_file_zip", "db_file_sql"
         ]
-        
+
         for i in 0..<textureCount {
             let seed: String
             if i < semanticNames.count {
@@ -139,10 +144,16 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 seed = "car-paint"
             } else if i == Int(planeTextureIndex) {
                 seed = "plane-body"
+            } else if i == Int(fontTextureIndex) {
+                // Font atlas - generate separately
+                if let fontTex = TextureGenerator.generateFontAtlas(device: device) {
+                    sourceTextures.append(fontTex)
+                }
+                continue
             } else {
                 seed = "Style \(i)"
             }
-            
+
             if let tex = TextureGenerator.generateTexture(device: device, seed: seed) {
                 sourceTextures.append(tex)
             }
@@ -448,6 +459,14 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 36, instanceCount: planeInstanceCount)
         }
 
+        if let signpostInstanceBuffer, signpostInstanceCount > 0 {
+            if let signLabelTextureArray = signLabelTextureArray {
+                encoder?.setFragmentTexture(signLabelTextureArray, index: 1)
+            }
+            encoder?.setVertexBuffer(signpostInstanceBuffer, offset: 0, index: 1)
+            encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 36, instanceCount: signpostInstanceCount)
+        }
+
         encoder?.endEncoding()
         commandBuffer.present(drawable)
         commandBuffer.commit()
@@ -463,6 +482,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         planeInstanceCount = 0
         planePaths.removeAll()
         planeOffsets.removeAll()
+
+        buildSignpostInstances(blocks: blocks)
 
         guard blocks.count > 3 else { return }
 
@@ -632,6 +653,108 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
         planeOffsets = Array(repeating: 0, count: planePaths.count)
         lastPlaneUpdateTime = CACurrentMediaTime()
+    }
+
+    private func buildSignpostInstances(blocks: [CityBlock]) {
+        signpostInstanceBuffer = nil
+        signpostInstanceCount = 0
+        signLabelTextureArray = nil
+        signLabelIndexByNodeID.removeAll()
+
+        guard !blocks.isEmpty else { return }
+
+        // Deduplicate: only one sign per nodeID, use ground-level block
+        var groundBlocks: [UUID: CityBlock] = [:]
+        for block in blocks {
+            guard !block.name.isEmpty else { continue }
+            if block.position.y < 1.0 {
+                if groundBlocks[block.nodeID] == nil {
+                    groundBlocks[block.nodeID] = block
+                }
+            }
+        }
+
+        guard !groundBlocks.isEmpty else { return }
+
+        // Build pre-baked label textures
+        var labelTextures: [MTLTexture] = []
+        var index = 0
+        for (nodeID, block) in groundBlocks {
+            if let tex = TextureGenerator.generateSignLabel(device: device, text: block.name) {
+                labelTextures.append(tex)
+                signLabelIndexByNodeID[nodeID] = index
+                index += 1
+            }
+        }
+
+        guard !labelTextures.isEmpty, let first = labelTextures.first else { return }
+
+        // Create texture array for sign labels
+        let descriptor = MTLTextureDescriptor()
+        descriptor.textureType = .type2DArray
+        descriptor.pixelFormat = first.pixelFormat
+        descriptor.width = first.width
+        descriptor.height = first.height
+        descriptor.arrayLength = labelTextures.count
+        descriptor.usage = .shaderRead
+
+        guard let arrayTex = device.makeTexture(descriptor: descriptor),
+              let commandBuffer = commandQueue.makeCommandBuffer(),
+              let blitEncoder = commandBuffer.makeBlitCommandEncoder() else { return }
+
+        for (i, tex) in labelTextures.enumerated() {
+            blitEncoder.copy(from: tex, sourceSlice: 0, sourceLevel: 0,
+                             sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+                             sourceSize: MTLSize(width: tex.width, height: tex.height, depth: 1),
+                             to: arrayTex, destinationSlice: i, destinationLevel: 0,
+                             destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0))
+        }
+        blitEncoder.endEncoding()
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+        signLabelTextureArray = arrayTex
+
+        // Build signpost instances (just pole + signboard with pre-baked texture)
+        var instances: [VoxelInstance] = []
+        instances.reserveCapacity(groundBlocks.count * 2)
+
+        let postHeight: Float = 2.0
+        let postWidth: Float = 0.3
+        let signboardHeight: Float = 0.8
+        let signboardWidth: Float = 3.2
+
+        for block in groundBlocks.values {
+            guard let texIndex = signLabelIndexByNodeID[block.nodeID] else { continue }
+
+            let halfFootprintX = Float(block.footprint.x) * 0.5
+            let signX = block.position.x + halfFootprintX + 1.5
+            let signZ = block.position.z
+            let baseY: Float = 0.0
+
+            // Signpost pole
+            instances.append(VoxelInstance(
+                position: SIMD3<Float>(signX, baseY + postHeight * 0.5, signZ),
+                scale: SIMD3<Float>(postWidth, postHeight, postWidth),
+                materialID: 10,
+                textureIndex: -1,
+                shapeID: 0
+            ))
+
+            // Signboard with pre-baked texture (shapeID 11 for sign label)
+            let boardY = baseY + postHeight + signboardHeight * 0.5
+            instances.append(VoxelInstance(
+                position: SIMD3<Float>(signX + 0.1, boardY, signZ),
+                scale: SIMD3<Float>(0.1, signboardHeight, signboardWidth),
+                materialID: 0,
+                textureIndex: Int32(texIndex),
+                shapeID: 11
+            ))
+        }
+
+        signpostInstanceCount = instances.count
+        if signpostInstanceCount > 0 {
+            signpostInstanceBuffer = device.makeBuffer(bytes: instances, length: MemoryLayout<VoxelInstance>.stride * signpostInstanceCount, options: [])
+        }
     }
 
     private func updateCarInstances() {

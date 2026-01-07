@@ -16,6 +16,7 @@ final class RayTracerTests: XCTestCase {
         return CityBlock(
             id: UUID(),
             nodeID: UUID(),
+            name: "TestBlock",
             position: position,
             footprint: SIMD2<Int32>(width, width), // Square footprint for simplicity
             height: height,

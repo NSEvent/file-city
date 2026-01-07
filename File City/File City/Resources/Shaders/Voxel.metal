@@ -136,6 +136,7 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
 fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
                               constant Uniforms &uniforms [[buffer(2)]],
                               texture2d_array<float> textures [[texture(0)]],
+                              texture2d_array<float> signLabels [[texture(1)]],
                               sampler textureSampler [[sampler(0)]]) {
     float shade = saturate(dot(normalize(in.normal), float3(0.4, 0.85, 0.2)));
     float3 palette[12] = {
@@ -228,6 +229,39 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
         float glow = 0.75;
         finalColor = mix(finalColor, flashColor, glow);
         finalColor += flashColor * glow * 0.4;
+    } else if (in.shapeID == 10) {
+        // Text quad - materialID contains ASCII code, textureIndex is font atlas
+        // Font atlas layout: 16x16 grid, characters 32-127 in first 96 cells
+        uint charCode = in.materialID;
+        if (charCode >= 32 && charCode < 128) {
+            uint charIndex = charCode - 32;
+            uint col = charIndex % 16;
+            uint row = charIndex / 16;
+
+            // Each cell is 1/16 of the texture
+            float cellSize = 1.0 / 16.0;
+            float2 cellOffset = float2(float(col), float(row)) * cellSize;
+            // Flip U to correct for face orientation
+            float2 flippedUV = float2(1.0 - in.uv.x, in.uv.y);
+            float2 charUV = cellOffset + flippedUV * cellSize;
+
+            float4 texColor = textures.sample(textureSampler, charUV, uint(in.textureIndex));
+            finalColor = texColor.rgb;
+
+            // Add slight glow for readability
+            if (texColor.r > 0.5) {
+                finalColor += float3(0.1, 0.1, 0.1);
+            }
+        }
+    } else if (in.shapeID == 11) {
+        // Sign label - sample from pre-baked sign label texture array
+        // textureIndex contains the sign label index
+        if (in.textureIndex >= 0) {
+            // Flip U to correct for face orientation
+            float2 flippedUV = float2(1.0 - in.uv.x, in.uv.y);
+            float4 texColor = signLabels.sample(textureSampler, flippedUV, uint(in.textureIndex));
+            finalColor = texColor.rgb;
+        }
     }
     return float4(finalColor, 1.0);
 }

@@ -4,6 +4,7 @@ import simd
 struct CityBlock: Identifiable, Hashable {
     let id: UUID
     let nodeID: UUID
+    let name: String
     let position: SIMD3<Float>
     let footprint: SIMD2<Int32>
     let height: Int32
@@ -20,6 +21,7 @@ extension CityBlock {
         CityBlock(
             id: id,
             nodeID: nodeID,
+            name: name,
             position: position,
             footprint: footprint,
             height: height,

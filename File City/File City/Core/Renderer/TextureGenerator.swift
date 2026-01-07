@@ -1,6 +1,7 @@
 import Foundation
 import Metal
 import CryptoKit
+import AppKit
 
 final class TextureGenerator {
     private enum FacadeStyle: UInt64 {
@@ -1080,6 +1081,139 @@ final class TextureGenerator {
 
     private static func clamp(value: Int, min: Int, max: Int) -> Int {
         return value < min ? min : (value > max ? max : value)
+    }
+
+    // MARK: - Font Atlas
+    /// Generates a font atlas texture with ASCII characters 32-127
+    /// Layout: 16 columns x 16 rows, each cell 16x16 pixels = 256x256 texture
+    /// Only first 96 cells (6 rows) contain characters, rest is empty
+    static func generateFontAtlas(device: MTLDevice) -> MTLTexture? {
+        let cellSize = 16
+        let cols = 16
+        let rows = 16  // Match 256x256 texture size
+        let width = cellSize * cols   // 256
+        let height = cellSize * rows  // 256
+
+        // Create NSImage and draw text
+        let image = NSImage(size: NSSize(width: width, height: height))
+        image.lockFocus()
+
+        // Fill with dark background for visibility
+        NSColor(red: 0.15, green: 0.15, blue: 0.2, alpha: 1.0).setFill()
+        NSRect(x: 0, y: 0, width: width, height: height).fill()
+
+        let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .bold)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor.white
+        ]
+
+        // Draw ASCII characters 32-127 (96 characters)
+        for i in 0..<96 {
+            let char = Character(UnicodeScalar(32 + i)!)
+            let col = i % cols
+            let row = i / cols
+            // Position in texture (row 0 at top)
+            let x = CGFloat(col * cellSize) + 3
+            let y = CGFloat(height - (row + 1) * cellSize) + 2
+            String(char).draw(at: NSPoint(x: x, y: y), withAttributes: attributes)
+        }
+
+        image.unlockFocus()
+
+        // Convert to pixel data
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+
+        var pixelData = [UInt8](repeating: 0, count: width * height * 4)
+        let context = CGContext(
+            data: &pixelData,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )
+        context?.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm,
+            width: width,
+            height: height,
+            mipmapped: false
+        )
+        descriptor.usage = .shaderRead
+
+        guard let texture = device.makeTexture(descriptor: descriptor) else { return nil }
+        texture.replace(
+            region: MTLRegionMake2D(0, 0, width, height),
+            mipmapLevel: 0,
+            withBytes: pixelData,
+            bytesPerRow: width * 4
+        )
+
+        return texture
+    }
+
+    // MARK: - Sign Labels
+    /// Generates a pre-baked texture for a sign label (128x32 pixels)
+    static func generateSignLabel(device: MTLDevice, text: String) -> MTLTexture? {
+        let width = 128
+        let height = 32
+
+        let image = NSImage(size: NSSize(width: width, height: height))
+        image.lockFocus()
+
+        // Dark background
+        NSColor(red: 0.2, green: 0.18, blue: 0.15, alpha: 1.0).setFill()
+        NSRect(x: 0, y: 0, width: width, height: height).fill()
+
+        // Draw text centered
+        let displayText = String(text.prefix(10))
+        let font = NSFont.systemFont(ofSize: 14, weight: .bold)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor.white
+        ]
+
+        let textSize = displayText.size(withAttributes: attributes)
+        let x = (CGFloat(width) - textSize.width) / 2
+        let y = (CGFloat(height) - textSize.height) / 2
+        displayText.draw(at: NSPoint(x: x, y: y), withAttributes: attributes)
+
+        image.unlockFocus()
+
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+
+        var pixelData = [UInt8](repeating: 0, count: width * height * 4)
+        let context = CGContext(
+            data: &pixelData,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )
+        context?.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm,
+            width: width,
+            height: height,
+            mipmapped: false
+        )
+        descriptor.usage = .shaderRead
+
+        guard let texture = device.makeTexture(descriptor: descriptor) else { return nil }
+        texture.replace(
+            region: MTLRegionMake2D(0, 0, width, height),
+            mipmapLevel: 0,
+            withBytes: pixelData,
+            bytesPerRow: width * 4
+        )
+
+        return texture
     }
 }
 

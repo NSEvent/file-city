@@ -49,6 +49,7 @@ final class CityMapper {
                 let towerBlocks = buildSkyscraperBlocks(
                     position: basePosition,
                     nodeID: node.id,
+                    name: node.name,
                     height: Int32(height),
                     footprint: footprint,
                     materialID: Int32(materialID),
@@ -63,6 +64,7 @@ final class CityMapper {
                 let bulbousBlocks = buildBulbousBlocks(
                     position: basePosition,
                     nodeID: node.id,
+                    name: node.name,
                     height: Int32(height),
                     footprint: footprint,
                     materialID: Int32(materialID),
@@ -76,6 +78,7 @@ final class CityMapper {
                 let block = CityBlock(
                     id: UUID(),
                     nodeID: node.id,
+                    name: node.name,
                     position: basePosition,
                     footprint: footprint,
                     height: Int32(height),
@@ -122,6 +125,7 @@ final class CityMapper {
     private func buildSkyscraperBlocks(
         position: SIMD3<Float>,
         nodeID: UUID,
+        name: String,
         height: Int32,
         footprint: SIMD2<Int32>,
         materialID: Int32,
@@ -220,6 +224,7 @@ final class CityMapper {
             let block = CityBlock(
                 id: UUID(),
                 nodeID: nodeID,
+                name: name,
                 position: SIMD3<Float>(position.x, currentY, position.z),
                 footprint: segmentFootprint,
                 height: segmentHeight,
@@ -240,6 +245,7 @@ final class CityMapper {
     private func buildBulbousBlocks(
         position: SIMD3<Float>,
         nodeID: UUID,
+        name: String,
         height: Int32,
         footprint: SIMD2<Int32>,
         materialID: Int32,
@@ -268,6 +274,7 @@ final class CityMapper {
             let block = CityBlock(
                 id: UUID(),
                 nodeID: nodeID,
+                name: name,
                 position: SIMD3<Float>(position.x, currentY, position.z),
                 footprint: segmentFootprints[index],
                 height: segmentHeight,
