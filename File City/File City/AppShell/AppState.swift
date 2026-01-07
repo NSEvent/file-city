@@ -482,7 +482,16 @@ final class AppState: ObservableObject {
         snapshot.reserveCapacity(activityByURL.count)
         for pulse in activityByURL.values {
             if let nodeID = resolveActivityNodeID(url: pulse.url) {
-                snapshot[nodeID] = pulse
+                // Prefer writes over reads, or more recent activity
+                if let existing = snapshot[nodeID] {
+                    if pulse.kind == .write && existing.kind == .read {
+                        snapshot[nodeID] = pulse
+                    } else if pulse.kind == existing.kind && pulse.startedAt > existing.startedAt {
+                        snapshot[nodeID] = pulse
+                    }
+                } else {
+                    snapshot[nodeID] = pulse
+                }
             }
         }
         return snapshot
@@ -580,6 +589,20 @@ final class AppState: ObservableObject {
         }
         guard let rootURL else { return nil }
         guard url.path.hasPrefix(rootURL.path) else { return nil }
+        // Find the first-level child of rootURL that contains this URL
+        // This ensures files deep in a subdirectory animate the top-level building
+        let rootPath = rootURL.path
+        let relativePath = String(url.path.dropFirst(rootPath.count))
+        let components = relativePath.split(separator: "/", omittingEmptySubsequences: true)
+        if components.isEmpty {
+            return nodeByURL[rootURL]?.id
+        }
+        let firstLevelPath = rootPath + "/" + String(components[0])
+        let firstLevelURL = URL(fileURLWithPath: firstLevelPath)
+        if let node = nodeByURL[firstLevelURL] {
+            return node.id
+        }
+        // Fallback: walk up to find any match
         var currentURL = url.deletingLastPathComponent()
         while currentURL.path != rootURL.path {
             if let node = nodeByURL[currentURL] {

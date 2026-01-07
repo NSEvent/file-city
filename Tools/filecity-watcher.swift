@@ -89,13 +89,22 @@ func runFsUsage() {
         print("Monitoring all file activity in: \(projectsPath)")
 
         let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/sbin/fs_usage")
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/fs_usage")
         // Monitor all processes, filter by path in output processing
         task.arguments = ["-w", "-f", "pathname"]
 
         let pipe = Pipe()
+        let errPipe = Pipe()
         task.standardOutput = pipe
-        task.standardError = Pipe()
+        task.standardError = errPipe
+
+        // Capture stderr to see any errors
+        errPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if !data.isEmpty, let str = String(data: data, encoding: .utf8) {
+                print("fs_usage stderr: \(str)")
+            }
+        }
 
         var buffer = Data()
         let writeHints = ["write", "pwrite", "truncate", "create", "rename", "unlink", "mkdir", "rmdir"]
@@ -131,8 +140,29 @@ func runFsUsage() {
                 guard let pathToken else { continue }
                 let path = String(pathToken)
 
-                // Extract process name
-                let processName = line.split(whereSeparator: { $0 == " " || $0 == "\t" }).first.map(String.init) ?? "unknown"
+                // Extract process name (appears at end of fs_usage line)
+                let processName = line.split(whereSeparator: { $0 == " " || $0 == "\t" }).last.map(String.init) ?? "unknown"
+
+                // Filter to only LLM tools and their common child processes
+                // Process names have PID suffix like "cat.12345", so check prefix
+                let processLower = processName.lowercased()
+                let processBase = processLower.split(separator: ".").first.map(String.init) ?? processLower
+                let isLLMTool = processLower.contains("claude") ||
+                                processLower.contains("codex") ||
+                                processLower.contains("gemini") ||
+                                processLower.contains("cursor") ||
+                                processLower.contains("node") ||
+                                processBase == "cat" ||
+                                processBase == "ls" ||
+                                processBase == "head" ||
+                                processBase == "tail" ||
+                                processBase == "grep" ||
+                                processBase == "rg" ||
+                                processBase == "find" ||
+                                processBase == "bash" ||
+                                processBase == "zsh" ||
+                                processBase == "sh"
+                guard isLLMTool else { continue }
 
                 // Throttle
                 let key = "\(processName)|\(kind)|\(path)"
@@ -149,11 +179,16 @@ func runFsUsage() {
             }
         }
 
-        try? task.run()
-        task.waitUntilExit()
+        do {
+            try task.run()
+            task.waitUntilExit()
+            print("fs_usage exited with code \(task.terminationStatus), restarting...")
+        } catch {
+            print("Failed to launch fs_usage: \(error)")
+        }
 
         pipe.fileHandleForReading.readabilityHandler = nil
-        print("fs_usage exited, restarting...")
+        errPipe.fileHandleForReading.readabilityHandler = nil
         sleep(1)
     }
 }
