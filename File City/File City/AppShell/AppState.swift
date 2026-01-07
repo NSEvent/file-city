@@ -26,6 +26,7 @@ final class AppState: ObservableObject {
     private let pinStore = PinStore()
     private let rescanSubject = PassthroughSubject<Void, Never>()
     let fileWriteSubject = PassthroughSubject<UUID, Never>()
+    let fileReadSubject = PassthroughSubject<UUID, Never>()
     private var gitStatusTask: Task<Void, Never>?
     private var gitCleanByPath: [String: Bool] = [:]
     private var focusNodeIDByURL: [URL: UUID] = [:]
@@ -598,6 +599,10 @@ final class AppState: ObservableObject {
             if let nodeID = resolveActivityNodeID(url: url) {
                 fileWriteSubject.send(nodeID)
             }
+        } else if kind == .read {
+            if let nodeID = resolveActivityNodeID(url: url) {
+                fileReadSubject.send(nodeID)
+            }
         }
         activityVersion &+= 1
     }
@@ -617,6 +622,10 @@ final class AppState: ObservableObject {
         if event.kind == .write {
             if let nodeID = resolveActivityNodeID(url: event.url) {
                 fileWriteSubject.send(nodeID)
+            }
+        } else if event.kind == .read {
+            if let nodeID = resolveActivityNodeID(url: event.url) {
+                fileReadSubject.send(nodeID)
             }
         }
         activityVersion &+= 1

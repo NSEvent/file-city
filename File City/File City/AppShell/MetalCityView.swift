@@ -108,6 +108,13 @@ struct MetalCityView: NSViewRepresentable {
                 }
                 .store(in: &cancellables)
             
+            appState.fileReadSubject
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] nodeID in
+                    self?.handleFileRead(nodeID: nodeID)
+                }
+                .store(in: &cancellables)
+            
             // Clear helicopters on directory switch
             appState.$rootURL
                 .dropFirst()
@@ -122,6 +129,13 @@ struct MetalCityView: NSViewRepresentable {
             guard let appState, let renderer else { return }
             if let block = appState.blocks.first(where: { $0.nodeID == nodeID }) {
                 renderer.spawnHelicopter(at: block)
+            }
+        }
+        
+        private func handleFileRead(nodeID: UUID) {
+            guard let appState, let renderer else { return }
+            if let block = appState.blocks.first(where: { $0.nodeID == nodeID }) {
+                renderer.spawnBeam(at: block)
             }
         }
 
@@ -284,7 +298,13 @@ struct MetalCityView: NSViewRepresentable {
                     appState?.triggerTestActivity(kind: .read)
                 }
             case "2":
-                appState?.triggerTestActivity(kind: .write)
+                let targetID = hoveredNodeID ?? hoveredBeaconNodeID
+                if let targetID,
+                   let block = appState?.blocks.first(where: { $0.nodeID == targetID }) {
+                    renderer?.spawnBeam(at: block)
+                } else {
+                    appState?.triggerTestActivity(kind: .write)
+                }
             default:
                 break
             }

@@ -35,8 +35,11 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private var lastPlaneUpdateTime: CFTimeInterval = CACurrentMediaTime()
     private var hoveredPlaneIndex: Int?
     private let helicopterManager = HelicopterManager()
+    private let beamManager = BeamManager()
     private var helicopterInstanceBuffer: MTLBuffer?
     private var helicopterInstanceCount: Int = 0
+    private var beamInstanceBuffer: MTLBuffer?
+    private var beamInstanceCount: Int = 0
     private var gitBeaconBoxes: [BeaconPicker.Box] = []
     private let beaconHitInflation: Float = 1.0
     private var blocks: [CityBlock] = []
@@ -95,6 +98,16 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         descriptor.fragmentFunction = library.makeFunction(name: "fragment_main_v2")
         descriptor.colorAttachments[0].pixelFormat = view.colorPixelFormat
         descriptor.depthAttachmentPixelFormat = view.depthStencilPixelFormat
+        
+        // Enable blending
+        descriptor.colorAttachments[0].isBlendingEnabled = true
+        descriptor.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+        descriptor.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+        descriptor.colorAttachments[0].rgbBlendOperation = .add
+        descriptor.colorAttachments[0].sourceAlphaBlendFactor = .sourceAlpha
+        descriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        descriptor.colorAttachments[0].alphaBlendOperation = .add
+        
         descriptor.vertexDescriptor = MetalRenderer.vertexDescriptor()
 
         do {
@@ -220,7 +233,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         self.blocks = blocks
         let cameraYaw = camera.yaw
         let inboundTargets = helicopterManager.getActiveConstructionTargetIDs()
-        self.lastTargetedNodeIDs = inboundTargets
+        let beamTargets = beamManager.getActiveBeamTargetIDs()
+        self.lastTargetedNodeIDs = inboundTargets.union(beamTargets)
         
         var instances: [VoxelInstance] = blocks.map { block in
             let rotationY = rotationYForWedge(block: block, cameraYaw: cameraYaw)
@@ -230,6 +244,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             let activityKind: Int32
             
             let isTargeted = inboundTargets.contains(block.nodeID)
+            let isBeaming = beamTargets.contains(block.nodeID)
             
             if let activity {
                 let elapsed = max(0, activityNow - activity.startedAt)
@@ -239,6 +254,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             } else if isTargeted {
                 activityStrength = 1.0
                 activityKind = 2 // Write/Orange/Construction
+            } else if isBeaming {
+                activityStrength = 1.0
+                activityKind = 1 // Read/Blue
             } else {
                 activityStrength = 0
                 activityKind = 0
@@ -484,8 +502,29 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         helicopterManager.spawn(at: target, targetID: block.nodeID, textureIndex: block.textureIndex)
     }
     
+    func spawnBeam(at block: CityBlock) {
+        // Calculate position: Center of block, at the top of the "building" part
+        // but below the beacon tower if any.
+        // visualTopY usually includes the tower base.
+        // Let's use the block's physical top Y + a small offset
+        let baseY = block.position.y + Float(block.height)
+        var beamY = baseY
+        
+        // Adjust for shape (if it's a spire/pyramid, we want to be near the peak)
+        if block.shapeID == 1 || block.shapeID == 2 {
+             beamY = visualTopY(for: block) - 0.5 // Slightly below tip
+        } else if block.shapeID == 3 || block.shapeID == 4 {
+             // Wedges: visualTopY is high side. We want roughly center top.
+             beamY = baseY + (visualTopY(for: block) - baseY) * 0.5
+        }
+        
+        let target = SIMD3<Float>(block.position.x, beamY, block.position.z)
+        beamManager.spawn(at: target, targetID: block.nodeID)
+    }
+    
     func clearHelicopters() {
         helicopterManager.clear()
+        beamManager.clear()
         rebuildInstancesUsingCache()
     }
 
@@ -539,7 +578,11 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
         helicopterManager.update()
         
-        let currentTargets = helicopterManager.getActiveConstructionTargetIDs()
+        beamManager.update()
+        let beamTargets = beamManager.getActiveBeamTargetIDs()
+        let heliTargets = helicopterManager.getActiveConstructionTargetIDs()
+        let currentTargets = heliTargets.union(beamTargets)
+        
         if currentTargets != lastTargetedNodeIDs {
             rebuildInstancesUsingCache()
         }
@@ -551,6 +594,17 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             if let buffer = helicopterInstanceBuffer {
                 encoder?.setVertexBuffer(buffer, offset: 0, index: 1)
                 encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 36, instanceCount: helicopterInstanceCount)
+            }
+        }
+        
+        beamManager.update()
+        let beamInstances = beamManager.buildInstances()
+        beamInstanceCount = beamInstances.count
+        if beamInstanceCount > 0 {
+            beamInstanceBuffer = device.makeBuffer(bytes: beamInstances, length: MemoryLayout<VoxelInstance>.stride * beamInstanceCount, options: [])
+            if let buffer = beamInstanceBuffer {
+                encoder?.setVertexBuffer(buffer, offset: 0, index: 1)
+                encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 36, instanceCount: beamInstanceCount)
             }
         }
 

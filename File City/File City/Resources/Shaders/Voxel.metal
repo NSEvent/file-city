@@ -98,6 +98,10 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
             // Slant Z
             local.y += local.z * 1.5;
         }
+    } else if (instance.shapeID == 12) {
+        // Beam: Anchor at bottom
+        // Local Y is -0.5 to 0.5. Shift to 0.0 to 1.0
+        local.y += 0.5;
     }
 
     float3 scaled = local * instance.scale;
@@ -292,6 +296,32 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
             float4 texColor = signLabels.sample(textureSampler, flippedUV, uint(in.textureIndex));
             finalColor = texColor.rgb;
         }
+    } else if (in.shapeID == 12) {
+        // Beam - White core, Blue edge
+        float alpha = saturate(in.highlight);
+        
+        // Core beam intensity (0 edge -> 1 center)
+        float dist = abs(in.uv.x * 2.0 - 1.0);
+        float core = 1.0 - dist;
+        core = pow(core, 3.0); // Sharpen
+        
+        // Pulse vertical
+        float pulse = 0.85 + 0.15 * sin(uniforms.time * 25.0 - in.uv.y * 10.0);
+        
+        float3 blueColor = float3(0.1, 0.4, 1.0);
+        float3 whiteColor = float3(1.0, 1.0, 1.0);
+        
+        // Mix blue and white based on core intensity
+        // Very center is white, quickly falls off to blue
+        float3 beamColor = mix(blueColor, whiteColor, pow(core, 4.0));
+        
+        // Final color
+        finalColor = beamColor * pulse;
+        
+        // Fade out alpha at edges to avoid hard lines
+        float edgeFade = smoothstep(0.8, 0.0, dist);
+        
+        return float4(finalColor, alpha * edgeFade * 0.9);
     }
     return float4(finalColor, 1.0);
 }
