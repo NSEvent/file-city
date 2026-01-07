@@ -1206,7 +1206,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                     pointer[baseIndex + 8 + i] = VoxelInstance(
                         position: pos,
                         _pad0: 0,
-                        scale: SIMD3<Float>(segmentLen, 1.5, 0.1),
+                        scale: SIMD3<Float>(segmentLen, 3.0, 0.1),
                         _pad1: 0,
                         rotationY: rotY,
                         rotationX: 0,

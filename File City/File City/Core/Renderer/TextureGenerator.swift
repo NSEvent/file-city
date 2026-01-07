@@ -1156,10 +1156,10 @@ final class TextureGenerator {
     }
 
     // MARK: - Sign Labels
-    /// Generates a pre-baked texture for a sign label (512x64 pixels)
+    /// Generates a pre-baked texture for a sign label (512x128 pixels)
     static func generateSignLabel(device: MTLDevice, text: String) -> MTLTexture? {
         let width = 512
-        let height = 64
+        let height = 128
         let maxTextWidth = CGFloat(width - 16) // Padding on sides
         let maxTextHeight = CGFloat(height - 8)
 
@@ -1228,10 +1228,10 @@ final class TextureGenerator {
     }
 
     // MARK: - Banner Texture
-    /// Generates a texture for a plane banner (512x64 pixels)
+    /// Generates a texture for a plane banner (512x128 pixels)
     static func generateBanner(device: MTLDevice, text: String) -> MTLTexture? {
         let width = 512
-        let height = 64
+        let height = 128
         let maxTextWidth = CGFloat(width - 32)
         let maxTextHeight = CGFloat(height - 8)
 
@@ -1242,12 +1242,9 @@ final class TextureGenerator {
         NSColor(white: 0.95, alpha: 1.0).setFill()
         NSRect(x: 0, y: 0, width: width, height: height).fill()
         
-        // Add subtle fabric noise? Maybe too detailed for voxel style.
-        // Let's just keep it clean white/off-white.
-
         // Find font size that fits
         let displayText = text
-        var fontSize: CGFloat = 48
+        var fontSize: CGFloat = 96
         var font = NSFont.systemFont(ofSize: fontSize, weight: .black)
         var attributes: [NSAttributedString.Key: Any] = [
             .font: font,
@@ -1256,8 +1253,8 @@ final class TextureGenerator {
         var textSize = displayText.size(withAttributes: attributes)
 
         // Reduce font size until text fits
-        while (textSize.width > maxTextWidth || textSize.height > maxTextHeight) && fontSize > 12 {
-            fontSize -= 2
+        while (textSize.width > maxTextWidth || textSize.height > maxTextHeight) && fontSize > 24 {
+            fontSize -= 4
             font = NSFont.systemFont(ofSize: fontSize, weight: .black)
             attributes[.font] = font
             textSize = displayText.size(withAttributes: attributes)
