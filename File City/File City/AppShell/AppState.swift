@@ -531,23 +531,26 @@ final class AppState: ObservableObject {
         watcher.start()
         self.watcher = watcher
 
-        // FileActivityWatcher uses fs_usage which requires root - only start if running as root
+        // Connect to privileged helper for full read/write monitoring
         activityWatcher?.stop()
         socketWatcher?.stop()
-        if getuid() == 0 {
-            let activityWatcher = FileActivityWatcher(rootURL: rootURL) { [weak self] event in
-                self?.handleActivityEvent(event)
-            }
-            activityWatcher.start()
-            self.activityWatcher = activityWatcher
-        } else {
-            // Connect to helper daemon for full read/write monitoring via socket
+
+        // Ensure helper is installed (prompts for password on first run)
+        if HelperManager.ensureHelperReady() {
             let socketWatcher = SocketActivityWatcher(rootURL: rootURL) { [weak self] event in
                 self?.handleActivityEvent(event)
             }
             socketWatcher.start()
             self.socketWatcher = socketWatcher
+        } else if getuid() == 0 {
+            // Fallback: if running as root, use direct fs_usage
+            let activityWatcher = FileActivityWatcher(rootURL: rootURL) { [weak self] event in
+                self?.handleActivityEvent(event)
+            }
+            activityWatcher.start()
+            self.activityWatcher = activityWatcher
         }
+        // If helper not available and not root, activity monitoring is disabled
     }
 
     private func handleFSEventsActivity(url: URL, kind: ActivityKind) {
