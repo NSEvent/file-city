@@ -646,6 +646,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         let minZ = zs.first ?? 0
         let maxZ = zs.last ?? 0
         let laneOffset = Float(roadWidth) * 0.25
+        
+        // Consistent car scale (Long Z) for rotation-based orientation
+        let carScale = SIMD3<Float>(1.6, 1.2, 3.2)
 
         for (index, z) in zs.dropLast().enumerated() {
             let roadZ = z + stepZ * 0.5
@@ -656,10 +659,15 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 let speed = (2.0 + randomUnit(seed: seed) * 3.0) / distance
                 let phase = randomUnit(seed: seed ^ 0xCAFE)
                 let forward = (index % 2 == 0)
-                let start = SIMD3<Float>(forward ? minX - 2.0 : maxX + 2.0, 0.5, roadZ + laneOffset)
-                let end = SIMD3<Float>(forward ? maxX + 2.0 : minX - 2.0, 0.5, roadZ + laneOffset)
-                let scale = SIMD3<Float>(3.2, 1.2, 1.6)
-                carPaths.append(CarPath(start: start, end: end, speed: speed, phase: phase, scale: scale))
+                
+                // RHT Logic for X-Roads
+                // +X (Forward): Right is South (+Z). Offset +
+                // -X (Backward): Right is North (-Z). Offset -
+                let offsetZ = forward ? laneOffset : -laneOffset
+                
+                let start = SIMD3<Float>(forward ? minX - 2.0 : maxX + 2.0, 0.5, roadZ + offsetZ)
+                let end = SIMD3<Float>(forward ? maxX + 2.0 : minX - 2.0, 0.5, roadZ + offsetZ)
+                carPaths.append(CarPath(start: start, end: end, speed: speed, phase: phase, scale: carScale))
             }
         }
 
@@ -672,10 +680,15 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 let speed = (2.0 + randomUnit(seed: seed) * 3.0) / distance
                 let phase = randomUnit(seed: seed ^ 0xBEEF)
                 let forward = (index % 2 == 0)
-                let start = SIMD3<Float>(roadX - laneOffset, 0.5, forward ? minZ - 2.0 : maxZ + 2.0)
-                let end = SIMD3<Float>(roadX - laneOffset, 0.5, forward ? maxZ + 2.0 : minZ - 2.0)
-                let scale = SIMD3<Float>(1.6, 1.2, 3.2)
-                carPaths.append(CarPath(start: start, end: end, speed: speed, phase: phase, scale: scale))
+                
+                // RHT Logic for Z-Roads
+                // +Z (Forward): Right is West (-X). Offset -
+                // -Z (Backward): Right is East (+X). Offset +
+                let offsetX = forward ? -laneOffset : laneOffset
+                
+                let start = SIMD3<Float>(roadX + offsetX, 0.5, forward ? minZ - 2.0 : maxZ + 2.0)
+                let end = SIMD3<Float>(roadX + offsetX, 0.5, forward ? maxZ + 2.0 : minZ - 2.0)
+                carPaths.append(CarPath(start: start, end: end, speed: speed, phase: phase, scale: carScale))
             }
         }
 
