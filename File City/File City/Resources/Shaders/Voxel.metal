@@ -345,9 +345,9 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
             // in.uv.x is 0..1 per segment.
             
             // Detect face orientation to fix text mirroring on back face
-            // Front face (Z+) needs flip (1-x). Back face (Z-) needs standard (x).
-            // Use localNormal to check face identity independent of rotation
-            float segmentU = (in.localNormal.z > 0.0) ? (1.0 - in.uv.x) : in.uv.x;
+            // User reported previous logic (1-x for front, x for back) was reversed on both.
+            // Swapping logic: x for front, 1-x for back.
+            float segmentU = (in.localNormal.z > 0.0) ? in.uv.x : (1.0 - in.uv.x);
             
             float uOffset = in.highlight;
             float uWidth = in.activity;
