@@ -646,8 +646,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             let progress = elapsed / Float(planeExplosions[i].duration)
 
             if progress >= 1.0 {
-                // Respawn the plane by removing it from exploded set
+                // Respawn the plane on a new flight path
                 let planeIndex = planeExplosions[i].planeIndex
+                regeneratePlanePath(index: planeIndex)
                 explodedPlaneIndices.remove(planeIndex)
                 planeExplosions.remove(at: i)
                 continue
@@ -702,6 +703,91 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
 
         return instances
+    }
+
+    private func regeneratePlanePath(index: Int) {
+        guard index >= 0, index < planePaths.count, !blocks.isEmpty else { return }
+
+        let xs = sortedUnique(values: blocks.map { $0.position.x })
+        let zs = sortedUnique(values: blocks.map { $0.position.z })
+        guard xs.count > 1, zs.count > 1 else { return }
+
+        let stepX = minSpacing(values: xs)
+        let stepZ = minSpacing(values: zs)
+        guard stepX > 0, stepZ > 0 else { return }
+
+        let xRoadsSource = (0..<(xs.count - 1)).map { xs[$0] + stepX * 0.5 }
+        let zRoadsSource = (0..<(zs.count - 1)).map { zs[$0] + stepZ * 0.5 }
+        guard !xRoadsSource.isEmpty, !zRoadsSource.isEmpty else { return }
+
+        let outerPadding: Float = 150.0
+        let xRoads = [xRoadsSource[0] - outerPadding] + xRoadsSource + [xRoadsSource.last! + outerPadding]
+        let zRoads = [zRoadsSource[0] - outerPadding] + zRoadsSource + [zRoadsSource.last! + outerPadding]
+
+        let gridW = xRoads.count
+        let gridH = zRoads.count
+        guard gridW > 2, gridH > 2 else { return }
+
+        let minX = xs.first ?? 0
+        let maxX = xs.last ?? 0
+        let minZ = zs.first ?? 0
+        let maxZ = zs.last ?? 0
+        let spanX = maxX - minX
+        let spanZ = maxZ - minZ
+        let minPathLength = max(spanX, spanZ) * 0.6
+
+        let maxHeight = blocks.map { $0.position.y + Float($0.height) }.max() ?? 20
+        let altitude = maxHeight + 18 + Float(index % 3) * 6.0
+
+        // Use current time to generate a unique seed for a new path
+        let timeSeed = UInt64(CACurrentMediaTime() * 1000000) & 0xFFFFFFFF
+        let seed = timeSeed ^ UInt64(index * 7919)
+
+        let startEdge = Int(seed % 4)
+        let endEdge = (startEdge + 2 + Int((seed >> 8) % 2)) % 4
+
+        var attempts = 0
+        while attempts < 10 {
+            let attemptSeed = seed &+ UInt64(attempts * 37)
+            let start = randomPerimeterPoint(width: gridW, height: gridH, seed: attemptSeed, edge: startEdge)
+            let end = randomPerimeterPoint(width: gridW, height: gridH, seed: attemptSeed ^ 0xBEEF, edge: endEdge)
+            let mid = randomInteriorPoint(width: gridW, height: gridH, seed: attemptSeed ^ 0xCAFE)
+
+            let first = findPath(start: start, goal: mid, width: gridW, height: gridH)
+            let second = findPath(start: mid, goal: end, width: gridW, height: gridH)
+            let pathCells = first + second.dropFirst()
+
+            if pathCells.count >= 2 {
+                let waypoints = pathCells.map { cell in
+                    SIMD3<Float>(xRoads[cell.x], altitude, zRoads[cell.y])
+                }
+                let smoothed = smoothPath(waypoints: waypoints, iterations: 2)
+                let segmentLengths = computeSegmentLengths(waypoints: smoothed)
+                let totalLength = segmentLengths.reduce(0, +)
+
+                if totalLength >= minPathLength {
+                    let speed = 6.0 + randomUnit(seed: attemptSeed ^ 0xFACE) * 6.0
+                    let phase = randomUnit(seed: attemptSeed ^ 0xDEAD) * totalLength
+                    let scale = SIMD3<Float>(7.5, 0.6, 2.5)
+
+                    planePaths[index] = PlanePath(
+                        waypoints: smoothed,
+                        segmentLengths: segmentLengths,
+                        totalLength: totalLength,
+                        speed: speed,
+                        phase: phase,
+                        scale: scale
+                    )
+
+                    // Reset offset for fresh start
+                    if index < planeOffsets.count {
+                        planeOffsets[index] = 0
+                    }
+                    return
+                }
+            }
+            attempts += 1
+        }
     }
 
     func pickPlane(at point: CGPoint, in size: CGSize) -> Int? {
