@@ -6,7 +6,15 @@ struct ContentView: View {
 
     var body: some View {
         NavigationView {
-            SidebarView()
+            VStack(spacing: 0) {
+                // Toolbar with navigation
+                SidebarToolbar()
+
+                // Finder-style list view
+                FinderListView()
+            }
+            .frame(minWidth: 320)
+
             ZStack {
                 MetalCityView()
                 VStack {
@@ -119,5 +127,69 @@ private struct SelectionInfoPanel: View {
             .padding(12)
             .transition(.opacity)
         }
+    }
+}
+
+private struct SidebarToolbar: View {
+    @EnvironmentObject var appState: AppState
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                // Back button
+                Button {
+                    appState.goToParent()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .buttonStyle(.borderless)
+                .disabled(!appState.canGoToParent())
+
+                // Current path
+                if let rootURL = appState.rootURL {
+                    Text(rootURL.lastPathComponent)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+
+                Spacer()
+
+                // Choose folder button
+                Button {
+                    appState.chooseRoot()
+                } label: {
+                    Image(systemName: "folder.badge.plus")
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.borderless)
+                .help("Choose Folder")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+
+            Divider()
+
+            // Path breadcrumb
+            if let rootURL = appState.rootURL {
+                HStack {
+                    Text(rootURL.path)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                    Spacer()
+                    Text("\(appState.nodeCount) items")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+
+                Divider()
+            }
+        }
+        .background(Color(NSColor.controlBackgroundColor))
     }
 }

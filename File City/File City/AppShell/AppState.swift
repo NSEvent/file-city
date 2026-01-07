@@ -10,8 +10,12 @@ final class AppState: ObservableObject {
     @Published private(set) var pendingAutoFit = false
     @Published var searchQuery: String = ""
     @Published var searchResults: [URL] = []
-    @Published var selectedURL: URL?
-    @Published var selectedFocusNodeID: UUID?
+    @Published var selectedURLs: Set<URL> = []
+    @Published var selectedFocusNodeIDs: Set<UUID> = []
+
+    /// Convenience accessor for single selection (first selected URL)
+    var selectedURL: URL? { selectedURLs.first }
+
     @Published var hoveredURL: URL?
     @Published var hoveredNodeID: UUID?
     @Published var hoveredGitStatus: [String]?
@@ -118,7 +122,7 @@ final class AppState: ObservableObject {
                 focusNodeIDByURL = buildFocusMap(root: result.root)
                 nodeByID = buildNodeIDMap(root: result.root)
                 nodeByURL = buildNodeURLMap(root: result.root)
-                selectedFocusNodeID = selectedURL.flatMap { focusNodeIDByURL[$0] }
+                selectedFocusNodeIDs = Set(selectedURLs.compactMap { focusNodeIDByURL[$0] })
                 hoveredURL = hoveredURL.flatMap { nodeByURL[$0] != nil ? $0 : nil }
                 hoveredNodeID = hoveredURL.flatMap { nodeByURL[$0]?.id }
                 hoveredBeaconURL = hoveredBeaconURL.flatMap { nodeByURL[$0] != nil ? $0 : nil }
@@ -132,7 +136,7 @@ final class AppState: ObservableObject {
                 focusNodeIDByURL = [:]
                 nodeByID = [:]
                 nodeByURL = [:]
-                selectedFocusNodeID = nil
+                selectedFocusNodeIDs = []
                 hoveredNodeID = nil
                 hoveredBeaconNodeID = nil
                 hoveredBeaconURL = nil
@@ -164,7 +168,7 @@ final class AppState: ObservableObject {
                 focusNodeIDByURL = buildFocusMap(root: result.root)
                 nodeByID = buildNodeIDMap(root: result.root)
                 nodeByURL = buildNodeURLMap(root: result.root)
-                selectedFocusNodeID = selectedURL.flatMap { focusNodeIDByURL[$0] }
+                selectedFocusNodeIDs = Set(selectedURLs.compactMap { focusNodeIDByURL[$0] })
                 hoveredURL = hoveredURL.flatMap { nodeByURL[$0] != nil ? $0 : nil }
                 hoveredNodeID = hoveredURL.flatMap { nodeByURL[$0]?.id }
                 hoveredBeaconURL = hoveredBeaconURL.flatMap { nodeByURL[$0] != nil ? $0 : nil }
@@ -176,14 +180,42 @@ final class AppState: ObservableObject {
     }
 
     func focus(_ url: URL) {
-        selectedURL = url
-        selectedFocusNodeID = focusNodeIDByURL[url]
+        selectedURLs = [url]
+        selectedFocusNodeIDs = focusNodeIDByURL[url].map { [$0] } ?? []
     }
 
     /// Select a file/directory without navigating (for single-click)
     func select(_ url: URL) {
-        selectedURL = url
-        selectedFocusNodeID = focusNodeIDByURL[url]
+        selectedURLs = [url]
+        selectedFocusNodeIDs = focusNodeIDByURL[url].map { [$0] } ?? []
+    }
+
+    /// Select multiple URLs (for list view multi-selection)
+    func selectURLs(_ urls: Set<URL>) {
+        selectedURLs = urls
+        selectedFocusNodeIDs = Set(urls.compactMap { focusNodeIDByURL[$0] })
+    }
+
+    /// Add URL to current selection (for Cmd+click)
+    func addToSelection(_ url: URL) {
+        selectedURLs.insert(url)
+        if let nodeID = focusNodeIDByURL[url] {
+            selectedFocusNodeIDs.insert(nodeID)
+        }
+    }
+
+    /// Remove URL from selection (for Cmd+click toggle)
+    func removeFromSelection(_ url: URL) {
+        selectedURLs.remove(url)
+        if let nodeID = focusNodeIDByURL[url] {
+            selectedFocusNodeIDs.remove(nodeID)
+        }
+    }
+
+    /// Clear all selection
+    func clearSelection() {
+        selectedURLs = []
+        selectedFocusNodeIDs = []
     }
 
     /// Activate item: navigate into directories, open files with default app (for double-click)
@@ -210,8 +242,8 @@ final class AppState: ObservableObject {
         hoveredBeaconNodeID = nil
         hoveredBeaconURL = nil
         activityInfoLines = nil
-        selectedURL = nil
-        selectedFocusNodeID = nil
+        selectedURLs = []
+        selectedFocusNodeIDs = []
         scanRoot(autoFit: true)
         startWatchingRoot()
     }
@@ -225,8 +257,8 @@ final class AppState: ObservableObject {
         hoveredBeaconNodeID = nil
         hoveredBeaconURL = nil
         activityInfoLines = nil
-        selectedURL = nil
-        selectedFocusNodeID = nil
+        selectedURLs = []
+        selectedFocusNodeIDs = []
         scanRoot(autoFit: true)
         startWatchingRoot()
     }
@@ -396,7 +428,7 @@ final class AppState: ObservableObject {
 
     func actionContainerURL() -> URL? {
         guard let rootURL else { return nil }
-        guard let selectedURL else { return rootURL }
+        guard let selectedURL = selectedURLs.first else { return rootURL }
         var isDirectory: ObjCBool = false
         if FileManager.default.fileExists(atPath: selectedURL.path, isDirectory: &isDirectory), isDirectory.boolValue {
             return selectedURL
@@ -431,7 +463,7 @@ final class AppState: ObservableObject {
     }
 
     func renameSelected() {
-        guard let selectedURL else { return }
+        guard let selectedURL = selectedURLs.first else { return }
         let currentName = selectedURL.lastPathComponent
         guard let name = promptForName(title: "Rename", message: "Enter a new name.", placeholder: currentName, defaultValue: currentName) else { return }
         let dstURL = selectedURL.deletingLastPathComponent().appendingPathComponent(name, isDirectory: isDirectory(selectedURL))
@@ -445,17 +477,19 @@ final class AppState: ObservableObject {
     }
 
     func moveSelected() {
-        guard let selectedURL else { return }
+        guard !selectedURLs.isEmpty else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.prompt = "Move"
         if panel.runModal() == .OK, let destFolder = panel.url {
-            let destination = destFolder.appendingPathComponent(selectedURL.lastPathComponent, isDirectory: isDirectory(selectedURL))
             do {
-                try FileActions().moveItem(from: selectedURL, to: destination)
-                focus(destination)
+                for selectedURL in selectedURLs {
+                    let destination = destFolder.appendingPathComponent(selectedURL.lastPathComponent, isDirectory: isDirectory(selectedURL))
+                    try FileActions().moveItem(from: selectedURL, to: destination)
+                }
+                clearSelection()
                 rescanSubject.send(())
             } catch {
                 presentError(error)
@@ -464,18 +498,20 @@ final class AppState: ObservableObject {
     }
 
     func trashSelected() {
-        guard let selected = selectedURL else { return }
+        guard !selectedURLs.isEmpty else { return }
+        let count = selectedURLs.count
         let alert = NSAlert()
         alert.messageText = "Move to Trash?"
-        alert.informativeText = selected.lastPathComponent
+        alert.informativeText = count == 1 ? selectedURLs.first!.lastPathComponent : "\(count) items"
         alert.addButton(withTitle: "Trash")
         alert.addButton(withTitle: "Cancel")
         let response = alert.runModal()
         guard response == .alertFirstButtonReturn else { return }
         do {
-            try FileActions().moveToTrash(selected)
-            selectedURL = nil
-            selectedFocusNodeID = nil
+            for url in selectedURLs {
+                try FileActions().moveToTrash(url)
+            }
+            clearSelection()
             rescanSubject.send(())
         } catch {
             presentError(error)
@@ -517,7 +553,7 @@ final class AppState: ObservableObject {
 
     func triggerTestActivity(kind: ActivityKind) {
         let now = activityNow()
-        let targetNodeID = hoveredNodeID ?? hoveredBeaconNodeID ?? selectedFocusNodeID
+        let targetNodeID = hoveredNodeID ?? hoveredBeaconNodeID ?? selectedFocusNodeIDs.first
         guard let targetNodeID,
               let url = nodeByID[targetNodeID]?.url else { return }
         activityByURL[url] = NodeActivityPulse(

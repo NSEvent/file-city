@@ -59,7 +59,7 @@ struct MetalCityView: NSViewRepresentable {
         let activityNow = appState.activityNow()
         context.coordinator.renderer?.updateInstances(
             blocks: appState.blocks,
-            selectedNodeID: appState.selectedFocusNodeID,
+            selectedNodeIDs: appState.selectedFocusNodeIDs,
             hoveredNodeID: appState.hoveredNodeID,
             hoveredBeaconNodeID: appState.hoveredBeaconNodeID,
             activityByNodeID: appState.activitySnapshot(now: activityNow),
@@ -188,7 +188,7 @@ struct MetalCityView: NSViewRepresentable {
             let activityNow = appState.activityNow()
             renderer.updateInstances(
                 blocks: appState.blocks,
-                selectedNodeID: appState.selectedFocusNodeID,
+                selectedNodeIDs: appState.selectedFocusNodeIDs,
                 hoveredNodeID: appState.hoveredNodeID,
                 hoveredBeaconNodeID: appState.hoveredBeaconNodeID,
                 activityByNodeID: appState.activitySnapshot(now: activityNow),

@@ -55,7 +55,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private var bannerTextureIndex: Int = -1
 
     // Cached state for continuous updates
-    private var lastSelectedNodeID: UUID?
+    private var lastSelectedNodeIDs: Set<UUID> = []
     private var lastHoveredNodeID: UUID?
     private var lastHoveredBeaconNodeID: UUID?
     private var lastActivityByNodeID: [UUID: NodeActivityPulse] = [:]
@@ -243,14 +243,14 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     }
 
     func updateInstances(blocks: [CityBlock],
-                         selectedNodeID: UUID?,
+                         selectedNodeIDs: Set<UUID>,
                          hoveredNodeID: UUID?,
                          hoveredBeaconNodeID: UUID?,
                          activityByNodeID: [UUID: NodeActivityPulse],
                          activityNow: CFTimeInterval,
                          activityDuration: CFTimeInterval) {
         // Cache state
-        self.lastSelectedNodeID = selectedNodeID
+        self.lastSelectedNodeIDs = selectedNodeIDs
         self.lastHoveredNodeID = hoveredNodeID
         self.lastHoveredBeaconNodeID = hoveredBeaconNodeID
         self.lastActivityByNodeID = activityByNodeID
@@ -296,7 +296,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 rotationX: 0,
                 rotationZ: 0,
                 materialID: UInt32(block.materialID),
-                highlight: block.nodeID == selectedNodeID ? 1.0 : 0.0,
+                highlight: selectedNodeIDs.contains(block.nodeID) ? 1.0 : 0.0,
                 hover: isHovering ? 1.0 : 0.0,
                 activity: activityStrength,
                 activityKind: activityKind,
@@ -304,7 +304,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 shapeID: block.shapeID
             )
         }
-        let gitTowerInstances = buildGitTowerInstances(blocks: blocks, hoveredBeaconNodeID: hoveredBeaconNodeID)
+        let gitTowerInstances = buildGitTowerInstances(blocks: blocks, selectedNodeIDs: selectedNodeIDs, hoveredBeaconNodeID: hoveredBeaconNodeID)
         if !gitTowerInstances.isEmpty {
             instances.append(contentsOf: gitTowerInstances)
         }
@@ -321,7 +321,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
     private func rebuildInstancesUsingCache() {
         updateInstances(blocks: self.blocks,
-                        selectedNodeID: self.lastSelectedNodeID,
+                        selectedNodeIDs: self.lastSelectedNodeIDs,
                         hoveredNodeID: self.lastHoveredNodeID,
                         hoveredBeaconNodeID: self.lastHoveredBeaconNodeID,
                         activityByNodeID: self.lastActivityByNodeID,
@@ -334,7 +334,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         return cameraYaw + (.pi / 4)
     }
 
-    private func buildGitTowerInstances(blocks: [CityBlock], hoveredBeaconNodeID: UUID?) -> [VoxelInstance] {
+    private func buildGitTowerInstances(blocks: [CityBlock], selectedNodeIDs: Set<UUID>, hoveredBeaconNodeID: UUID?) -> [VoxelInstance] {
         var topBlocks: [UUID: CityBlock] = [:]
         var topHeights: [UUID: Float] = [:]
         gitBeaconBoxes.removeAll()
@@ -351,7 +351,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         var instances: [VoxelInstance] = []
         instances.reserveCapacity(topBlocks.count * 4)
         for block in topBlocks.values {
-            let beaconHighlight: Float = block.nodeID == hoveredBeaconNodeID ? 1.0 : 0.0
+            let isSelected = selectedNodeIDs.contains(block.nodeID)
+            let beaconHighlight: Float = (block.nodeID == hoveredBeaconNodeID || isSelected) ? 1.0 : 0.0
             let towerMaterialID = block.isGitClean ? gitCleanMaterialID : gitTowerMaterialID
             let footprintX = Float(block.footprint.x)
             let footprintZ = Float(block.footprint.y)
