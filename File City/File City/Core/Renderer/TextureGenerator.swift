@@ -1156,9 +1156,9 @@ final class TextureGenerator {
     }
 
     // MARK: - Sign Labels
-    /// Generates a pre-baked texture for a sign label (256x64 pixels)
+    /// Generates a pre-baked texture for a sign label (512x64 pixels)
     static func generateSignLabel(device: MTLDevice, text: String) -> MTLTexture? {
-        let width = 256
+        let width = 512
         let height = 64
         let maxTextWidth = CGFloat(width - 16) // Padding on sides
         let maxTextHeight = CGFloat(height - 8)
@@ -1184,6 +1184,81 @@ final class TextureGenerator {
         while (textSize.width > maxTextWidth || textSize.height > maxTextHeight) && fontSize > 10 {
             fontSize -= 2
             font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
+            attributes[.font] = font
+            textSize = displayText.size(withAttributes: attributes)
+        }
+
+        let x = (CGFloat(width) - textSize.width) / 2
+        let y = (CGFloat(height) - textSize.height) / 2
+        displayText.draw(at: NSPoint(x: x, y: y), withAttributes: attributes)
+
+        image.unlockFocus()
+
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+
+        var pixelData = [UInt8](repeating: 0, count: width * height * 4)
+        let context = CGContext(
+            data: &pixelData,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )
+        context?.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm,
+            width: width,
+            height: height,
+            mipmapped: false
+        )
+        descriptor.usage = .shaderRead
+
+        guard let texture = device.makeTexture(descriptor: descriptor) else { return nil }
+        texture.replace(
+            region: MTLRegionMake2D(0, 0, width, height),
+            mipmapLevel: 0,
+            withBytes: pixelData,
+            bytesPerRow: width * 4
+        )
+
+        return texture
+    }
+
+    // MARK: - Banner Texture
+    /// Generates a texture for a plane banner (512x64 pixels)
+    static func generateBanner(device: MTLDevice, text: String) -> MTLTexture? {
+        let width = 512
+        let height = 64
+        let maxTextWidth = CGFloat(width - 32)
+        let maxTextHeight = CGFloat(height - 8)
+
+        let image = NSImage(size: NSSize(width: width, height: height))
+        image.lockFocus()
+
+        // White fabric background
+        NSColor(white: 0.95, alpha: 1.0).setFill()
+        NSRect(x: 0, y: 0, width: width, height: height).fill()
+        
+        // Add subtle fabric noise? Maybe too detailed for voxel style.
+        // Let's just keep it clean white/off-white.
+
+        // Find font size that fits
+        let displayText = text
+        var fontSize: CGFloat = 48
+        var font = NSFont.systemFont(ofSize: fontSize, weight: .black)
+        var attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor(red: 0.8, green: 0.1, blue: 0.1, alpha: 1.0) // Red text
+        ]
+        var textSize = displayText.size(withAttributes: attributes)
+
+        // Reduce font size until text fits
+        while (textSize.width > maxTextWidth || textSize.height > maxTextHeight) && fontSize > 12 {
+            fontSize -= 2
+            font = NSFont.systemFont(ofSize: fontSize, weight: .black)
             attributes[.font] = font
             textSize = displayText.size(withAttributes: attributes)
         }

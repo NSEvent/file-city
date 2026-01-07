@@ -50,6 +50,12 @@ struct MetalCityView: NSViewRepresentable {
         context.coordinator.appState = appState
         // Apply auto-fit BEFORE updating instances so first render has correct camera
         context.coordinator.applyPendingAutoFit(blocks: appState.blocks)
+        
+        // Update Banner Text
+        if let rootURL = appState.rootURL {
+            context.coordinator.renderer?.setBannerText(rootURL.lastPathComponent)
+        }
+        
         let activityNow = appState.activityNow()
         context.coordinator.renderer?.updateInstances(
             blocks: appState.blocks,

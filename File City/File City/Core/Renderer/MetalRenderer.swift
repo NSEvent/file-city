@@ -43,6 +43,10 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private var gitBeaconBoxes: [BeaconPicker.Box] = []
     private let beaconHitInflation: Float = 1.0
     private var blocks: [CityBlock] = []
+    
+    // Banner
+    private var bannerText: String = ""
+    private var bannerTextureIndex: Int = -1
 
     // Cached state for continuous updates
     private var lastSelectedNodeID: UUID?
@@ -461,6 +465,15 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         return baseTop + spireBoost
     }
 
+    func setBannerText(_ text: String) {
+        guard text != bannerText else { return }
+        bannerText = text
+        // Rebuild textures to include the new banner
+        if !blocks.isEmpty {
+            rebuildRoadsAndCars(blocks: blocks)
+        }
+    }
+
     func setHoveredPlane(index: Int?) {
         hoveredPlaneIndex = index
     }
@@ -845,7 +858,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
         }
 
-        planeInstanceCount = planePaths.count * 8
+        planeInstanceCount = planePaths.count * 9
         if planeInstanceCount > 0 {
             planeInstanceBuffer = device.makeBuffer(length: MemoryLayout<VoxelInstance>.stride * planeInstanceCount, options: [])
         }
@@ -886,6 +899,28 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
 
         guard !labelTextures.isEmpty, let first = labelTextures.first else { return }
+
+        // Generate Banner Texture
+        if !bannerText.isEmpty {
+            if let bannerTex = TextureGenerator.generateBanner(device: device, text: bannerText) {
+                // Ensure dimensions match for texture array (256x64 vs 512x64)
+                // TextureGenerator.generateSignLabel makes 256x64.
+                // TextureGenerator.generateBanner makes 512x64.
+                // Metal texture arrays must have same dimensions.
+                // We must standardise. Let's make sign labels 512 wide too? Or make banner 256 wide?
+                // Banner text is directory name, can be long. 512 is better.
+                // Let's check generateSignLabel. It uses 256.
+                // I should update generateSignLabel to 512 width to match banner, or allow mixed sizes (not possible in texture array).
+                // Let's update generateSignLabel to 512 in TextureGenerator.swift separately.
+                // Assuming they match now:
+                bannerTextureIndex = labelTextures.count
+                labelTextures.append(bannerTex)
+            } else {
+                bannerTextureIndex = -1
+            }
+        } else {
+            bannerTextureIndex = -1
+        }
 
         // Create texture array for sign labels
         let descriptor = MTLTextureDescriptor()
@@ -1005,7 +1040,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             let right = simd_normalize(SIMD3<Float>(-direction.z, 0, direction.x))
             let rotationY = atan2(direction.z, direction.x)
             let glow = isHovered ? (0.6 + 0.4 * sin(Float(now) * 18.0)) : 0.0
-            let baseIndex = index * 8
+            let baseIndex = index * 9
             let bodyOffset = direction * (path.scale.x * 0.1)  // Shift body back so longer tail extends rearward
             pointer[baseIndex] = VoxelInstance(
                 position: position - bodyOffset,
@@ -1134,6 +1169,32 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 textureIndex: planeTextureIndex,
                 shapeID: 0
             )
+            
+            // Banner (Only for the first plane, if texture exists)
+            if index == 0 && bannerTextureIndex >= 0 {
+                let ropeLen: Float = 3.5
+                let bannerPos = position - bodyOffset - direction * (tailBack + ropeLen)
+                
+                // Shape 13: Waving Banner
+                pointer[baseIndex + 8] = VoxelInstance(
+                    position: bannerPos,
+                    _pad0: 0,
+                    scale: SIMD3<Float>(0.1, 1.2, 6.0), // Thin, Tallish, Long
+                    _pad1: 0,
+                    rotationY: rotationY,
+                    rotationX: 0,
+                    rotationZ: 0,
+                    _pad2: 0,
+                    materialID: 0,
+                    highlight: 1.0,
+                    hover: 0,
+                    textureIndex: Int32(bannerTextureIndex),
+                    shapeID: 13
+                )
+            } else {
+                // Zero out unused slot
+                pointer[baseIndex + 8] = VoxelInstance(position: .zero, scale: .zero, rotationY: 0, rotationX: 0, rotationZ: 0, materialID: 0, textureIndex: -1, shapeID: 0)
+            }
         }
     }
 

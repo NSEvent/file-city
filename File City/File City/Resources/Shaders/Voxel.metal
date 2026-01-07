@@ -102,6 +102,11 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
         // Beam: Anchor at bottom
         // Local Y is -0.5 to 0.5. Shift to 0.0 to 1.0
         local.y += 0.5;
+    } else if (instance.shapeID == 13) {
+        // Waving Banner
+        // Wave along Z (length), displace X (side)
+        float wave = sin(local.z * 1.5 + uniforms.time * 8.0);
+        local.x += wave * 0.15;
     }
 
     float3 scaled = local * instance.scale;
@@ -322,6 +327,28 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
         float edgeFade = smoothstep(0.8, 0.0, dist);
         
         return float4(finalColor, alpha * edgeFade * 0.9);
+    } else if (in.shapeID == 13) {
+        // Banner - Sample from signLabels array
+        // Use textureIndex from instance
+        if (in.textureIndex >= 0) {
+            // Standard UVs are 0..1 per face.
+            // On the side face (Normal X), this covers the whole side.
+            // Flip U if needed (often needed for these cube mappings)
+            float2 flippedUV = float2(1.0 - in.uv.x, in.uv.y);
+            
+            // Adjust for side? If we see the "back" side of the banner, text is mirrored.
+            // Normal.x > 0 vs < 0.
+            // If normal.x < 0 (left side), maybe flip back?
+            // Actually, for a thin banner, we might see both sides.
+            // Let's assume standard flip is okay.
+            
+            float4 texColor = signLabels.sample(textureSampler, flippedUV, uint(in.textureIndex));
+            finalColor = texColor.rgb;
+            
+            // Cloth texture/shading
+            float fabric = 0.9 + 0.1 * sin((in.uv.x + in.uv.y) * 100.0);
+            finalColor *= fabric;
+        }
     }
     return float4(finalColor, 1.0);
 }
