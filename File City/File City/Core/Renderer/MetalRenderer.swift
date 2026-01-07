@@ -394,7 +394,11 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         let baseTop = block.position.y + Float(block.height)
         let spireBoost: Float
         switch block.shapeID {
-        case 1, 2, 3, 4:
+        case 3, 4:
+            // Wedges tilt up by 1.5x extent (0.5 * 1.5 = 0.75)
+            spireBoost = Float(block.height) * 0.75
+        case 1, 2:
+            // Spire/Pyramid move top up by 0.5x height
             spireBoost = Float(block.height) * 0.5
         default:
             spireBoost = 0
@@ -429,8 +433,17 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     }
 
     func spawnHelicopter(at block: CityBlock) {
-        let topY = visualTopY(for: block)
-        let target = SIMD3<Float>(block.position.x, topY, block.position.z)
+        var maxY = visualTopY(for: block)
+        // Find the highest block at this X/Z location to avoid collisions with stacked blocks
+        for other in blocks {
+            if abs(other.position.x - block.position.x) < 0.1 && abs(other.position.z - block.position.z) < 0.1 {
+                let top = visualTopY(for: other)
+                if top > maxY {
+                    maxY = top
+                }
+            }
+        }
+        let target = SIMD3<Float>(block.position.x, maxY, block.position.z)
         helicopterManager.spawn(at: target, textureIndex: block.textureIndex)
     }
 
