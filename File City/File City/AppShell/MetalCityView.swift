@@ -319,6 +319,13 @@ struct MetalCityView: NSViewRepresentable {
         func handleClick(_ point: CGPoint, in view: MTKView) {
             guard let renderer else { return }
             let backingPoint = view.convertToBacking(point)
+
+            // Check for plane click first
+            if let planeIndex = renderer.pickPlane(at: backingPoint, in: view.drawableSize) {
+                renderer.explodePlane(index: planeIndex)
+                return
+            }
+
             guard let block = renderer.pickBlock(at: backingPoint, in: view.drawableSize) else { return }
             guard let url = appState?.url(for: block.nodeID) else { return }
             appState?.select(url)

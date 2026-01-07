@@ -43,6 +43,12 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private var gitBeaconBoxes: [BeaconPicker.Box] = []
     private let beaconHitInflation: Float = 1.0
     private var blocks: [CityBlock] = []
+
+    // Plane explosions
+    private var planeExplosions: [PlaneExplosion] = []
+    private var explodedPlaneIndices: Set<Int> = []
+    private var explosionDebrisBuffer: MTLBuffer?
+    private var explosionDebrisCount: Int = 0
     
     // Banner
     private var bannerText: String = ""
@@ -86,6 +92,24 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         let speed: Float
         let phase: Float
         let scale: SIMD3<Float>
+    }
+
+    private struct PlaneDebris {
+        var position: SIMD3<Float>
+        var velocity: SIMD3<Float>
+        var rotationY: Float
+        var rotationVelocity: Float
+        var scale: SIMD3<Float>
+        var textureIndex: Int32
+        var shapeID: Int32
+        var life: Float  // 0 to 1, decreasing
+    }
+
+    private struct PlaneExplosion {
+        var debris: [PlaneDebris]
+        var startTime: CFTimeInterval
+        let duration: CFTimeInterval = 2.5
+        let planeIndex: Int
     }
 
     init?(view: MTKView) {
@@ -478,6 +502,208 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         hoveredPlaneIndex = index
     }
 
+    func explodePlane(index: Int) {
+        guard index >= 0, index < planePaths.count else { return }
+        guard !explodedPlaneIndices.contains(index) else { return }
+
+        let path = planePaths[index]
+        let now = CACurrentMediaTime()
+
+        // Calculate current plane position
+        let baseDistance = fmod(Float(now) * path.speed + path.phase, path.totalLength)
+        let offset = index < planeOffsets.count ? planeOffsets[index] : 0
+        let distance = fmod(baseDistance + offset, path.totalLength)
+        let position = positionAlongPath(path: path, distance: distance)
+        let nextDistance = fmod(distance + 1.0, path.totalLength)
+        let nextPosition = positionAlongPath(path: path, distance: nextDistance)
+        let direction = simd_normalize(nextPosition - position)
+        let right = simd_normalize(SIMD3<Float>(-direction.z, 0, direction.x))
+        let rotationY = atan2(direction.z, direction.x)
+
+        var debris: [PlaneDebris] = []
+
+        // Helper to create debris with random outward velocity
+        func addDebris(pos: SIMD3<Float>, scale: SIMD3<Float>, texIndex: Int32, shape: Int32) {
+            let randomAngle = Float.random(in: 0...(2 * .pi))
+            let randomSpeed = Float.random(in: 8...20)
+            let upSpeed = Float.random(in: 5...15)
+            let velocity = SIMD3<Float>(
+                cos(randomAngle) * randomSpeed,
+                upSpeed,
+                sin(randomAngle) * randomSpeed
+            )
+            let rotVel = Float.random(in: -8...8)
+            debris.append(PlaneDebris(
+                position: pos,
+                velocity: velocity,
+                rotationY: rotationY + Float.random(in: -0.5...0.5),
+                rotationVelocity: rotVel,
+                scale: scale * Float.random(in: 0.6...1.0),
+                textureIndex: texIndex,
+                shapeID: shape,
+                life: 1.0
+            ))
+        }
+
+        // Main fuselage - breaks into multiple pieces
+        let bodyOffset = direction * (path.scale.x * 0.1)
+        for _ in 0..<3 {
+            let fragmentOffset = SIMD3<Float>(
+                Float.random(in: -2...2),
+                Float.random(in: -0.5...0.5),
+                Float.random(in: -1...1)
+            )
+            addDebris(
+                pos: position - bodyOffset + fragmentOffset,
+                scale: SIMD3<Float>(path.scale.x * 0.3, path.scale.y, path.scale.z * 0.8),
+                texIndex: planeTextureIndex,
+                shape: 0
+            )
+        }
+
+        // Wings
+        addDebris(
+            pos: position + SIMD3<Float>(0, 0.1, 0),
+            scale: SIMD3<Float>(1.4, 0.08, 3.0),
+            texIndex: planeTextureIndex,
+            shape: 0
+        )
+        addDebris(
+            pos: position + SIMD3<Float>(0, 0.1, 0),
+            scale: SIMD3<Float>(1.4, 0.08, 3.0),
+            texIndex: planeTextureIndex,
+            shape: 0
+        )
+
+        // Thrusters
+        let thrusterOffset = path.scale.z * 0.35
+        addDebris(
+            pos: position + right * thrusterOffset - SIMD3<Float>(0, 0.12, 0),
+            scale: SIMD3<Float>(0.55, 0.25, 0.55),
+            texIndex: planeTextureIndex,
+            shape: 0
+        )
+        addDebris(
+            pos: position - right * thrusterOffset - SIMD3<Float>(0, 0.12, 0),
+            scale: SIMD3<Float>(0.55, 0.25, 0.55),
+            texIndex: planeTextureIndex,
+            shape: 0
+        )
+
+        // Tail pieces
+        let tailBack = path.scale.x * 0.42
+        addDebris(
+            pos: position - bodyOffset - direction * tailBack + SIMD3<Float>(0, 0.15, 0),
+            scale: SIMD3<Float>(1.0, 0.06, 2.8),
+            texIndex: planeTextureIndex,
+            shape: 0
+        )
+        addDebris(
+            pos: position - bodyOffset - direction * tailBack + SIMD3<Float>(0, 0.55, 0),
+            scale: SIMD3<Float>(1.2, 0.9, 0.08),
+            texIndex: planeTextureIndex,
+            shape: 0
+        )
+
+        // Banner segments - each becomes debris
+        if bannerTextureIndex >= 0 {
+            let ropeLen: Float = 2.5
+            let segmentCount = 8
+            let segmentLen: Float = 1.5
+            let tailDist = distance - tailBack - ropeLen
+
+            for i in 0..<segmentCount {
+                let segDist = tailDist - Float(i) * segmentLen - segmentLen * 0.5
+                var d = segDist
+                if d < 0 { d += path.totalLength }
+                let pos = positionAlongPath(path: path, distance: d)
+
+                addDebris(
+                    pos: pos,
+                    scale: SIMD3<Float>(segmentLen, 3.0, 0.1),
+                    texIndex: Int32(bannerTextureIndex),
+                    shape: 0  // Use plain cube for debris, not banner shape
+                )
+            }
+        }
+
+        explodedPlaneIndices.insert(index)
+        planeExplosions.append(PlaneExplosion(debris: debris, startTime: now, planeIndex: index))
+
+        // Clear hover if this plane was hovered
+        if hoveredPlaneIndex == index {
+            hoveredPlaneIndex = nil
+        }
+    }
+
+    private func updateExplosions(deltaTime: Float) {
+        let now = CACurrentMediaTime()
+        let gravity: Float = -25.0
+
+        // Update each explosion
+        for i in (0..<planeExplosions.count).reversed() {
+            let elapsed = Float(now - planeExplosions[i].startTime)
+            let progress = elapsed / Float(planeExplosions[i].duration)
+
+            if progress >= 1.0 {
+                // Respawn the plane by removing it from exploded set
+                let planeIndex = planeExplosions[i].planeIndex
+                explodedPlaneIndices.remove(planeIndex)
+                planeExplosions.remove(at: i)
+                continue
+            }
+
+            // Update each debris piece
+            for j in 0..<planeExplosions[i].debris.count {
+                // Apply gravity
+                planeExplosions[i].debris[j].velocity.y += gravity * deltaTime
+
+                // Update position
+                planeExplosions[i].debris[j].position += planeExplosions[i].debris[j].velocity * deltaTime
+
+                // Update rotation
+                planeExplosions[i].debris[j].rotationY += planeExplosions[i].debris[j].rotationVelocity * deltaTime
+
+                // Fade out life
+                planeExplosions[i].debris[j].life = 1.0 - progress
+            }
+        }
+    }
+
+    private func buildExplosionInstances() -> [VoxelInstance] {
+        var instances: [VoxelInstance] = []
+
+        for explosion in planeExplosions {
+            for debris in explosion.debris {
+                // Skip if faded out
+                guard debris.life > 0.01 else { continue }
+
+                // Scale down as life decreases
+                let fadeScale = debris.scale * max(0.3, debris.life)
+
+                instances.append(VoxelInstance(
+                    position: debris.position,
+                    _pad0: 0,
+                    scale: fadeScale,
+                    _pad1: 0,
+                    rotationY: debris.rotationY,
+                    rotationX: Float.random(in: -0.3...0.3),  // Tumble effect
+                    rotationZ: Float.random(in: -0.3...0.3),
+                    _pad2: 0,
+                    materialID: 0,
+                    highlight: 0,
+                    hover: debris.life * 0.8,  // Glow effect during explosion
+                    activity: 0,
+                    activityKind: 0,
+                    textureIndex: debris.textureIndex,
+                    shapeID: debris.shapeID
+                ))
+            }
+        }
+
+        return instances
+    }
+
     func pickPlane(at point: CGPoint, in size: CGSize) -> Int? {
         guard size.width > 1, size.height > 1, !planePaths.isEmpty else { return nil }
         let ray = rayFrom(point: point, in: size)
@@ -485,6 +711,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         var closest: (index: Int, distance: Float)?
 
         for (index, path) in planePaths.enumerated() {
+            // Skip exploded planes
+            guard !explodedPlaneIndices.contains(index) else { continue }
+
             let baseDistance = fmod(Float(now) * path.speed + path.phase, path.totalLength)
             let offset = index < planeOffsets.count ? planeOffsets[index] : 0
             let distance = fmod(baseDistance + offset, path.totalLength)
@@ -623,6 +852,19 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 36, instanceCount: planeInstanceCount)
         }
 
+        // Update and render plane explosions
+        let deltaTime = Float(CACurrentMediaTime() - lastPlaneUpdateTime)
+        updateExplosions(deltaTime: max(0.001, min(deltaTime, 0.1)))
+        let explosionInstances = buildExplosionInstances()
+        explosionDebrisCount = explosionInstances.count
+        if explosionDebrisCount > 0 {
+            explosionDebrisBuffer = device.makeBuffer(bytes: explosionInstances, length: MemoryLayout<VoxelInstance>.stride * explosionDebrisCount, options: [])
+            if let buffer = explosionDebrisBuffer {
+                encoder?.setVertexBuffer(buffer, offset: 0, index: 1)
+                encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 36, instanceCount: explosionDebrisCount)
+            }
+        }
+
         helicopterManager.update()
         
         beamManager.update()
@@ -678,6 +920,10 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         planeInstanceCount = 0
         planePaths.removeAll()
         planeOffsets.removeAll()
+
+        // Clear explosion state when paths are rebuilt
+        planeExplosions.removeAll()
+        explodedPlaneIndices.removeAll()
 
         buildSignpostInstances(blocks: blocks)
 
@@ -1034,6 +1280,16 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         lastPlaneUpdateTime = now
         let pointer = planeInstanceBuffer.contents().bindMemory(to: VoxelInstance.self, capacity: planeInstanceCount)
         for (index, path) in planePaths.enumerated() {
+            let baseIndex = index * 16
+
+            // Skip exploded planes - zero out their instances
+            if explodedPlaneIndices.contains(index) {
+                for i in 0..<16 {
+                    pointer[baseIndex + i] = VoxelInstance(position: .zero, scale: .zero, rotationY: 0, rotationX: 0, rotationZ: 0, materialID: 0, textureIndex: -1, shapeID: 0)
+                }
+                continue
+            }
+
             let isHovered = hoveredPlaneIndex == index
             let speedBoost: Float = isHovered ? 1.6 : 1.0
             if index < planeOffsets.count, speedBoost > 1.0 {
@@ -1049,7 +1305,6 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             let right = simd_normalize(SIMD3<Float>(-direction.z, 0, direction.x))
             let rotationY = atan2(direction.z, direction.x)
             let glow = isHovered ? (0.6 + 0.4 * sin(Float(now) * 18.0)) : 0.0
-            let baseIndex = index * 16
             let bodyOffset = direction * (path.scale.x * 0.1)  // Shift body back so longer tail extends rearward
             pointer[baseIndex] = VoxelInstance(
                 position: position - bodyOffset,
