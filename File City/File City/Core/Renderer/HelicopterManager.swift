@@ -7,6 +7,7 @@ final class HelicopterManager {
         let id = UUID()
         var position: SIMD3<Float>
         let target: SIMD3<Float>
+        let buildingTopY: Float
         let targetID: UUID
         var state: State = .inbound
         var velocity: SIMD3<Float> = .zero
@@ -54,6 +55,7 @@ final class HelicopterManager {
         let heli = Helicopter(
             position: startPos,
             target: target + SIMD3<Float>(0, hoverHeight, 0),
+            buildingTopY: target.y,
             targetID: targetID,
             textureIndex: textureIndex
         )
@@ -111,7 +113,7 @@ final class HelicopterManager {
                     packages.append(Package(
                         position: heli.position - SIMD3<Float>(0, 1.0, 0),
                         velocity: SIMD3<Float>(0, -5.0, 0),
-                        targetY: heli.target.y - 12.0 // Approx building top
+                        targetY: heli.buildingTopY
                     ))
                     recentDeliveries[heli.targetID] = now
                 } else {
@@ -134,6 +136,7 @@ final class HelicopterManager {
                     heli = Helicopter(
                         position: heli.position,
                         target: exitDest,
+                        buildingTopY: heli.buildingTopY,
                         targetID: heli.targetID,
                         state: .outbound,
                         velocity: heli.velocity,
