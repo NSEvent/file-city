@@ -503,22 +503,52 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     }
     
     func spawnBeam(at block: CityBlock) {
-        // Calculate position: Center of block, at the top of the "building" part
-        // but below the beacon tower if any.
-        // visualTopY usually includes the tower base.
-        // Let's use the block's physical top Y + a small offset
-        let baseY = block.position.y + Float(block.height)
-        var beamY = baseY
+        // Find the top-most block at this location to ensure we spawn from the roof
+        var topBlock = block
+        var maxVisualTop = visualTopY(for: block)
         
-        // Adjust for shape (if it's a spire/pyramid, we want to be near the peak)
-        if block.shapeID == 1 || block.shapeID == 2 {
-             beamY = visualTopY(for: block) - 0.5 // Slightly below tip
-        } else if block.shapeID == 3 || block.shapeID == 4 {
-             // Wedges: visualTopY is high side. We want roughly center top.
-             beamY = baseY + (visualTopY(for: block) - baseY) * 0.5
+        // Scan for higher blocks in the same column
+        for other in blocks {
+            if abs(other.position.x - block.position.x) < 0.1 && abs(other.position.z - block.position.z) < 0.1 {
+                let top = visualTopY(for: other)
+                if top > maxVisualTop {
+                    maxVisualTop = top
+                    topBlock = other
+                }
+            }
         }
         
-        let target = SIMD3<Float>(block.position.x, beamY, block.position.z)
+        // Calculate position based on the top block's properties
+        let footprintX = Float(topBlock.footprint.x)
+        let footprintZ = Float(topBlock.footprint.y)
+        let baseX = topBlock.position.x
+        let baseZ = topBlock.position.z
+        let rotationY = rotationYForWedge(block: topBlock, cameraYaw: camera.yaw)
+        
+        var beaconOffsetX: Float = 0
+        var beaconOffsetZ: Float = 0
+        
+        if topBlock.shapeID == 3 {
+            beaconOffsetX = footprintX * 0.45
+        } else if topBlock.shapeID == 4 {
+            beaconOffsetZ = footprintZ * 0.45
+        }
+        
+        if topBlock.shapeID == 3 || topBlock.shapeID == 4 {
+            let c = cos(rotationY)
+            let s = sin(rotationY)
+            let rotatedX = beaconOffsetX * c - beaconOffsetZ * s
+            let rotatedZ = beaconOffsetX * s + beaconOffsetZ * c
+            beaconOffsetX = rotatedX
+            beaconOffsetZ = rotatedZ
+        }
+        
+        // Target Y: The visual top of the highest block
+        let beamY = maxVisualTop
+        
+        let target = SIMD3<Float>(baseX + beaconOffsetX, beamY, baseZ + beaconOffsetZ)
+        
+        // Use the original block's nodeID for activity flashing
         beamManager.spawn(at: target, targetID: block.nodeID)
     }
     
