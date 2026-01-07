@@ -34,6 +34,7 @@ struct Uniforms {
 struct VertexOut {
     float4 position [[position]];
     float3 normal;
+    float3 localNormal [[flat]];
     float2 uv;
     float3 scale [[flat]];
     int textureIndex [[flat]];
@@ -51,6 +52,9 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
                              uint instanceID [[instance_id]]) {
     InstanceData instance = instances[instanceID];
     float3 local = in.position;
+    
+    // Pass original normal
+    float3 originalNormal = in.normal;
     
     // Apply shape deformations
     if (instance.shapeID == 5) {
@@ -172,6 +176,7 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
     out.hover = instance.hover;
     out.activity = instance.activity;
     out.activityKind = instance.activityKind;
+    out.localNormal = originalNormal;
     return out;
 }
 
@@ -338,22 +343,11 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
             // Calculate U based on segment offset
             // pad0 is offset, pad1 is width
             // in.uv.x is 0..1 per segment.
-            // Map to global U: offset + uv.x * width
-            // Flip X for consistency if needed (usually 1.0 - uv.x for front face?)
-            // Let's assume input uv.x is correct orientation for now.
             
-            float segmentU = 1.0 - in.uv.x; // Flip for standard cube mapping
-            float finalU = in.scale.x; // Use scale.x via flat shading? No, stored in pad0/1.
-            // Wait, VertexOut has `scale` but pad0/pad1 are not passed.
-            // I need to add them to VertexOut or repurpose fields.
-            // Let's repurpose:
-            // highlight -> pad0 (U Offset)
-            // activity -> pad1 (U Width)
-            // But vertex_main passes them.
-            
-            // Actually, I can just use `highlight` and `activity` in fragment shader directly!
-            // Vertex shader passes instance.highlight -> out.highlight
-            // Vertex shader passes instance.activity -> out.activity
+            // Detect face orientation to fix text mirroring on back face
+            // Front face (Z+) needs flip (1-x). Back face (Z-) needs standard (x).
+            // Use localNormal to check face identity independent of rotation
+            float segmentU = (in.localNormal.z > 0.0) ? (1.0 - in.uv.x) : in.uv.x;
             
             float uOffset = in.highlight;
             float uWidth = in.activity;
