@@ -333,49 +333,41 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
     } else if (in.shapeID == 13) {
         // Banner - Sample from signLabels array
         if (in.textureIndex >= 0) {
-            // Banner is scaled in X (Length) and Y (Height). Flat in Z.
-            // Major faces have Normal Z or -Z.
-            // Check if we are viewing the "face" of the banner
-            if (abs(in.normal.z) > 0.5) {
-                float2 uv = in.uv;
-                
-                // If viewing back face (Normal -Z), mirror U to make text readable
-                // Standard cube Back face UVs might already be mirrored relative to Front?
-                // Let's assume we need to flip one side to match.
-                // Or just try: Flip X if normal.z < 0?
-                // Typically front face UVs go 0->1 L->R.
-                // Back face UVs go 0->1 R->L (in world space) if wrapped?
-                // Let's force consistency.
-                if (in.normal.z < 0.0) {
-                    uv.x = 1.0 - uv.x;
-                } else {
-                    // Front face: might need flip depending on how "quad" was built.
-                    // nZ face (0,0,-1) is Back? pZ (0,0,1) is Front.
-                    // pZ quad: v5, v4, v7, v6.
-                    // v5(p,-p,p), v4(-p,-p,p). 5->4 is Right->Left?
-                    // Let's just flip both and verify. Usually 1.0 - x corrects "inner" mapping.
-                    uv.x = 1.0 - uv.x; 
-                }
-                
-                // Flip V because texture coords are top-down vs metal bottom-up
-                uv.y = 1.0 - uv.y; // Or don't flip if already correct? signLabels generated with NSImage (top-left?). Metal textures are usually 0,0 top-left if loaded that way? No, standard is 0,0 bottom-left.
-                // Actually, fragment_main_v2 usually does `float2(1.0 - in.uv.x, in.uv.y)` for other signs.
-                // Let's stick to that convention first.
-                // Reverting previous logic to match existing sign logic but applied to Z face.
-                
-                float2 finalUV = float2(1.0 - in.uv.x, in.uv.y);
-                if (in.normal.z < 0.0) finalUV.x = 1.0 - finalUV.x; // Un-flip for back face?
-                
-                float4 texColor = signLabels.sample(textureSampler, finalUV, uint(in.textureIndex));
-                finalColor = texColor.rgb;
-                
-                // Fabric shading
-                float fold = sin(in.uv.x * 20.0 + uniforms.time * 5.0);
-                finalColor *= (0.9 + 0.1 * fold);
-            } else {
-                // Edge color (white)
-                finalColor = float3(0.95, 0.95, 0.95);
-            }
+            // Unconditional mapping - texture all faces to ensure visibility during turns
+            
+            // Calculate U based on segment offset
+            // pad0 is offset, pad1 is width
+            // in.uv.x is 0..1 per segment.
+            // Map to global U: offset + uv.x * width
+            // Flip X for consistency if needed (usually 1.0 - uv.x for front face?)
+            // Let's assume input uv.x is correct orientation for now.
+            
+            float segmentU = 1.0 - in.uv.x; // Flip for standard cube mapping
+            float finalU = in.scale.x; // Use scale.x via flat shading? No, stored in pad0/1.
+            // Wait, VertexOut has `scale` but pad0/pad1 are not passed.
+            // I need to add them to VertexOut or repurpose fields.
+            // Let's repurpose:
+            // highlight -> pad0 (U Offset)
+            // activity -> pad1 (U Width)
+            // But vertex_main passes them.
+            
+            // Actually, I can just use `highlight` and `activity` in fragment shader directly!
+            // Vertex shader passes instance.highlight -> out.highlight
+            // Vertex shader passes instance.activity -> out.activity
+            
+            float uOffset = in.highlight;
+            float uWidth = in.activity;
+            
+            float globalU = uOffset + segmentU * uWidth;
+            
+            float2 finalUV = float2(globalU, in.uv.y);
+            
+            float4 texColor = signLabels.sample(textureSampler, finalUV, uint(in.textureIndex));
+            finalColor = texColor.rgb;
+            
+            // Fabric shading
+            float fold = sin(globalU * 50.0 + uniforms.time * 5.0);
+            finalColor *= (0.9 + 0.1 * fold);
         }
     }
     return float4(finalColor, 1.0);

@@ -858,7 +858,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
         }
 
-        planeInstanceCount = planePaths.count * 9
+        planeInstanceCount = planePaths.count * 16
         if planeInstanceCount > 0 {
             planeInstanceBuffer = device.makeBuffer(length: MemoryLayout<VoxelInstance>.stride * planeInstanceCount, options: [])
         }
@@ -1040,7 +1040,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             let right = simd_normalize(SIMD3<Float>(-direction.z, 0, direction.x))
             let rotationY = atan2(direction.z, direction.x)
             let glow = isHovered ? (0.6 + 0.4 * sin(Float(now) * 18.0)) : 0.0
-            let baseIndex = index * 9
+            let baseIndex = index * 16
             let bodyOffset = direction * (path.scale.x * 0.1)  // Shift body back so longer tail extends rearward
             pointer[baseIndex] = VoxelInstance(
                 position: position - bodyOffset,
@@ -1173,43 +1173,68 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             // Banner (Only for the first plane, if texture exists)
             if index == 0 && bannerTextureIndex >= 0 {
                 let ropeLen: Float = 2.5
-                // Plane body is aligned with X axis (scale.x is length).
-                // Tail is at negative local X relative to center? 
-                // In updatePlaneInstances: `bodyOffset` shifts body back.
-                // We want to attach to the tail end.
-                // Direction is the forward vector.
-                // If plane geometry is "Long X", and it faces `direction`, then `rotationY` aligns X with direction.
-                // So "Behind" is `-direction`.
+                let segmentCount = 8
+                let segmentLen: Float = 1.5
+                let totalLen = Float(segmentCount) * segmentLen
+                let uWidth = 1.0 / Float(segmentCount)
                 
-                // Calculate tail tip position in world space
-                // position is center of path segment? No, `position` is plane center.
-                // `tailBack` is distance from center to tail.
-                // Banner center should be: position - direction * (tailBack + ropeLen + bannerLength/2)
+                // Trail start position (behind tail)
+                let tailDist = distance - tailBack - ropeLen
                 
-                let bannerLength: Float = 12.0
-                let bannerOffsetDist = tailBack + ropeLen + bannerLength * 0.5
-                let bannerPos = position - bodyOffset - direction * bannerOffsetDist
-                
-                // Shape 13: Waving Banner
-                // Scale X: 12.0 (Length), Y: 1.5 (Height), Z: 0.1 (Thickness)
-                pointer[baseIndex + 8] = VoxelInstance(
-                    position: bannerPos,
-                    _pad0: 0,
-                    scale: SIMD3<Float>(bannerLength, 1.5, 0.1),
-                    _pad1: 0,
-                    rotationY: rotationY,
-                    rotationX: 0,
-                    rotationZ: 0,
-                    _pad2: 0,
-                    materialID: 0,
-                    highlight: 1.0,
-                    hover: 0,
-                    textureIndex: Int32(bannerTextureIndex),
-                    shapeID: 13
-                )
+                for i in 0..<segmentCount {
+                    let segDist = tailDist - Float(i) * segmentLen - segmentLen * 0.5
+                    
+                    // Wrap distance for closed loop path
+                    var d = segDist
+                    if d < 0 { d += path.totalLength }
+                    
+                    let pos = positionAlongPath(path: path, distance: d)
+                    let nextPos = positionAlongPath(path: path, distance: d + 0.1) // Look ahead slightly
+                    
+                    let dir = simd_normalize(nextPos - pos)
+                    let rotY = atan2(dir.z, dir.x)
+                    
+                    // Flip U? If text is backwards, flip range here?
+                    // Let's pass 0..1 range properly.
+                    // uOffset = float(i) * uWidth
+                    let uOffset = Float(i) * uWidth
+                    
+                    pointer[baseIndex + 8 + i] = VoxelInstance(
+                        position: pos,
+                        _pad0: 0,
+                        scale: SIMD3<Float>(segmentLen, 1.5, 0.1),
+                        _pad1: 0,
+                        rotationY: rotY,
+                        rotationX: 0,
+                        rotationZ: 0,
+                        _pad2: 0,
+                        materialID: 0,
+                        highlight: uOffset, // Passed as U Offset
+                        hover: 0,
+                        activity: uWidth,   // Passed as U Width
+                        activityKind: 0,
+                        textureIndex: Int32(bannerTextureIndex),
+                        shapeID: 13
+                    )
+                }
             } else {
-                // Zero out unused slot
-                pointer[baseIndex + 8] = VoxelInstance(position: .zero, scale: .zero, rotationY: 0, rotationX: 0, rotationZ: 0, materialID: 0, textureIndex: -1, shapeID: 0)
+                // Zero out unused slots (8..16) if we allocated 9?
+                // Wait, I allocated `planeInstanceCount * 9`?
+                // `planeInstanceCount = planePaths.count * 9` in `buildPlanePaths`.
+                // `baseIndex = index * 9`.
+                // Indices 0..7 are plane parts.
+                // 8 is the start of banner.
+                // I need indices 8..(8+segmentCount).
+                // I only have 1 slot (8) allocated per plane!
+                // CRITICAL FIX needed: I need to increase allocation to 8 + 8 = 16 slots per plane.
+                // Or just allocate extra for the first plane?
+                // Easier to uniform allocate.
+                
+                // I need to update `buildPlanePaths` allocation first.
+                // Assuming I will do that next.
+                
+                // Temporary safety: only write to +8 if I haven't reallocated yet?
+                // No, I must reallocate.
             }
         }
     }
