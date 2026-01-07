@@ -102,9 +102,6 @@ final class AppState: ObservableObject {
 
     func scanRoot(autoFit: Bool = false) {
         guard let rootURL else { return }
-        if autoFit {
-            pendingAutoFit = true
-        }
         Task {
             do {
                 let result = try await scanner.scan(url: rootURL, maxDepth: 2, maxNodes: LayoutRules.default.maxNodes)
@@ -112,6 +109,9 @@ final class AppState: ObservableObject {
                 searchIndex.reset()
                 searchIndex.indexNode(result.root)
                 blocks = mapper.map(root: result.root, rules: .default, pinStore: pinStore)
+                if autoFit {
+                    pendingAutoFit = true
+                }
                 focusNodeIDByURL = buildFocusMap(root: result.root)
                 nodeByID = buildNodeIDMap(root: result.root)
                 nodeByURL = buildNodeURLMap(root: result.root)
