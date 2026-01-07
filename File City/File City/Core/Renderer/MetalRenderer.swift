@@ -618,7 +618,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             if totalLength >= minPathLength {
                 let speed = 6.0 + randomUnit(seed: seed ^ 0xFACE) * 6.0
                 let phase = randomUnit(seed: seed ^ 0xCAFE) * totalLength
-                let scale = SIMD3<Float>(6.0, 0.6, 2.5)
+                let scale = SIMD3<Float>(7.5, 0.6, 2.5)
                 planePaths.append(PlanePath(waypoints: smoothed, segmentLengths: segmentLengths, totalLength: totalLength, speed: speed, phase: phase, scale: scale))
                 break
             }
@@ -626,7 +626,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
         }
 
-        planeInstanceCount = planePaths.count * 6
+        planeInstanceCount = planePaths.count * 8
         if planeInstanceCount > 0 {
             planeInstanceBuffer = device.makeBuffer(length: MemoryLayout<VoxelInstance>.stride * planeInstanceCount, options: [])
         }
@@ -673,9 +673,10 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             let right = simd_normalize(SIMD3<Float>(-direction.z, 0, direction.x))
             let rotationY = atan2(direction.z, direction.x)
             let glow = isHovered ? (0.6 + 0.4 * sin(Float(now) * 18.0)) : 0.0
-            let baseIndex = index * 6
+            let baseIndex = index * 8
+            let bodyOffset = direction * (path.scale.x * 0.1)  // Shift body back so longer tail extends rearward
             pointer[baseIndex] = VoxelInstance(
-                position: position,
+                position: position - bodyOffset,
                 _pad0: 0,
                 scale: path.scale,
                 _pad1: 0,
@@ -755,6 +756,35 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 hover: glow,
                 textureIndex: -1,
                 shapeID: 7
+            )
+            // Horizontal stabilizer (small tail wing)
+            let tailBack = path.scale.x * 0.42
+            pointer[baseIndex + 6] = VoxelInstance(
+                position: position - bodyOffset - direction * tailBack + SIMD3<Float>(0, 0.15, 0),
+                _pad0: 0,
+                scale: SIMD3<Float>(1.0, 0.06, 2.8),
+                _pad1: 0,
+                rotationY: rotationY,
+                _pad2: 0,
+                materialID: 0,
+                highlight: 0,
+                hover: glow * 0.5,
+                textureIndex: planeTextureIndex,
+                shapeID: 0
+            )
+            // Vertical fin (tail)
+            pointer[baseIndex + 7] = VoxelInstance(
+                position: position - bodyOffset - direction * tailBack + SIMD3<Float>(0, 0.55, 0),
+                _pad0: 0,
+                scale: SIMD3<Float>(1.2, 0.9, 0.08),
+                _pad1: 0,
+                rotationY: rotationY,
+                _pad2: 0,
+                materialID: 0,
+                highlight: 0,
+                hover: glow * 0.5,
+                textureIndex: planeTextureIndex,
+                shapeID: 0
             )
         }
     }
