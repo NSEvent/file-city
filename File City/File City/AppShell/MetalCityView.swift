@@ -37,6 +37,9 @@ struct MetalCityView: NSViewRepresentable {
         view.onClick = { point in
             context.coordinator.handleClick(point, in: view)
         }
+        view.onDoubleClick = { point in
+            context.coordinator.handleDoubleClick(point, in: view)
+        }
         view.onRightClick = { point in
             context.coordinator.handleRightClick(point, in: view)
         }
@@ -263,9 +266,17 @@ struct MetalCityView: NSViewRepresentable {
             let backingPoint = view.convertToBacking(point)
             guard let block = renderer.pickBlock(at: backingPoint, in: view.drawableSize) else { return }
             guard let url = appState?.url(for: block.nodeID) else { return }
-            appState?.enter(url)
+            appState?.select(url)
         }
-        
+
+        func handleDoubleClick(_ point: CGPoint, in view: MTKView) {
+            guard let renderer else { return }
+            let backingPoint = view.convertToBacking(point)
+            guard let block = renderer.pickBlock(at: backingPoint, in: view.drawableSize) else { return }
+            guard let url = appState?.url(for: block.nodeID) else { return }
+            appState?.activateItem(url)
+        }
+
         func handleRightClick(_ point: CGPoint, in view: MTKView) {
             guard let renderer else { return }
             let backingPoint = view.convertToBacking(point)
@@ -282,8 +293,11 @@ final class CityMTKView: MTKView {
     var onHoverEnd: (() -> Void)?
     var onKey: ((String) -> Void)?
     var onClick: ((CGPoint) -> Void)?
+    var onDoubleClick: ((CGPoint) -> Void)?
     var onRightClick: ((CGPoint) -> Void)?
     private var trackingArea: NSTrackingArea?
+    private var pendingClickTimer: Timer?
+    private var pendingClickPoint: CGPoint?
 
     override func scrollWheel(with event: NSEvent) {
         onScroll?(event.scrollingDeltaX, event.scrollingDeltaY)
@@ -311,7 +325,23 @@ final class CityMTKView: MTKView {
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        onClick?(point)
+
+        if event.clickCount == 2 {
+            // Double-click: cancel pending single-click and trigger double-click
+            pendingClickTimer?.invalidate()
+            pendingClickTimer = nil
+            pendingClickPoint = nil
+            onDoubleClick?(point)
+        } else {
+            // Single-click: delay to check for double-click
+            pendingClickTimer?.invalidate()
+            pendingClickPoint = point
+            pendingClickTimer = Timer.scheduledTimer(withTimeInterval: NSEvent.doubleClickInterval, repeats: false) { [weak self] _ in
+                guard let self, let clickPoint = self.pendingClickPoint else { return }
+                self.pendingClickPoint = nil
+                self.onClick?(clickPoint)
+            }
+        }
     }
     
     override func rightMouseDown(with event: NSEvent) {

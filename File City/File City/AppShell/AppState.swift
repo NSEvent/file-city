@@ -177,6 +177,21 @@ final class AppState: ObservableObject {
         selectedFocusNodeID = focusNodeIDByURL[url]
     }
 
+    /// Select a file/directory without navigating (for single-click)
+    func select(_ url: URL) {
+        selectedURL = url
+        selectedFocusNodeID = focusNodeIDByURL[url]
+    }
+
+    /// Activate item: navigate into directories, open files with default app (for double-click)
+    func activateItem(_ url: URL) {
+        if isDirectory(url) {
+            enter(url)
+        } else {
+            open(url)
+        }
+    }
+
     func enter(_ url: URL) {
         focus(url)
         openRoot(url)
@@ -692,7 +707,7 @@ final class AppState: ObservableObject {
         return home.appendingPathComponent("projects", isDirectory: true)
     }
 
-    private func isDirectory(_ url: URL) -> Bool {
+    func isDirectory(_ url: URL) -> Bool {
         var isDirectory: ObjCBool = false
         FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
         return isDirectory.boolValue

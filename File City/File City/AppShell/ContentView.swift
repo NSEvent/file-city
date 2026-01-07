@@ -7,9 +7,16 @@ struct ContentView: View {
     var body: some View {
         NavigationView {
             SidebarView()
-            ZStack(alignment: .topLeading) {
+            ZStack {
                 MetalCityView()
-                InfoOverlayView()
+                VStack {
+                    HStack(alignment: .top) {
+                        InfoOverlayView()
+                        Spacer()
+                        SelectionInfoPanel()
+                    }
+                    Spacer()
+                }
             }
         }
         .navigationViewStyle(DoubleColumnNavigationViewStyle())
@@ -52,18 +59,65 @@ private struct InfoOverlayView: View {
     }
 
     private func infoLines() -> [String]? {
-        if let activityInfo = appState.activityInfoLines {
-            return activityInfo
-        }
         if let hoveredGitStatus = appState.hoveredGitStatus {
             return hoveredGitStatus
         }
         if let hoveredURL = appState.hoveredURL {
             return appState.infoLines(for: hoveredURL)
         }
-        if let selectedURL = appState.selectedURL {
-            return appState.infoLines(for: selectedURL)
-        }
         return nil
+    }
+}
+
+private struct SelectionInfoPanel: View {
+    @EnvironmentObject var appState: AppState
+
+    var body: some View {
+        if let selectedURL = appState.selectedURL {
+            let info = appState.infoLines(for: selectedURL)
+            VStack(alignment: .trailing, spacing: 8) {
+                VStack(alignment: .trailing, spacing: 4) {
+                    ForEach(info, id: \.self) { line in
+                        Text(line)
+                            .font(line == info.first ? .callout.weight(.semibold) : .caption)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                    }
+                }
+
+                Divider()
+
+                HStack(spacing: 12) {
+                    Button {
+                        appState.open(selectedURL)
+                    } label: {
+                        Label("Open", systemImage: "arrow.up.forward.app")
+                    }
+                    .buttonStyle(.borderless)
+
+                    Button {
+                        appState.reveal(selectedURL)
+                    } label: {
+                        Label("Reveal", systemImage: "folder")
+                    }
+                    .buttonStyle(.borderless)
+
+                    if appState.isDirectory(selectedURL) {
+                        Button {
+                            appState.enter(selectedURL)
+                        } label: {
+                            Label("Enter", systemImage: "arrow.right.circle")
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .padding(12)
+            .transition(.opacity)
+        }
     }
 }
