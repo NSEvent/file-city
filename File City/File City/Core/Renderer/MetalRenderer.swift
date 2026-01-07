@@ -40,6 +40,16 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private var gitBeaconBoxes: [BeaconPicker.Box] = []
     private let beaconHitInflation: Float = 1.0
     private var blocks: [CityBlock] = []
+
+    // Cached state for continuous updates
+    private var lastSelectedNodeID: UUID?
+    private var lastHoveredNodeID: UUID?
+    private var lastHoveredBeaconNodeID: UUID?
+    private var lastActivityByNodeID: [UUID: NodeActivityPulse] = [:]
+    private var lastActivityNow: CFTimeInterval = 0
+    private var lastActivityDuration: CFTimeInterval = 0
+    private var lastTargetedNodeIDs: Set<UUID> = []
+
     let camera = Camera()
 
     struct Vertex {
@@ -198,20 +208,37 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                          activityByNodeID: [UUID: NodeActivityPulse],
                          activityNow: CFTimeInterval,
                          activityDuration: CFTimeInterval) {
+        // Cache state
+        self.lastSelectedNodeID = selectedNodeID
+        self.lastHoveredNodeID = hoveredNodeID
+        self.lastHoveredBeaconNodeID = hoveredBeaconNodeID
+        self.lastActivityByNodeID = activityByNodeID
+        self.lastActivityNow = activityNow
+        self.lastActivityDuration = activityDuration
+
         let blocksChanged = blocks != self.blocks
         self.blocks = blocks
         let cameraYaw = camera.yaw
+        let inboundTargets = helicopterManager.getActiveConstructionTargetIDs()
+        self.lastTargetedNodeIDs = inboundTargets
+        
         var instances: [VoxelInstance] = blocks.map { block in
             let rotationY = rotationYForWedge(block: block, cameraYaw: cameraYaw)
             let isHovering = block.nodeID == hoveredNodeID || block.nodeID == hoveredBeaconNodeID
             let activity = activityByNodeID[block.nodeID]
             let activityStrength: Float
             let activityKind: Int32
+            
+            let isTargeted = inboundTargets.contains(block.nodeID)
+            
             if let activity {
                 let elapsed = max(0, activityNow - activity.startedAt)
                 let normalized = max(0, 1.0 - (elapsed / max(0.001, activityDuration)))
                 activityStrength = Float(normalized)
                 activityKind = activity.kind.rawValue
+            } else if isTargeted {
+                activityStrength = 1.0
+                activityKind = 2 // Write/Orange/Construction
             } else {
                 activityStrength = 0
                 activityKind = 0
@@ -244,6 +271,16 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             rebuildRoadsAndCars(blocks: blocks)
         }
         instanceBuffer = device.makeBuffer(bytes: instances, length: MemoryLayout<VoxelInstance>.stride * instances.count, options: [])
+    }
+
+    private func rebuildInstancesUsingCache() {
+        updateInstances(blocks: self.blocks,
+                        selectedNodeID: self.lastSelectedNodeID,
+                        hoveredNodeID: self.lastHoveredNodeID,
+                        hoveredBeaconNodeID: self.lastHoveredBeaconNodeID,
+                        activityByNodeID: self.lastActivityByNodeID,
+                        activityNow: self.lastActivityNow,
+                        activityDuration: self.lastActivityDuration)
     }
 
     private func rotationYForWedge(block: CityBlock, cameraYaw: Float) -> Float {
@@ -444,7 +481,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             }
         }
         let target = SIMD3<Float>(block.position.x, maxY, block.position.z)
-        helicopterManager.spawn(at: target, textureIndex: block.textureIndex)
+        helicopterManager.spawn(at: target, targetID: block.nodeID, textureIndex: block.textureIndex)
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
@@ -496,6 +533,12 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
 
         helicopterManager.update()
+        
+        let currentTargets = helicopterManager.getActiveConstructionTargetIDs()
+        if currentTargets != lastTargetedNodeIDs {
+            rebuildInstancesUsingCache()
+        }
+        
         let heliInstances = helicopterManager.buildInstances()
         helicopterInstanceCount = heliInstances.count
         if helicopterInstanceCount > 0 {

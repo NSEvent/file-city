@@ -7,6 +7,7 @@ final class HelicopterManager {
         let id = UUID()
         var position: SIMD3<Float>
         let target: SIMD3<Float>
+        let targetID: UUID
         var state: State = .inbound
         var velocity: SIMD3<Float> = .zero
         let textureIndex: Int32
@@ -34,6 +35,7 @@ final class HelicopterManager {
     private var helicopters: [Helicopter] = []
     private var packages: [Package] = []
     private var explosions: [Explosion] = []
+    private var recentDeliveries: [UUID: CFTimeInterval] = [:]
     
     // Config
     private let speed: Float = 25.0
@@ -41,7 +43,7 @@ final class HelicopterManager {
     private var hoverTimers: [UUID: Float] = [:]
     private var lastUpdateTime: CFTimeInterval = 0
     
-    func spawn(at target: SIMD3<Float>, textureIndex: Int32) {
+    func spawn(at target: SIMD3<Float>, targetID: UUID, textureIndex: Int32) {
         // Spawn high up and away
         let angle = Float.random(in: 0...Float.pi * 2)
         let distance: Float = 100.0
@@ -52,9 +54,29 @@ final class HelicopterManager {
         let heli = Helicopter(
             position: startPos,
             target: target + SIMD3<Float>(0, hoverHeight, 0),
+            targetID: targetID,
             textureIndex: textureIndex
         )
         helicopters.append(heli)
+    }
+
+    func getActiveConstructionTargetIDs() -> Set<UUID> {
+        var targets = Set<UUID>()
+        let now = CACurrentMediaTime()
+        
+        // Inbound helicopters (construction in progress)
+        for heli in helicopters where heli.state == .inbound {
+            targets.insert(heli.targetID)
+        }
+        
+        // Recent deliveries (construction wrapping up)
+        for (id, time) in recentDeliveries {
+            if now - time < 2.0 {
+                targets.insert(id)
+            }
+        }
+        
+        return targets
     }
     
     func update() {
@@ -83,6 +105,7 @@ final class HelicopterManager {
                         velocity: SIMD3<Float>(0, -5.0, 0),
                         targetY: heli.target.y - 12.0 // Approx building top
                     ))
+                    recentDeliveries[heli.targetID] = now
                 } else {
                     let dir = simd_normalize(toTarget)
                     heli.position += dir * speed * dt
@@ -102,6 +125,7 @@ final class HelicopterManager {
                     heli = Helicopter(
                         position: heli.position,
                         target: exitDest,
+                        targetID: heli.targetID,
                         state: .outbound,
                         velocity: heli.velocity,
                         textureIndex: heli.textureIndex
@@ -118,6 +142,13 @@ final class HelicopterManager {
                  }
             }
             helicopters[i] = heli
+        }
+        
+        // Cleanup old deliveries
+        for (id, time) in recentDeliveries {
+            if now - time > 3.0 {
+                recentDeliveries.removeValue(forKey: id)
+            }
         }
         
         // Update Packages
