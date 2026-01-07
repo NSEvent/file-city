@@ -615,6 +615,10 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
         updatePlaneInstances()
         if let planeInstanceBuffer, planeInstanceCount > 0 {
+            // Bind signLabelTextureArray for banner (Shape 13)
+            if let signLabelTextureArray = signLabelTextureArray {
+                encoder?.setFragmentTexture(signLabelTextureArray, index: 1)
+            }
             encoder?.setVertexBuffer(planeInstanceBuffer, offset: 0, index: 1)
             encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 36, instanceCount: planeInstanceCount)
         }
