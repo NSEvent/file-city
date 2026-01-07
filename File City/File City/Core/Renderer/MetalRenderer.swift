@@ -762,7 +762,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 let waypoints = pathCells.map { cell in
                     SIMD3<Float>(xRoads[cell.x], altitude, zRoads[cell.y])
                 }
-                let smoothed = smoothPath(waypoints: waypoints, iterations: 2)
+                let smoothed = smoothPath(waypoints: waypoints, iterations: 4)
                 let segmentLengths = computeSegmentLengths(waypoints: smoothed)
                 let totalLength = segmentLengths.reduce(0, +)
 
@@ -1186,7 +1186,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             let waypoints = pathCells.map { cell in
                 SIMD3<Float>(xRoads[cell.x], altitude, zRoads[cell.y])
             }
-            let smoothed = smoothPath(waypoints: waypoints, iterations: 2)
+            let smoothed = smoothPath(waypoints: waypoints, iterations: 4)
             let segmentLengths = computeSegmentLengths(waypoints: smoothed)
             let totalLength = segmentLengths.reduce(0, +)
             if totalLength >= minPathLength {
