@@ -36,6 +36,7 @@ final class AppState: ObservableObject {
     private var socketWatcher: SocketActivityWatcher?
     private var activityByURL: [URL: NodeActivityPulse] = [:]
     private var activityInfoExpiresAt: CFTimeInterval?
+    private var ignoreActivityUntil: CFTimeInterval = 0
     let activityDuration: CFTimeInterval = 1.4
     private var cancellables: Set<AnyCancellable> = []
     private let sizeFormatter = ByteCountFormatter()
@@ -540,6 +541,9 @@ final class AppState: ObservableObject {
 
     private func startWatchingRoot() {
         guard let rootURL else { return }
+        // Suppress initial events (often stale or noise) for a short period after navigation
+        ignoreActivityUntil = activityNow() + 1.0
+        
         watcher?.stop()
         let watcher = FSEventsWatcher(url: rootURL)
         watcher.onChange = { [weak self] in
@@ -576,6 +580,10 @@ final class AppState: ObservableObject {
 
     private func handleFSEventsActivity(url: URL, kind: ActivityKind) {
         let now = activityNow()
+        if now < ignoreActivityUntil { return }
+        // Ignore internal git operations
+        if url.path.contains("/.git/") || url.path.hasSuffix("/.git") { return }
+        
         // Don't overwrite fs_usage events which have more detail
         if let existing = activityByURL[url], now - existing.startedAt < 0.3 {
             return
@@ -596,6 +604,10 @@ final class AppState: ObservableObject {
 
     private func handleActivityEvent(_ event: FileActivityEvent) {
         let now = activityNow()
+        if now < ignoreActivityUntil { return }
+        // Ignore internal git operations
+        if event.url.path.contains("/.git/") || event.url.path.hasSuffix("/.git") { return }
+        
         activityByURL[event.url] = NodeActivityPulse(
             kind: event.kind,
             startedAt: now,
