@@ -3,18 +3,27 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
+    @State private var searchQuery: String = ""
+    @State private var isSearchExpanded: Bool = false
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
-        NavigationView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             VStack(spacing: 0) {
-                // Toolbar with navigation
-                SidebarToolbar()
+                // Toolbar with navigation and search
+                SidebarToolbar(
+                    searchQuery: $searchQuery,
+                    isSearchExpanded: $isSearchExpanded,
+                    isSearchFocused: $isSearchFocused
+                )
 
                 // Finder-style list view
-                FinderListView()
+                FinderListView(searchQuery: searchQuery)
             }
             .frame(minWidth: 320)
-
+            .navigationSplitViewColumnWidth(min: 320, ideal: 500, max: 500)
+        } detail: {
             ZStack {
                 MetalCityView()
                 VStack {
@@ -27,10 +36,19 @@ struct ContentView: View {
                 }
             }
         }
-        .navigationViewStyle(DoubleColumnNavigationViewStyle())
         .onAppear {
             bringToFront()
         }
+        .background(KeyboardShortcutHandler(
+            onCmdF: {
+                withAnimation {
+                    isSearchExpanded = true
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    isSearchFocused = true
+                }
+            }
+        ))
     }
 
     private func bringToFront() {
@@ -132,6 +150,9 @@ private struct SelectionInfoPanel: View {
 
 private struct SidebarToolbar: View {
     @EnvironmentObject var appState: AppState
+    @Binding var searchQuery: String
+    @Binding var isSearchExpanded: Bool
+    @FocusState.Binding var isSearchFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -146,28 +167,90 @@ private struct SidebarToolbar: View {
                 .buttonStyle(.borderless)
                 .disabled(!appState.canGoToParent())
 
-                // Current path
-                if let rootURL = appState.rootURL {
-                    Text(rootURL.lastPathComponent)
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                // Current path (hidden when search is expanded)
+                if !isSearchExpanded {
+                    if let rootURL = appState.rootURL {
+                        Text(rootURL.lastPathComponent)
+                            .font(.system(size: 13, weight: .semibold))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                 }
 
                 Spacer()
 
-                // Choose folder button
-                Button {
-                    appState.chooseRoot()
-                } label: {
-                    Image(systemName: "folder.badge.plus")
-                        .font(.system(size: 12))
+                // Search bar
+                if isSearchExpanded {
+                    HStack(spacing: 4) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+
+                        TextField("Search", text: $searchQuery)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12))
+                            .focused($isSearchFocused)
+                            .onSubmit {
+                                // Keep focus on search
+                            }
+                            .onExitCommand {
+                                collapseSearch()
+                            }
+
+                        if !searchQuery.isEmpty {
+                            Button {
+                                searchQuery = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.borderless)
+                        }
+
+                        Button {
+                            collapseSearch()
+                        } label: {
+                            Text("Done")
+                                .font(.system(size: 11))
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color(NSColor.textBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .trailing).combined(with: .opacity),
+                        removal: .opacity
+                    ))
+                } else {
+                    // Magnifying glass button
+                    Button {
+                        expandSearch()
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Search (⌘F)")
                 }
-                .buttonStyle(.borderless)
-                .help("Choose Folder")
+
+                // Choose folder button
+                if !isSearchExpanded {
+                    Button {
+                        appState.chooseRoot()
+                    } label: {
+                        Image(systemName: "folder.badge.plus")
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Choose Folder")
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+            .animation(.easeInOut(duration: 0.2), value: isSearchExpanded)
 
             Divider()
 
@@ -180,9 +263,15 @@ private struct SidebarToolbar: View {
                         .lineLimit(1)
                         .truncationMode(.head)
                     Spacer()
-                    Text("\(appState.nodeCount) items")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
+                    if searchQuery.isEmpty {
+                        Text("\(appState.nodeCount) items")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                    } else {
+                        Text("Searching...")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                    }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
@@ -191,5 +280,52 @@ private struct SidebarToolbar: View {
             }
         }
         .background(Color(NSColor.controlBackgroundColor))
+    }
+
+    private func expandSearch() {
+        withAnimation {
+            isSearchExpanded = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            isSearchFocused = true
+        }
+    }
+
+    private func collapseSearch() {
+        withAnimation {
+            isSearchExpanded = false
+            searchQuery = ""
+        }
+        isSearchFocused = false
+    }
+}
+
+// MARK: - Keyboard Shortcut Handler
+
+private struct KeyboardShortcutHandler: NSViewRepresentable {
+    let onCmdF: () -> Void
+
+    func makeNSView(context: Context) -> KeyboardHandlerView {
+        let view = KeyboardHandlerView()
+        view.onCmdF = onCmdF
+        return view
+    }
+
+    func updateNSView(_ nsView: KeyboardHandlerView, context: Context) {
+        nsView.onCmdF = onCmdF
+    }
+
+    class KeyboardHandlerView: NSView {
+        var onCmdF: (() -> Void)?
+
+        override var acceptsFirstResponder: Bool { true }
+
+        override func keyDown(with event: NSEvent) {
+            if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "f" {
+                onCmdF?()
+                return
+            }
+            super.keyDown(with: event)
+        }
     }
 }

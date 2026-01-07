@@ -4,6 +4,7 @@ import SwiftUI
 
 struct FinderListView: NSViewRepresentable {
     @EnvironmentObject var appState: AppState
+    var searchQuery: String = ""
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
@@ -81,7 +82,11 @@ struct FinderListView: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         context.coordinator.appState = appState
-        // Don't call reloadData here - it's triggered by observation
+        // Update search query and reload if changed
+        if context.coordinator.searchQuery != searchQuery {
+            context.coordinator.searchQuery = searchQuery
+            context.coordinator.reloadData()
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -94,8 +99,10 @@ struct FinderListView: NSViewRepresentable {
         weak var appState: AppState?
         weak var tableView: NSTableView?
         private var cancellables = Set<AnyCancellable>()
+        private var allItems: [FileItem] = []
         private var sortedItems: [FileItem] = []
         private var isUpdatingSelection = false
+        var searchQuery: String = ""
 
         private let dateFormatter: DateFormatter = {
             let f = DateFormatter()
@@ -145,6 +152,7 @@ struct FinderListView: NSViewRepresentable {
 
             // Build file items from the root URL's direct children
             guard let rootURL = appState.rootURL else {
+                allItems = []
                 sortedItems = []
                 tableView.reloadData()
                 return
@@ -157,7 +165,7 @@ struct FinderListView: NSViewRepresentable {
                     options: [.skipsHiddenFiles]
                 )
 
-                sortedItems = contents.compactMap { url -> FileItem? in
+                allItems = contents.compactMap { url -> FileItem? in
                     do {
                         let resourceValues = try url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey, .localizedTypeDescriptionKey])
                         let isDir = resourceValues.isDirectory ?? false
@@ -177,14 +185,26 @@ struct FinderListView: NSViewRepresentable {
                         return nil
                     }
                 }
-
-                applySorting()
             } catch {
-                sortedItems = []
+                allItems = []
             }
+
+            applyFiltering()
+            applySorting()
 
             tableView.reloadData()
             syncTableSelectionFromAppState(appState.selectedURLs)
+        }
+
+        private func applyFiltering() {
+            let query = searchQuery.trimmingCharacters(in: .whitespaces).lowercased()
+            if query.isEmpty {
+                sortedItems = allItems
+            } else {
+                sortedItems = allItems.filter { item in
+                    item.name.lowercased().contains(query)
+                }
+            }
         }
 
         private func applySorting() {
@@ -247,6 +267,7 @@ struct FinderListView: NSViewRepresentable {
         }
 
         func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
+            applyFiltering()
             applySorting()
             tableView.reloadData()
             if let appState {
