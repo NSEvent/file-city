@@ -347,20 +347,24 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
             // Detect face orientation to fix text mirroring and word order
             bool isFrontFace = (in.localNormal.z > 0.0);
             
-            float segmentU;
-            float globalU;
-            
             float uOffset = in.highlight;
             float uWidth = in.activity;
+            
+            // Standardize local U to run Left->Right visually on the segment face
+            // Based on previous iterations, 1.0 - x seems to provide correct char orientation
+            float localU = 1.0 - in.uv.x; 
 
+            float globalU;
             if (isFrontFace) {
-                // Front Face: Standard L->R reading
-                segmentU = 1.0 - in.uv.x;
-                globalU = uOffset + segmentU * uWidth;
+                // Front Face: Segments ordered L->R (Start->End)
+                globalU = uOffset + localU * uWidth;
             } else {
-                // Back Face: Invert word order and letter mapping
-                segmentU = in.uv.x;
-                globalU = 1.0 - (uOffset + segmentU * uWidth);
+                // Back Face: Segments visually ordered L->R (End->Start)
+                // We must invert the segment mapping logic so the "End" segment (Seg 7) 
+                // draws the "Start" of the texture (U=0), and "Start" segment (Seg 0) draws "End".
+                // Inverted Offset = 1.0 - (Start + Width)
+                float invertedOffset = 1.0 - (uOffset + uWidth);
+                globalU = invertedOffset + localU * uWidth;
             }
             
             float2 finalUV = float2(globalU, in.uv.y);
