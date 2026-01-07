@@ -107,6 +107,15 @@ struct MetalCityView: NSViewRepresentable {
                     self?.handleFileWrite(nodeID: nodeID)
                 }
                 .store(in: &cancellables)
+            
+            // Clear helicopters on directory switch
+            appState.$rootURL
+                .dropFirst()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    self?.renderer?.clearHelicopters()
+                }
+                .store(in: &cancellables)
         }
 
         private func handleFileWrite(nodeID: UUID) {

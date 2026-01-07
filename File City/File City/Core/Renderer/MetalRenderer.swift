@@ -483,6 +483,11 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         let target = SIMD3<Float>(block.position.x, maxY, block.position.z)
         helicopterManager.spawn(at: target, targetID: block.nodeID, textureIndex: block.textureIndex)
     }
+    
+    func clearHelicopters() {
+        helicopterManager.clear()
+        rebuildInstancesUsingCache()
+    }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         camera.aspect = Float(size.width / max(size.height, 1))

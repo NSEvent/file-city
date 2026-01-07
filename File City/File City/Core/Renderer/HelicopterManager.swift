@@ -79,6 +79,14 @@ final class HelicopterManager {
         return targets
     }
     
+    func clear() {
+        helicopters.removeAll()
+        packages.removeAll()
+        explosions.removeAll()
+        recentDeliveries.removeAll()
+        hoverTimers.removeAll()
+    }
+    
     func update() {
         let now = CACurrentMediaTime()
         if lastUpdateTime == 0 {
