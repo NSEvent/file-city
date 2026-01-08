@@ -84,11 +84,11 @@ private struct FavoriteRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            // Folder icon (Finder uses ~18pt icons)
-            Image(nsImage: favorite.icon)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 18, height: 18)
+            // SF Symbol icon (matches Finder's modern sidebar style)
+            Image(systemName: favorite.symbolName)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 20, height: 18)
 
             // Name (Finder uses 13pt system font)
             Text(favorite.name)

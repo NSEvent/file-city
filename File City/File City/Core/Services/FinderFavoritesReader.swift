@@ -7,14 +7,41 @@ final class FinderFavoritesReader {
         let id = UUID()
         let name: String
         let url: URL
-        let icon: NSImage
+        /// SF Symbol name for sidebar icon (matches Finder's modern style)
+        let symbolName: String
 
         init(name: String, url: URL) {
             self.name = name
             self.url = url
-            // Fetch the icon eagerly - this gets the correct special folder icons
-            // (Downloads arrow, Music note, etc.)
-            self.icon = NSWorkspace.shared.icon(forFile: url.path)
+            self.symbolName = Self.sidebarSymbol(for: url)
+        }
+
+        /// Maps folder URLs to their Finder sidebar SF Symbols (outline style)
+        private static func sidebarSymbol(for url: URL) -> String {
+            let path = url.path
+            let home = FileManager.default.homeDirectoryForCurrentUser.path
+            let name = url.lastPathComponent.lowercased()
+
+            // Special system folders (matching Finder's exact icons)
+            if path == "/Applications" { return "a.circle" }  // App Store style A
+            if path == home { return "house" }
+            if path == "\(home)/Desktop" { return "menubar.dock.rectangle" }
+            if path == "\(home)/Documents" { return "doc" }
+            if path == "\(home)/Downloads" { return "arrow.down.circle" }
+            if path == "\(home)/Movies" { return "film" }  // Film strip with sprocket holes
+            if path == "\(home)/Music" { return "music.note.list" }  // Two connected notes
+            if path == "\(home)/Pictures" { return "photo" }
+            if path == "\(home)/Library" { return "building.columns" }
+            if path == "\(home)/Public" { return "folder.badge.person.crop" }
+
+            // iCloud Drive
+            if path.contains("Mobile Documents/com~apple~CloudDocs") { return "icloud" }
+
+            // Dropbox detection - open box shape
+            if name == "dropbox" || path.contains("/Dropbox") { return "archivebox" }
+
+            // Default folder icon (outline)
+            return "folder"
         }
     }
 
