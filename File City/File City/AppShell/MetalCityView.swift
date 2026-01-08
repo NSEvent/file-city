@@ -548,6 +548,13 @@ struct MetalCityView: NSViewRepresentable {
                         // Helicopter gone, detach
                         renderer.camera.stopGrapple()
                     }
+                case .car(let index):
+                    if let pos = renderer.carPosition(index: index) {
+                        renderer.camera.updateAttachment(targetPosition: pos, rideOnTop: true)
+                    } else {
+                        // Car gone, detach
+                        renderer.camera.stopGrapple()
+                    }
                 case .block, .beacon:
                     // Static attachment, nothing to update
                     break

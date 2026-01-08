@@ -2017,6 +2017,21 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             }
         }
 
+        // Check cars
+        for (index, path) in carPaths.enumerated() {
+            let t = fmod(Float(now) * path.speed + path.phase, 1.0)
+            let position = path.start + (path.end - path.start) * t
+            // Car radius based on scale - use max of X/Z for width, with some extra for the body
+            let radius = max(path.scale.x, path.scale.z) * 0.6
+            let carCenter = position + SIMD3<Float>(0, 0.5, 0)  // Cars are slightly above ground
+
+            if let hitDist = intersectSphere(ray: ray, center: carCenter, radius: radius) {
+                if closestHit == nil || hitDist < closestHit!.distance {
+                    closestHit = (carCenter, hitDist, .car(index: index))
+                }
+            }
+        }
+
         if let hit = closestHit {
             return (hit.position, hit.attachment)
         }
@@ -2039,6 +2054,16 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         let targets = helicopterManager.getHelicopterHitTargets()
         guard index >= 0, index < targets.count else { return nil }
         return targets[index].position
+    }
+
+    /// Get current position of a car by index (for grapple attachment following)
+    func carPosition(index: Int) -> SIMD3<Float>? {
+        guard index >= 0, index < carPaths.count else { return nil }
+        let path = carPaths[index]
+        let now = CACurrentMediaTime()
+        let t = fmod(Float(now) * path.speed + path.phase, 1.0)
+        let position = path.start + (path.end - path.start) * t
+        return position + SIMD3<Float>(0, 0.5, 0)  // Car center is slightly above ground
     }
 
     func pickBeacon(at point: CGPoint, in size: CGSize) -> UUID? {

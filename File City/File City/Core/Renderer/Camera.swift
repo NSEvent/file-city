@@ -38,6 +38,7 @@ final class Camera {
         case plane(index: Int)
         case helicopter(index: Int)
         case beacon(nodeID: UUID)
+        case car(index: Int)
     }
     var grappleAttachment: GrappleAttachment = .none
     var isShiftHeld: Bool = false
@@ -315,7 +316,7 @@ final class Camera {
     }
 
     /// Update position while attached to a moving object
-    func updateAttachment(targetPosition: SIMD3<Float>) {
+    func updateAttachment(targetPosition: SIMD3<Float>, rideOnTop: Bool = false) {
         guard isFirstPerson, isAttached, isShiftHeld else {
             if !isShiftHeld {
                 grappleAttachment = .none
@@ -323,8 +324,13 @@ final class Camera {
             return
         }
 
-        // Follow the target with a small offset (so we're not inside it)
-        let offset = SIMD3<Float>(0, -2.0, 0)  // Hang slightly below
+        // Follow the target with an offset
+        let offset: SIMD3<Float>
+        if rideOnTop {
+            offset = SIMD3<Float>(0, 2.0, 0)  // Sit on top (for cars)
+        } else {
+            offset = SIMD3<Float>(0, -2.0, 0)  // Hang below (for planes/helicopters)
+        }
         position = targetPosition + offset
         verticalVelocity = 0
     }
