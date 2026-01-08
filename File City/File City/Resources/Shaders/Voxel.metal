@@ -114,6 +114,88 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
         local.z += wave * 0.25;
         // Slight vertical flutter
         local.y += sin(local.x * 1.5 + uniforms.time * 15.0) * 0.05;
+    } else if (instance.shapeID == 14) {
+        // Tesla Model 3 body shape
+        // Car is oriented along Z axis (front at +Z, rear at -Z)
+        // local coords: x=width, y=height, z=length
+        // local is -0.5 to 0.5 in each dimension
+
+        float z = local.z; // -0.5 (rear) to 0.5 (front)
+        float y = local.y; // -0.5 (bottom) to 0.5 (top)
+
+        // Only sculpt the top half
+        if (y > 0.0) {
+            // Front hood slope (z > 0.2): slopes down toward front
+            if (z > 0.2) {
+                float frontT = (z - 0.2) / 0.3; // 0 at z=0.2, 1 at z=0.5
+                float hoodDrop = frontT * frontT * 0.6;
+                local.y -= hoodDrop * (y + 0.5);
+            }
+            // Rear trunk slope (z < -0.15): slopes down toward rear
+            else if (z < -0.15) {
+                float rearT = (-0.15 - z) / 0.35; // 0 at z=-0.15, 1 at z=-0.5
+                float trunkDrop = rearT * rearT * 0.45;
+                local.y -= trunkDrop * (y + 0.5);
+            }
+            // Cabin roof curve (middle section): slight dome
+            else {
+                float roofCurve = 1.0 - 4.0 * (z - 0.025) * (z - 0.025);
+                roofCurve = max(0.0, roofCurve);
+                local.y += roofCurve * 0.08 * (y + 0.5);
+            }
+
+            // Slight taper at sides for aerodynamic look
+            float sideTaper = 1.0 - abs(z) * 0.15;
+            local.x *= sideTaper;
+        }
+        // Bottom: slight inward tuck for wheel wells
+        else {
+            float wheelWellZ = abs(z) - 0.3;
+            if (wheelWellZ > 0 && abs(local.x) > 0.35) {
+                local.y += wheelWellZ * 0.2;
+            }
+        }
+    } else if (instance.shapeID == 15) {
+        // Tesla glass/window canopy
+        // Sits on top of body, curved greenhouse shape
+        float z = local.z;
+        float y = local.y;
+
+        // Only the top part forms the glass dome
+        if (y > -0.2) {
+            // Taper front windshield (z > 0.1)
+            if (z > 0.1) {
+                float frontT = (z - 0.1) / 0.4;
+                local.y -= frontT * frontT * 0.7 * (y + 0.5);
+                local.z -= frontT * 0.15;
+            }
+            // Taper rear window (z < -0.1)
+            else if (z < -0.1) {
+                float rearT = (-0.1 - z) / 0.4;
+                local.y -= rearT * rearT * 0.5 * (y + 0.5);
+                local.z += rearT * 0.1;
+            }
+
+            // Roof dome
+            float roofCurve = 1.0 - 4.0 * z * z;
+            roofCurve = max(0.0, roofCurve);
+            local.y += roofCurve * 0.05;
+
+            // Side taper for sleek look
+            local.x *= 0.92 - abs(z) * 0.1;
+        }
+    } else if (instance.shapeID == 16) {
+        // Wheel shape - cylinder approximation
+        // Flatten into disk shape and round edges
+        float radius = length(local.yz);
+        float maxRadius = 0.5;
+        if (radius > maxRadius * 0.85) {
+            float scale = (maxRadius * 0.85) / radius;
+            local.y *= scale;
+            local.z *= scale;
+        }
+        // Make it thinner (wheel width)
+        local.x *= 0.4;
     }
 
     float3 scaled = local * instance.scale;
@@ -202,6 +284,77 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
     };
     
     float3 baseColor = palette[in.materialID % 12];
+
+    // Tesla-style car color palette
+    float3 carPalette[12] = {
+        float3(0.85, 0.12, 0.15),  // Red (Tesla signature)
+        float3(0.95, 0.95, 0.97),  // Pearl White
+        float3(0.08, 0.08, 0.10),  // Black
+        float3(0.72, 0.74, 0.76),  // Silver Metallic
+        float3(0.10, 0.22, 0.45),  // Deep Blue
+        float3(0.55, 0.58, 0.62),  // Midnight Silver
+        float3(0.18, 0.20, 0.22),  // Midnight Cherry (dark)
+        float3(0.92, 0.90, 0.85),  // Cream White
+        float3(0.25, 0.35, 0.42),  // Steel Blue
+        float3(0.45, 0.12, 0.15),  // Dark Red
+        float3(0.20, 0.25, 0.30),  // Gunmetal
+        float3(0.88, 0.65, 0.25),  // Gold/Bronze
+    };
+
+    // Car body (shapeID 14)
+    if (in.shapeID == 14) {
+        baseColor = carPalette[in.materialID % 12];
+
+        // Car body lighting - more metallic/reflective
+        float shade = saturate(dot(normalize(in.normal), float3(0.4, 0.85, 0.2)));
+        float fresnel = pow(1.0 - abs(dot(normalize(in.normal), float3(0, 1, 0))), 3.0);
+
+        // Metallic sheen
+        float3 lit = baseColor * (0.5 + 0.5 * shade);
+        lit += float3(0.15, 0.15, 0.18) * fresnel;
+
+        // Subtle environment reflection
+        float envReflect = pow(saturate(in.normal.y), 2.0) * 0.15;
+        lit += float3(0.6, 0.7, 0.9) * envReflect;
+
+        return float4(lit, 1.0);
+    }
+
+    // Glass canopy (shapeID 15)
+    if (in.shapeID == 15) {
+        // Dark tinted glass with reflections
+        float3 glassColor = float3(0.08, 0.10, 0.12);
+
+        float shade = saturate(dot(normalize(in.normal), float3(0.4, 0.85, 0.2)));
+        float fresnel = pow(1.0 - abs(dot(normalize(in.normal), float3(0, 1, 0))), 2.5);
+
+        // Glass tint + reflection
+        float3 lit = glassColor * (0.6 + 0.4 * shade);
+        // Sky reflection on top surfaces
+        float skyReflect = saturate(in.normal.y) * 0.3;
+        lit += float3(0.4, 0.5, 0.7) * (fresnel * 0.4 + skyReflect);
+
+        // Slight edge highlight
+        lit += float3(0.2, 0.25, 0.3) * fresnel * 0.3;
+
+        return float4(lit, 1.0);
+    }
+
+    // Wheels (shapeID 16)
+    if (in.shapeID == 16) {
+        // Dark rubber/alloy wheels
+        float3 wheelColor = float3(0.12, 0.12, 0.14);
+        float shade = saturate(dot(normalize(in.normal), float3(0.4, 0.85, 0.2)));
+
+        // Tire rubber with subtle sheen
+        float3 lit = wheelColor * (0.5 + 0.5 * shade);
+
+        // Alloy rim highlight on outer edge
+        float rimHighlight = pow(abs(in.normal.x), 4.0) * 0.3;
+        lit += float3(0.5, 0.5, 0.55) * rimHighlight;
+
+        return float4(lit, 1.0);
+    }
 
     if (in.shapeID == 7) {
         float flicker = 0.75 + 0.25 * sin((in.uv.x + in.uv.y) * 28.0);
