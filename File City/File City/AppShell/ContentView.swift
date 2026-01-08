@@ -30,7 +30,7 @@ struct ContentView: View {
                 }
             }
             .frame(minWidth: 500)
-            .navigationSplitViewColumnWidth(min: 500, ideal: 680, max: 800)
+            .navigationSplitViewColumnWidth(min: 500, ideal: 1000, max: 1000)
         } detail: {
             ZStack {
                 MetalCityView()
