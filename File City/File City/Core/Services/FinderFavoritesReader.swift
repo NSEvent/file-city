@@ -7,8 +7,14 @@ final class FinderFavoritesReader {
         let id = UUID()
         let name: String
         let url: URL
-        var icon: NSImage? {
-            NSWorkspace.shared.icon(forFile: url.path)
+        let icon: NSImage
+
+        init(name: String, url: URL) {
+            self.name = name
+            self.url = url
+            // Fetch the icon eagerly - this gets the correct special folder icons
+            // (Downloads arrow, Music note, etc.)
+            self.icon = NSWorkspace.shared.icon(forFile: url.path)
         }
     }
 

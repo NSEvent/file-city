@@ -85,17 +85,10 @@ private struct FavoriteRow: View {
     var body: some View {
         HStack(spacing: 8) {
             // Folder icon (Finder uses ~18pt icons)
-            if let icon = favorite.icon {
-                Image(nsImage: icon)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 18, height: 18)
-            } else {
-                Image(systemName: "folder.fill")
-                    .font(.system(size: 16))
-                    .foregroundStyle(.blue)
-                    .frame(width: 18, height: 18)
-            }
+            Image(nsImage: favorite.icon)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 18, height: 18)
 
             // Name (Finder uses 13pt system font)
             Text(favorite.name)
