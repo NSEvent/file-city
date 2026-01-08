@@ -76,37 +76,37 @@ struct FavoritesSidebar: View {
     }
 }
 
-/// Individual row in the favorites sidebar
+/// Individual row in the favorites sidebar (matches Finder's sizing)
 private struct FavoriteRow: View {
     let favorite: FinderFavoritesReader.Favorite
     let isSelected: Bool
     let isHovered: Bool
 
     var body: some View {
-        HStack(spacing: 6) {
-            // Folder icon
+        HStack(spacing: 8) {
+            // Folder icon (Finder uses ~18pt icons)
             if let icon = favorite.icon {
                 Image(nsImage: icon)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(width: 16, height: 16)
+                    .frame(width: 18, height: 18)
             } else {
                 Image(systemName: "folder.fill")
-                    .font(.system(size: 14))
+                    .font(.system(size: 16))
                     .foregroundStyle(.blue)
-                    .frame(width: 16, height: 16)
+                    .frame(width: 18, height: 18)
             }
 
-            // Name
+            // Name (Finder uses 13pt system font)
             Text(favorite.name)
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .lineLimit(1)
                 .truncationMode(.tail)
 
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.vertical, 5)
         .background(backgroundColor)
         .clipShape(RoundedRectangle(cornerRadius: 5))
         .contentShape(Rectangle())
