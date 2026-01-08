@@ -25,7 +25,7 @@ final class Camera {
 
     // Physics constants
     let gravity: Float = -30.0             // Gravity acceleration (units/s²)
-    let jumpVelocity: Float = 12.0         // Initial jump velocity
+    let jumpVelocity: Float = 18.0         // Initial jump velocity
     let groundLevel: Float = 2.0           // Y position when on ground (eye height)
 
     // Isometric constants (original values)
