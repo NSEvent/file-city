@@ -37,6 +37,7 @@ final class Camera {
         case block(position: SIMD3<Float>)
         case plane(index: Int)
         case helicopter(index: Int)
+        case beacon(nodeID: UUID)
     }
     var grappleAttachment: GrappleAttachment = .none
     var isShiftHeld: Bool = false

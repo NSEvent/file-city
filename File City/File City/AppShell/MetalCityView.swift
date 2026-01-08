@@ -548,7 +548,7 @@ struct MetalCityView: NSViewRepresentable {
                         // Helicopter gone, detach
                         renderer.camera.stopGrapple()
                     }
-                case .block:
+                case .block, .beacon:
                     // Static attachment, nothing to update
                     break
                 case .none:

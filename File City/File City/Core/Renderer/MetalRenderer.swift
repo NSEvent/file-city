@@ -1897,6 +1897,16 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             }
         }
 
+        // Check beacons (git repo towers)
+        for box in gitBeaconBoxes {
+            if let hitDist = rayIntersectAABB(origin: ray.origin, direction: ray.direction, minBounds: box.min, maxBounds: box.max) {
+                let beaconCenter = (box.min + box.max) * 0.5
+                if closestHit == nil || hitDist < closestHit!.distance {
+                    closestHit = (beaconCenter, hitDist, .beacon(nodeID: box.nodeID))
+                }
+            }
+        }
+
         if let hit = closestHit {
             return (hit.position, hit.attachment)
         }
