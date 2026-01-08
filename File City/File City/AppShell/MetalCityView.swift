@@ -463,6 +463,26 @@ struct MetalCityView: NSViewRepresentable {
                     lastWPressTime = now
                 }
             }
+
+        }
+
+        func handleShiftPressed() {
+            tryGrapple()
+        }
+
+        private func tryGrapple() {
+            guard let renderer, let cityView,
+                  renderer.camera.isFirstPerson,
+                  !renderer.camera.isFlying,
+                  !renderer.camera.isGrappling else { return }
+
+            // Cast ray from center of screen
+            let size = cityView.drawableSize
+            let centerPoint = CGPoint(x: size.width / 2, y: size.height / 2)
+
+            if let hitPoint = renderer.pickGrappleTarget(at: centerPoint, in: size) {
+                renderer.camera.startGrapple(to: hitPoint)
+            }
         }
 
         func handleKeyUp(keyCode: UInt16) {
@@ -493,6 +513,13 @@ struct MetalCityView: NSViewRepresentable {
             let now = CACurrentMediaTime()
             let deltaTime = Float(now - lastMovementTime)
             lastMovementTime = now
+
+            // Handle grapple movement (takes priority over normal movement)
+            if renderer.camera.isGrappling {
+                _ = renderer.camera.updateGrapple(deltaTime: deltaTime)
+                // Skip normal movement while grappling
+                return
+            }
 
             // Calculate movement direction from pressed keys
             var forwardAmount: Float = 0
@@ -667,8 +694,13 @@ final class CityMTKView: MTKView {
     override func flagsChanged(with event: NSEvent) {
         // Track modifier key state changes (Shift)
         let shiftPressed = event.modifierFlags.contains(.shift)
+        let wasShiftPressed = coordinator?.pressedKeys.contains(56) == true
         if shiftPressed {
             coordinator?.pressedKeys.insert(56)
+            // Trigger grapple on Shift press (not release)
+            if !wasShiftPressed {
+                coordinator?.handleShiftPressed()
+            }
         } else {
             coordinator?.pressedKeys.remove(56)
             coordinator?.pressedKeys.remove(60)

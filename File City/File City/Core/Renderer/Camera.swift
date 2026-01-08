@@ -25,6 +25,12 @@ final class Camera {
     let mouseSensitivity: Float = 0.002    // Radians per pixel
     let maxPitch: Float = .pi / 2 - 0.1    // Prevent looking straight up/down
 
+    // Grapple state
+    var isGrappling: Bool = false
+    var grappleTarget: SIMD3<Float> = .zero
+    let grappleSpeed: Float = 80.0         // Speed when being pulled by grapple
+    let grappleArrivalDistance: Float = 3.0 // Stop grappling when this close
+
     var moveSpeed: Float {
         isSprinting ? sprintSpeed : walkSpeed
     }
@@ -205,6 +211,41 @@ final class Camera {
         if abs(verticalVelocity) < 0.1 {
             verticalVelocity = jumpVelocity
         }
+    }
+
+    /// Start grappling towards a target point
+    func startGrapple(to target: SIMD3<Float>) {
+        guard isFirstPerson else { return }
+        isGrappling = true
+        grappleTarget = target
+        verticalVelocity = 0  // Cancel any falling
+    }
+
+    /// Stop grappling (called when arriving or releasing)
+    func stopGrapple() {
+        isGrappling = false
+    }
+
+    /// Update grapple movement (call every frame while grappling)
+    func updateGrapple(deltaTime: Float) -> Bool {
+        guard isFirstPerson, isGrappling else { return false }
+
+        let direction = grappleTarget - position
+        let distance = simd_length(direction)
+
+        // Arrived at target
+        if distance < grappleArrivalDistance {
+            isGrappling = false
+            verticalVelocity = 0  // Soft landing
+            return false
+        }
+
+        // Move towards target
+        let normalizedDir = direction / distance
+        let moveAmount = min(grappleSpeed * deltaTime, distance)
+        position += normalizedDir * moveAmount
+
+        return true
     }
 
     /// Toggle flying mode

@@ -1828,14 +1828,50 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         )
         let rayOrigin = nearPosition
         let rayDirection = simd_normalize(farPosition - nearPosition)
-        
+
         let ray = RayTracer.Ray(origin: rayOrigin, direction: rayDirection)
         let tracer = RayTracer()
         if let hit = tracer.intersect(ray: ray, blocks: blocks, cameraYaw: camera.yaw),
            let block = blocks.first(where: { $0.nodeID == hit.blockID }) {
             return (block, hit.distance)
         }
-        
+
+        return nil
+    }
+
+    /// Pick a grapple target point - returns the world position where the ray hits a block
+    func pickGrappleTarget(at point: CGPoint, in size: CGSize) -> SIMD3<Float>? {
+        guard size.width > 1, size.height > 1, !blocks.isEmpty else { return nil }
+        let viewMatrix = camera.viewMatrix()
+        let projectionMatrix = camera.projectionMatrix()
+        let viewProjection = projectionMatrix * viewMatrix
+        let inverseViewProjection = simd_inverse(viewProjection)
+        let ndcX = (2.0 * Float(point.x) / Float(size.width)) - 1.0
+        let ndcY = (2.0 * Float(point.y) / Float(size.height)) - 1.0
+        let nearPoint = SIMD4<Float>(ndcX, ndcY, -1.0, 1.0)
+        let farPoint = SIMD4<Float>(ndcX, ndcY, 1.0, 1.0)
+        let worldNear = inverseViewProjection * nearPoint
+        let worldFar = inverseViewProjection * farPoint
+        let nearPosition = SIMD3<Float>(
+            worldNear.x / worldNear.w,
+            worldNear.y / worldNear.w,
+            worldNear.z / worldNear.w
+        )
+        let farPosition = SIMD3<Float>(
+            worldFar.x / worldFar.w,
+            worldFar.y / worldFar.w,
+            worldFar.z / worldFar.w
+        )
+        let rayOrigin = nearPosition
+        let rayDirection = simd_normalize(farPosition - nearPosition)
+
+        let ray = RayTracer.Ray(origin: rayOrigin, direction: rayDirection)
+        let tracer = RayTracer()
+        if let hit = tracer.intersect(ray: ray, blocks: blocks, cameraYaw: camera.yaw) {
+            // Calculate hit point from ray origin + direction * distance
+            return rayOrigin + rayDirection * hit.distance
+        }
+
         return nil
     }
 
