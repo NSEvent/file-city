@@ -89,6 +89,8 @@ struct MetalCityView: NSViewRepresentable {
         private var lastSpacePressTime: CFTimeInterval = 0
         private var lastWPressTime: CFTimeInterval = 0
         private let doubleTapInterval: CFTimeInterval = 0.3  // 300ms for double-tap
+        private var hitTestFrameCounter: Int = 0
+        private let hitTestInterval: Int = 4  // Run hit test every N frames
 
         init(appState: AppState) {
             self.appState = appState
@@ -412,7 +414,12 @@ struct MetalCityView: NSViewRepresentable {
         }
 
         func handleKeyDown(keyCode: UInt16) {
+            // Ignore key repeats (key already held down)
+            let isRepeat = pressedKeys.contains(keyCode)
             pressedKeys.insert(keyCode)
+
+            // Skip double-tap detection for key repeats
+            guard !isRepeat else { return }
 
             // ESC releases mouse in first-person mode
             if keyCode == 53 { // ESC
@@ -510,8 +517,12 @@ struct MetalCityView: NSViewRepresentable {
             let blocks = appState?.blocks
             renderer.camera.move(forward: forwardAmount, right: rightAmount, up: upAmount, deltaTime: deltaTime, blocks: blocks)
 
-            // Center-screen hit testing for crosshair targeting
-            updateCrosshairTarget()
+            // Center-screen hit testing for crosshair targeting (throttled to reduce lag)
+            hitTestFrameCounter += 1
+            if hitTestFrameCounter >= hitTestInterval {
+                hitTestFrameCounter = 0
+                updateCrosshairTarget()
+            }
         }
 
         private func updateCrosshairTarget() {
