@@ -126,43 +126,63 @@ final class Camera {
         // Collision detection with buildings
         if let blocks {
             let playerRadius: Float = 0.5  // Player collision radius
-            let playerBottom = newPosition.y - playerHeight * 0.5
-            let playerTop = newPosition.y + 0.2  // Small buffer above eye level
+            let playerFeetY = newPosition.y - playerHeight * 0.5
+            let playerHeadY = newPosition.y + 0.2  // Small buffer above eye level
+            let prevFeetY = position.y - playerHeight * 0.5
 
             for block in blocks {
-                let halfX = Float(block.footprint.x) * 0.5 + playerRadius
-                let halfZ = Float(block.footprint.y) * 0.5 + playerRadius
+                let halfX = Float(block.footprint.x) * 0.5
+                let halfZ = Float(block.footprint.y) * 0.5
                 let blockTop = block.position.y + Float(block.height)
+                let blockBottom = block.position.y
 
-                // Check if player overlaps with building AABB
+                // Building bounds (without player radius for rooftop landing)
                 let minX = block.position.x - halfX
                 let maxX = block.position.x + halfX
                 let minZ = block.position.z - halfZ
                 let maxZ = block.position.z + halfZ
 
-                // Check vertical overlap
-                if playerBottom < blockTop && playerTop > block.position.y {
-                    // Check horizontal overlap and resolve
-                    let inX = newPosition.x > minX && newPosition.x < maxX
-                    let inZ = newPosition.z > minZ && newPosition.z < maxZ
+                // Check if player is horizontally within building bounds
+                let inX = newPosition.x > minX && newPosition.x < maxX
+                let inZ = newPosition.z > minZ && newPosition.z < maxZ
 
-                    if inX && inZ {
-                        // Inside building - push out to nearest edge
-                        let distToMinX = abs(newPosition.x - minX)
-                        let distToMaxX = abs(newPosition.x - maxX)
-                        let distToMinZ = abs(newPosition.z - minZ)
-                        let distToMaxZ = abs(newPosition.z - maxZ)
+                if inX && inZ {
+                    // Player is above this building's footprint
+
+                    // Landing on rooftop: if feet would go below rooftop and we were above it
+                    if playerFeetY < blockTop && prevFeetY >= blockTop - 0.1 {
+                        // Land on rooftop
+                        newPosition.y = blockTop + playerHeight * 0.5
+                        if !isFlying {
+                            verticalVelocity = 0
+                        }
+                        continue
+                    }
+
+                    // Inside building vertically - need to push out
+                    if playerFeetY < blockTop && playerHeadY > blockBottom {
+                        // Expand bounds for horizontal collision
+                        let collisionMinX = minX - playerRadius
+                        let collisionMaxX = maxX + playerRadius
+                        let collisionMinZ = minZ - playerRadius
+                        let collisionMaxZ = maxZ + playerRadius
+
+                        // Push out to nearest edge
+                        let distToMinX = abs(newPosition.x - collisionMinX)
+                        let distToMaxX = abs(newPosition.x - collisionMaxX)
+                        let distToMinZ = abs(newPosition.z - collisionMinZ)
+                        let distToMaxZ = abs(newPosition.z - collisionMaxZ)
 
                         let minDist = min(distToMinX, distToMaxX, distToMinZ, distToMaxZ)
 
                         if minDist == distToMinX {
-                            newPosition.x = minX
+                            newPosition.x = collisionMinX
                         } else if minDist == distToMaxX {
-                            newPosition.x = maxX
+                            newPosition.x = collisionMaxX
                         } else if minDist == distToMinZ {
-                            newPosition.z = minZ
+                            newPosition.z = collisionMinZ
                         } else {
-                            newPosition.z = maxZ
+                            newPosition.z = collisionMaxZ
                         }
                     }
                 }
@@ -172,11 +192,11 @@ final class Camera {
         position = newPosition
     }
 
-    /// Jump (only works in gravity mode when on ground)
+    /// Jump (only works in gravity mode when on a surface)
     func jump() {
         guard isFirstPerson, !isFlying else { return }
-        // Only jump if on or near ground
-        if position.y <= groundLevel + 0.1 {
+        // Only jump if velocity is ~0 (meaning we're on a surface - ground or rooftop)
+        if abs(verticalVelocity) < 0.1 {
             verticalVelocity = jumpVelocity
         }
     }
@@ -190,9 +210,9 @@ final class Camera {
         }
     }
 
-    /// Check if player is on the ground
+    /// Check if player is on a surface (ground or rooftop)
     var isOnGround: Bool {
-        position.y <= groundLevel + 0.1
+        abs(verticalVelocity) < 0.1
     }
 
     /// Toggle between isometric and first-person mode
