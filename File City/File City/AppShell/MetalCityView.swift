@@ -87,6 +87,7 @@ struct MetalCityView: NSViewRepresentable {
         private var movementTimer: Timer?
         private var lastMovementTime: CFTimeInterval = CACurrentMediaTime()
         private var lastSpacePressTime: CFTimeInterval = 0
+        private var lastWPressTime: CFTimeInterval = 0
         private let doubleTapInterval: CFTimeInterval = 0.3  // 300ms for double-tap
 
         init(appState: AppState) {
@@ -443,10 +444,27 @@ struct MetalCityView: NSViewRepresentable {
                     lastSpacePressTime = now
                 }
             }
+
+            // W: double-tap to sprint
+            if keyCode == 13 { // W
+                let now = CACurrentMediaTime()
+                if now - lastWPressTime < doubleTapInterval {
+                    // Double-tap: start sprinting
+                    renderer?.camera.isSprinting = true
+                    lastWPressTime = 0  // Reset to prevent triple-tap
+                } else {
+                    lastWPressTime = now
+                }
+            }
         }
 
         func handleKeyUp(keyCode: UInt16) {
             pressedKeys.remove(keyCode)
+
+            // Stop sprinting when W is released
+            if keyCode == 13 { // W
+                renderer?.camera.isSprinting = false
+            }
         }
 
         private func startMovementTimer() {

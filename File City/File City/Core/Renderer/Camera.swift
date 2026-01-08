@@ -19,9 +19,15 @@ final class Camera {
 
     // Movement constants
     let playerHeight: Float = 3.5          // Player body height (for collision)
-    let moveSpeed: Float = 20.0            // Units per second
+    let walkSpeed: Float = 20.0            // Normal walk speed (units per second)
+    let sprintSpeed: Float = 35.0          // Sprint speed (units per second)
+    var isSprinting: Bool = false          // Currently sprinting
     let mouseSensitivity: Float = 0.002    // Radians per pixel
     let maxPitch: Float = .pi / 2 - 0.1    // Prevent looking straight up/down
+
+    var moveSpeed: Float {
+        isSprinting ? sprintSpeed : walkSpeed
+    }
 
     // Physics constants
     let gravity: Float = -30.0             // Gravity acceleration (units/s²)
