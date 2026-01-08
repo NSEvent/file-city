@@ -83,7 +83,11 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         let speed: Float
         let phase: Float
         let scale: SIMD3<Float>
+        let colorIndex: UInt32  // Index into car color palette (0-11)
     }
+
+    // Number of instances per car: body + glass + 4 wheels + headlights + taillights = 8
+    private let instancesPerCar = 8
 
     private struct PlanePath {
         let waypoints: [SIMD3<Float>]
@@ -1087,9 +1091,10 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         let minZ = zs.first ?? 0
         let maxZ = zs.last ?? 0
         let laneOffset = Float(roadWidth) * 0.25
-        
-        // Consistent car scale (Long Z) for rotation-based orientation
-        let carScale = SIMD3<Float>(1.6, 1.2, 3.2)
+
+        // Tesla Model 3 proportions: ~4.7m long, ~1.85m wide, ~1.44m tall
+        // Scaled down for the city: length 3.5, width 1.5, height 1.1
+        let carScale = SIMD3<Float>(1.5, 1.1, 3.5)
 
         for (index, z) in zs.dropLast().enumerated() {
             let roadZ = z + stepZ * 0.5
@@ -1100,15 +1105,18 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 let speed = (2.0 + randomUnit(seed: seed) * 3.0) / distance
                 let phase = randomUnit(seed: seed ^ 0xCAFE)
                 let forward = (index % 2 == 0)
-                
+
+                // Random color from 12-color palette
+                let colorIndex = UInt32(seed % 12)
+
                 // RHT Logic for X-Roads
                 // +X (Forward): Right is South (+Z). Offset +
                 // -X (Backward): Right is North (-Z). Offset -
                 let offsetZ = forward ? laneOffset : -laneOffset
-                
+
                 let start = SIMD3<Float>(forward ? minX - 2.0 : maxX + 2.0, 0.5, roadZ + offsetZ)
                 let end = SIMD3<Float>(forward ? maxX + 2.0 : minX - 2.0, 0.5, roadZ + offsetZ)
-                carPaths.append(CarPath(start: start, end: end, speed: speed, phase: phase, scale: carScale))
+                carPaths.append(CarPath(start: start, end: end, speed: speed, phase: phase, scale: carScale, colorIndex: colorIndex))
             }
         }
 
@@ -1121,19 +1129,23 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 let speed = (2.0 + randomUnit(seed: seed) * 3.0) / distance
                 let phase = randomUnit(seed: seed ^ 0xBEEF)
                 let forward = (index % 2 == 0)
-                
+
+                // Random color from 12-color palette
+                let colorIndex = UInt32(seed % 12)
+
                 // RHT Logic for Z-Roads
                 // +Z (Forward): Right is West (-X). Offset -
                 // -Z (Backward): Right is East (+X). Offset +
                 let offsetX = forward ? -laneOffset : laneOffset
-                
+
                 let start = SIMD3<Float>(roadX + offsetX, 0.5, forward ? minZ - 2.0 : maxZ + 2.0)
                 let end = SIMD3<Float>(roadX + offsetX, 0.5, forward ? maxZ + 2.0 : minZ - 2.0)
-                carPaths.append(CarPath(start: start, end: end, speed: speed, phase: phase, scale: carScale))
+                carPaths.append(CarPath(start: start, end: end, speed: speed, phase: phase, scale: carScale, colorIndex: colorIndex))
             }
         }
 
-        carInstanceCount = carPaths.count
+        // Each car has multiple instances: body, glass, 4 wheels
+        carInstanceCount = carPaths.count * instancesPerCar
         if carInstanceCount > 0 {
             carInstanceBuffer = device.makeBuffer(length: MemoryLayout<VoxelInstance>.stride * carInstanceCount, options: [])
         }
@@ -1357,21 +1369,119 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private func updateCarInstances() {
         guard let carInstanceBuffer, !carPaths.isEmpty else { return }
         let now = CACurrentMediaTime()
-        let pointer = carInstanceBuffer.contents().bindMemory(to: VoxelInstance.self, capacity: carPaths.count)
-        for (index, path) in carPaths.enumerated() {
+        let pointer = carInstanceBuffer.contents().bindMemory(to: VoxelInstance.self, capacity: carInstanceCount)
+
+        for (carIndex, path) in carPaths.enumerated() {
+            let baseIndex = carIndex * instancesPerCar
             let t = fmod(Float(now) * path.speed + path.phase, 1.0)
             let position = path.start + (path.end - path.start) * t
             let direction = normalize(path.end - path.start)
             let rotationY = atan2(direction.x, direction.z)
-            pointer[index] = VoxelInstance(
-                position: position,
-                scale: path.scale,
+
+            // Car body dimensions
+            let bodyScale = path.scale
+            let bodyY: Float = 0.35  // Lift body slightly off ground
+
+            // Instance 0: Car body (shapeID 14)
+            pointer[baseIndex] = VoxelInstance(
+                position: SIMD3<Float>(position.x, position.y + bodyY, position.z),
+                scale: bodyScale,
+                rotationY: rotationY,
+                rotationX: 0,
+                rotationZ: 0,
+                materialID: path.colorIndex,
+                textureIndex: -1,  // No texture, use shader color
+                shapeID: 14
+            )
+
+            // Instance 1: Glass canopy (shapeID 15)
+            // Glass sits on top rear-center of body
+            let glassScale = SIMD3<Float>(bodyScale.x * 0.88, bodyScale.y * 0.45, bodyScale.z * 0.48)
+            let glassOffsetY = bodyY + bodyScale.y * 0.45
+            let glassOffsetZ: Float = -bodyScale.z * 0.08  // Slightly toward rear
+            // Rotate offset by car direction
+            let cosR = cos(rotationY)
+            let sinR = sin(rotationY)
+            let glassWorldOffsetX = glassOffsetZ * sinR
+            let glassWorldOffsetZ = glassOffsetZ * cosR
+            pointer[baseIndex + 1] = VoxelInstance(
+                position: SIMD3<Float>(position.x + glassWorldOffsetX, position.y + glassOffsetY, position.z + glassWorldOffsetZ),
+                scale: glassScale,
                 rotationY: rotationY,
                 rotationX: 0,
                 rotationZ: 0,
                 materialID: 0,
-                textureIndex: carTextureIndex,
-                shapeID: 0
+                textureIndex: -1,
+                shapeID: 15
+            )
+
+            // Wheels (shapeID 16)
+            let wheelRadius: Float = 0.32
+            let wheelWidth: Float = 0.22
+            let wheelScale = SIMD3<Float>(wheelWidth, wheelRadius * 2, wheelRadius * 2)
+            let wheelY = wheelRadius * 0.9  // Slightly embedded in ground
+            let wheelXOffset = bodyScale.x * 0.42  // Side offset
+            let wheelZFront = bodyScale.z * 0.32   // Front wheels
+            let wheelZRear = -bodyScale.z * 0.35   // Rear wheels
+
+            // Wheel positions in local space (relative to car center)
+            let wheelPositions: [(Float, Float)] = [
+                (-wheelXOffset, wheelZFront),   // Front left
+                (wheelXOffset, wheelZFront),    // Front right
+                (-wheelXOffset, wheelZRear),    // Rear left
+                (wheelXOffset, wheelZRear),     // Rear right
+            ]
+
+            for (wheelIndex, (localX, localZ)) in wheelPositions.enumerated() {
+                // Rotate local position by car direction
+                let worldX = localX * cosR + localZ * sinR
+                let worldZ = -localX * sinR + localZ * cosR
+                pointer[baseIndex + 2 + wheelIndex] = VoxelInstance(
+                    position: SIMD3<Float>(position.x + worldX, wheelY, position.z + worldZ),
+                    scale: wheelScale,
+                    rotationY: rotationY,
+                    rotationX: 0,
+                    rotationZ: 0,
+                    materialID: 0,
+                    textureIndex: -1,
+                    shapeID: 16
+                )
+            }
+
+            // Instance 6: Headlights (shapeID 17)
+            // Positioned at front of car, spans width
+            let headlightScale = SIMD3<Float>(bodyScale.x * 0.85, 0.12, 0.15)
+            let headlightLocalZ = bodyScale.z * 0.48  // At front
+            let headlightLocalY = bodyY + 0.15  // Low on the nose
+            let headlightWorldX = headlightLocalZ * sinR
+            let headlightWorldZ = headlightLocalZ * cosR
+            pointer[baseIndex + 6] = VoxelInstance(
+                position: SIMD3<Float>(position.x + headlightWorldX, headlightLocalY, position.z + headlightWorldZ),
+                scale: headlightScale,
+                rotationY: rotationY,
+                rotationX: 0,
+                rotationZ: 0,
+                materialID: 0,
+                textureIndex: -1,
+                shapeID: 17
+            )
+
+            // Instance 7: Taillights (shapeID 18)
+            // Tesla's distinctive full-width taillight bar
+            let taillightScale = SIMD3<Float>(bodyScale.x * 0.92, 0.08, 0.1)
+            let taillightLocalZ = -bodyScale.z * 0.48  // At rear
+            let taillightLocalY = bodyY + bodyScale.y * 0.25  // Mid-height on trunk
+            let taillightWorldX = taillightLocalZ * sinR
+            let taillightWorldZ = taillightLocalZ * cosR
+            pointer[baseIndex + 7] = VoxelInstance(
+                position: SIMD3<Float>(position.x + taillightWorldX, taillightLocalY, position.z + taillightWorldZ),
+                scale: taillightScale,
+                rotationY: rotationY,
+                rotationX: 0,
+                rotationZ: 0,
+                materialID: 0,
+                textureIndex: -1,
+                shapeID: 18
             )
         }
     }
