@@ -485,6 +485,20 @@ struct MetalCityView: NSViewRepresentable {
             let size = cityView.drawableSize
             let centerPoint = CGPoint(x: size.width / 2, y: size.height / 2)
 
+            // Check for plane hit first (makes them speed up)
+            if let planeIndex = renderer.pickPlane(at: centerPoint, in: size) {
+                renderer.setHoveredPlane(index: planeIndex)
+                // Clear block hover when looking at plane
+                if hoveredNodeID != nil {
+                    hoveredNodeID = nil
+                    appState?.hoveredURL = nil
+                    appState?.hoveredNodeID = nil
+                }
+                return
+            } else {
+                renderer.setHoveredPlane(index: nil)
+            }
+
             // Check for block hit at center
             if let blockHit = renderer.pickBlockHit(at: centerPoint, in: size) {
                 let block = blockHit.block

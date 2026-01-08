@@ -32,6 +32,11 @@ final class Camera {
         isFirstPerson ? fpYaw : isoYaw
     }
 
+    /// Fixed yaw for wedge building rotation (always isometric angle)
+    var wedgeYaw: Float {
+        isoYaw
+    }
+
     var pitch: Float {
         isFirstPerson ? fpPitch : isoPitch
     }
