@@ -18,7 +18,7 @@ final class Camera {
     var verticalVelocity: Float = 0        // Vertical velocity for gravity/jumping
 
     // Movement constants
-    let playerHeight: Float = 2.0          // Eye height above ground
+    let playerHeight: Float = 3.5          // Player body height (for collision)
     let moveSpeed: Float = 20.0            // Units per second
     let mouseSensitivity: Float = 0.002    // Radians per pixel
     let maxPitch: Float = .pi / 2 - 0.1    // Prevent looking straight up/down
@@ -26,7 +26,7 @@ final class Camera {
     // Physics constants
     let gravity: Float = -30.0             // Gravity acceleration (units/s²)
     let jumpVelocity: Float = 18.0         // Initial jump velocity
-    let groundLevel: Float = 2.0           // Y position when on ground (eye height)
+    let groundLevel: Float = 3.5           // Eye height when on ground
 
     // Isometric constants (original values)
     private let isoPitch: Float = 0.75
