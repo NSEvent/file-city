@@ -112,9 +112,11 @@ final class Camera {
     func move(forward forwardAmount: Float, right rightAmount: Float, up upAmount: Float, deltaTime: Float, blocks: [CityBlock]? = nil) {
         guard isFirstPerson else { return }
 
-        // Horizontal movement (same for both modes)
-        var horizontalMovement = self.forward * forwardAmount + self.right * rightAmount
-        var newPosition = position + horizontalMovement * moveSpeed * deltaTime
+        // Calculate intended horizontal movement
+        let horizontalMovement = self.forward * forwardAmount + self.right * rightAmount
+        let horizontalDelta = horizontalMovement * moveSpeed * deltaTime
+
+        var newPosition = position
 
         // Vertical movement depends on mode
         if isFlying {
@@ -135,12 +137,45 @@ final class Camera {
         // Clamp minimum height (stay above ground)
         newPosition.y = max(playerHeight * 0.5, newPosition.y)
 
-        // Collision detection with buildings
+        // Collision detection with buildings using sliding collision
         if let blocks {
             let playerRadius: Float = 0.5  // Player collision radius
             let playerFeetY = newPosition.y - playerHeight * 0.5
             let playerHeadY = newPosition.y + 0.2  // Small buffer above eye level
             let prevFeetY = position.y - playerHeight * 0.5
+
+            // Handle rooftop landing first (vertical collision)
+            for block in blocks {
+                let halfX = Float(block.footprint.x) * 0.5
+                let halfZ = Float(block.footprint.y) * 0.5
+                let blockTop = block.position.y + Float(block.height)
+
+                let minX = block.position.x - halfX
+                let maxX = block.position.x + halfX
+                let minZ = block.position.z - halfZ
+                let maxZ = block.position.z + halfZ
+
+                // Check if player is horizontally within building bounds
+                let inX = position.x > minX && position.x < maxX
+                let inZ = position.z > minZ && position.z < maxZ
+
+                if inX && inZ {
+                    // Landing on rooftop: if feet would go below rooftop and we were above it
+                    if playerFeetY < blockTop && prevFeetY >= blockTop - 0.1 {
+                        newPosition.y = blockTop + playerHeight * 0.5
+                        if !isFlying {
+                            verticalVelocity = 0
+                        }
+                    }
+                }
+            }
+
+            // Recalculate vertical bounds after rooftop landing
+            let finalFeetY = newPosition.y - playerHeight * 0.5
+            let finalHeadY = newPosition.y + 0.2
+
+            // Try X movement first
+            var testX = position.x + horizontalDelta.x
 
             for block in blocks {
                 let halfX = Float(block.footprint.x) * 0.5
@@ -148,57 +183,63 @@ final class Camera {
                 let blockTop = block.position.y + Float(block.height)
                 let blockBottom = block.position.y
 
-                // Building bounds (without player radius for rooftop landing)
-                let minX = block.position.x - halfX
-                let maxX = block.position.x + halfX
-                let minZ = block.position.z - halfZ
-                let maxZ = block.position.z + halfZ
+                // Skip if we're not vertically overlapping with this building
+                if finalFeetY >= blockTop || finalHeadY <= blockBottom {
+                    continue
+                }
 
-                // Check if player is horizontally within building bounds
-                let inX = newPosition.x > minX && newPosition.x < maxX
-                let inZ = newPosition.z > minZ && newPosition.z < maxZ
+                let minX = block.position.x - halfX - playerRadius
+                let maxX = block.position.x + halfX + playerRadius
+                let minZ = block.position.z - halfZ - playerRadius
+                let maxZ = block.position.z + halfZ + playerRadius
 
-                if inX && inZ {
-                    // Player is above this building's footprint
-
-                    // Landing on rooftop: if feet would go below rooftop and we were above it
-                    if playerFeetY < blockTop && prevFeetY >= blockTop - 0.1 {
-                        // Land on rooftop
-                        newPosition.y = blockTop + playerHeight * 0.5
-                        if !isFlying {
-                            verticalVelocity = 0
-                        }
-                        continue
-                    }
-
-                    // Inside building vertically - need to push out
-                    if playerFeetY < blockTop && playerHeadY > blockBottom {
-                        // Expand bounds for horizontal collision
-                        let collisionMinX = minX - playerRadius
-                        let collisionMaxX = maxX + playerRadius
-                        let collisionMinZ = minZ - playerRadius
-                        let collisionMaxZ = maxZ + playerRadius
-
-                        // Push out to nearest edge
-                        let distToMinX = abs(newPosition.x - collisionMinX)
-                        let distToMaxX = abs(newPosition.x - collisionMaxX)
-                        let distToMinZ = abs(newPosition.z - collisionMinZ)
-                        let distToMaxZ = abs(newPosition.z - collisionMaxZ)
-
-                        let minDist = min(distToMinX, distToMaxX, distToMinZ, distToMaxZ)
-
-                        if minDist == distToMinX {
-                            newPosition.x = collisionMinX
-                        } else if minDist == distToMaxX {
-                            newPosition.x = collisionMaxX
-                        } else if minDist == distToMinZ {
-                            newPosition.z = collisionMinZ
-                        } else {
-                            newPosition.z = collisionMaxZ
-                        }
+                // Check if the new X position would collide
+                if testX > minX && testX < maxX && position.z > minZ && position.z < maxZ {
+                    // Block X movement - slide along the wall
+                    if horizontalDelta.x > 0 {
+                        testX = minX
+                    } else {
+                        testX = maxX
                     }
                 }
             }
+
+            // Try Z movement
+            var testZ = position.z + horizontalDelta.z
+
+            for block in blocks {
+                let halfX = Float(block.footprint.x) * 0.5
+                let halfZ = Float(block.footprint.y) * 0.5
+                let blockTop = block.position.y + Float(block.height)
+                let blockBottom = block.position.y
+
+                // Skip if we're not vertically overlapping with this building
+                if finalFeetY >= blockTop || finalHeadY <= blockBottom {
+                    continue
+                }
+
+                let minX = block.position.x - halfX - playerRadius
+                let maxX = block.position.x + halfX + playerRadius
+                let minZ = block.position.z - halfZ - playerRadius
+                let maxZ = block.position.z + halfZ + playerRadius
+
+                // Check if the new Z position would collide (using resolved X)
+                if testX > minX && testX < maxX && testZ > minZ && testZ < maxZ {
+                    // Block Z movement - slide along the wall
+                    if horizontalDelta.z > 0 {
+                        testZ = minZ
+                    } else {
+                        testZ = maxZ
+                    }
+                }
+            }
+
+            newPosition.x = testX
+            newPosition.z = testZ
+        } else {
+            // No collision detection - just apply movement
+            newPosition.x += horizontalDelta.x
+            newPosition.z += horizontalDelta.z
         }
 
         position = newPosition
