@@ -86,8 +86,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         let colorIndex: UInt32  // Index into car color palette (0-11)
     }
 
-    // Number of instances per car: body + glass + 4 wheels = 6
-    private let instancesPerCar = 6
+    // Number of instances per car: body + glass + 4 wheels + headlights + taillights = 8
+    private let instancesPerCar = 8
 
     private struct PlanePath {
         let waypoints: [SIMD3<Float>]
@@ -1447,6 +1447,42 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                     shapeID: 16
                 )
             }
+
+            // Instance 6: Headlights (shapeID 17)
+            // Positioned at front of car, spans width
+            let headlightScale = SIMD3<Float>(bodyScale.x * 0.85, 0.12, 0.15)
+            let headlightLocalZ = bodyScale.z * 0.48  // At front
+            let headlightLocalY = bodyY + 0.15  // Low on the nose
+            let headlightWorldX = headlightLocalZ * sinR
+            let headlightWorldZ = headlightLocalZ * cosR
+            pointer[baseIndex + 6] = VoxelInstance(
+                position: SIMD3<Float>(position.x + headlightWorldX, headlightLocalY, position.z + headlightWorldZ),
+                scale: headlightScale,
+                rotationY: rotationY,
+                rotationX: 0,
+                rotationZ: 0,
+                materialID: 0,
+                textureIndex: -1,
+                shapeID: 17
+            )
+
+            // Instance 7: Taillights (shapeID 18)
+            // Tesla's distinctive full-width taillight bar
+            let taillightScale = SIMD3<Float>(bodyScale.x * 0.92, 0.08, 0.1)
+            let taillightLocalZ = -bodyScale.z * 0.48  // At rear
+            let taillightLocalY = bodyY + bodyScale.y * 0.25  // Mid-height on trunk
+            let taillightWorldX = taillightLocalZ * sinR
+            let taillightWorldZ = taillightLocalZ * cosR
+            pointer[baseIndex + 7] = VoxelInstance(
+                position: SIMD3<Float>(position.x + taillightWorldX, taillightLocalY, position.z + taillightWorldZ),
+                scale: taillightScale,
+                rotationY: rotationY,
+                rotationX: 0,
+                rotationZ: 0,
+                materialID: 0,
+                textureIndex: -1,
+                shapeID: 18
+            )
         }
     }
 

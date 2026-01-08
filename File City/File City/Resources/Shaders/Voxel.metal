@@ -116,86 +116,172 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
         local.y += sin(local.x * 1.5 + uniforms.time * 15.0) * 0.05;
     } else if (instance.shapeID == 14) {
         // Tesla Model 3 body shape
-        // Car is oriented along Z axis (front at +Z, rear at -Z)
-        // local coords: x=width, y=height, z=length
-        // local is -0.5 to 0.5 in each dimension
+        // Car oriented along Z axis (front at +Z, rear at -Z)
+        // Key Model 3 features: no grille, very low nose, smooth curves
 
         float z = local.z; // -0.5 (rear) to 0.5 (front)
         float y = local.y; // -0.5 (bottom) to 0.5 (top)
+        float x = local.x; // -0.5 (left) to 0.5 (right)
 
-        // Only sculpt the top half
-        if (y > 0.0) {
-            // Front hood slope (z > 0.2): slopes down toward front
-            if (z > 0.2) {
-                float frontT = (z - 0.2) / 0.3; // 0 at z=0.2, 1 at z=0.5
-                float hoodDrop = frontT * frontT * 0.6;
-                local.y -= hoodDrop * (y + 0.5);
+        // Bottom half - wheel arches and lower body
+        if (y < 0.0) {
+            // Wheel arch cutouts - deeper and more defined
+            float frontWheelZ = 0.32;
+            float rearWheelZ = -0.35;
+            float archRadius = 0.18;
+
+            // Front wheel arch
+            float frontDist = length(float2(z - frontWheelZ, y + 0.15));
+            if (frontDist < archRadius && abs(x) > 0.32) {
+                local.y += (archRadius - frontDist) * 1.5;
             }
-            // Rear trunk slope (z < -0.15): slopes down toward rear
-            else if (z < -0.15) {
-                float rearT = (-0.15 - z) / 0.35; // 0 at z=-0.15, 1 at z=-0.5
-                float trunkDrop = rearT * rearT * 0.45;
-                local.y -= trunkDrop * (y + 0.5);
-            }
-            // Cabin roof curve (middle section): slight dome
-            else {
-                float roofCurve = 1.0 - 4.0 * (z - 0.025) * (z - 0.025);
-                roofCurve = max(0.0, roofCurve);
-                local.y += roofCurve * 0.08 * (y + 0.5);
+            // Rear wheel arch
+            float rearDist = length(float2(z - rearWheelZ, y + 0.15));
+            if (rearDist < archRadius && abs(x) > 0.32) {
+                local.y += (archRadius - rearDist) * 1.5;
             }
 
-            // Slight taper at sides for aerodynamic look
-            float sideTaper = 1.0 - abs(z) * 0.15;
-            local.x *= sideTaper;
+            // Side skirt tuck
+            if (abs(x) > 0.4) {
+                local.y += 0.05;
+            }
         }
-        // Bottom: slight inward tuck for wheel wells
+        // Top half - hood, roof, trunk
         else {
-            float wheelWellZ = abs(z) - 0.3;
-            if (wheelWellZ > 0 && abs(local.x) > 0.35) {
-                local.y += wheelWellZ * 0.2;
+            // FRONT: Tesla's signature smooth nose - no grille, very low
+            if (z > 0.15) {
+                float frontT = (z - 0.15) / 0.35;
+                // Aggressive hood drop - much steeper than normal cars
+                float hoodDrop = frontT * frontT * 0.85;
+                local.y -= hoodDrop * (y + 0.5);
+
+                // Front nose rounds down smoothly (no grille!)
+                if (frontT > 0.6) {
+                    float noseT = (frontT - 0.6) / 0.4;
+                    local.y -= noseT * 0.15;
+                    // Slight chin tuck
+                    local.z -= noseT * noseT * 0.08;
+                }
+
+                // Narrow the nose
+                local.x *= 1.0 - frontT * 0.12;
             }
+            // REAR: Smooth fastback with subtle lip spoiler
+            else if (z < -0.1) {
+                float rearT = (-0.1 - z) / 0.4;
+                // Gradual trunk slope (fastback style)
+                float trunkDrop = rearT * rearT * 0.55;
+                local.y -= trunkDrop * (y + 0.5);
+
+                // Subtle lip spoiler at very rear
+                if (rearT > 0.85 && y > 0.1) {
+                    local.y += 0.03;
+                }
+
+                // Rear tapers inward slightly
+                local.x *= 1.0 - rearT * 0.08;
+
+                // Round the rear corners
+                if (rearT > 0.7) {
+                    float cornerT = (rearT - 0.7) / 0.3;
+                    local.z += cornerT * cornerT * 0.05;
+                }
+            }
+            // MIDDLE: Smooth roof with slight dome
+            else {
+                float roofT = 1.0 - pow(abs(z - 0.02) * 2.5, 2.0);
+                roofT = max(0.0, roofT);
+                local.y += roofT * 0.06 * (y + 0.5);
+            }
+
+            // Overall side taper - Tesla has very smooth sides
+            float sideCurve = 1.0 - abs(z) * 0.08;
+            // Slight tumblehome (sides angle inward at top)
+            sideCurve -= y * 0.06;
+            local.x *= sideCurve;
         }
+
+        // Smooth the corners everywhere
+        float cornerRound = 0.92 + 0.08 * (1.0 - abs(x) * abs(z) * 4.0);
+        local.x *= cornerRound;
+
     } else if (instance.shapeID == 15) {
-        // Tesla glass/window canopy
-        // Sits on top of body, curved greenhouse shape
+        // Tesla glass canopy - HUGE panoramic roof
+        // Extends almost full length of car
         float z = local.z;
         float y = local.y;
 
-        // Only the top part forms the glass dome
-        if (y > -0.2) {
-            // Taper front windshield (z > 0.1)
-            if (z > 0.1) {
-                float frontT = (z - 0.1) / 0.4;
-                local.y -= frontT * frontT * 0.7 * (y + 0.5);
-                local.z -= frontT * 0.15;
+        // Glass forms from windshield through to rear
+        if (y > -0.3) {
+            // Front windshield - very raked (aerodynamic)
+            if (z > 0.05) {
+                float frontT = (z - 0.05) / 0.45;
+                // Steep windshield angle
+                local.y -= frontT * frontT * 0.9 * (y + 0.5);
+                // Windshield leans forward significantly
+                local.z -= frontT * 0.2;
             }
-            // Taper rear window (z < -0.1)
-            else if (z < -0.1) {
-                float rearT = (-0.1 - z) / 0.4;
-                local.y -= rearT * rearT * 0.5 * (y + 0.5);
-                local.z += rearT * 0.1;
+            // Rear glass - also raked but less extreme
+            else if (z < -0.15) {
+                float rearT = (-0.15 - z) / 0.35;
+                local.y -= rearT * rearT * 0.6 * (y + 0.5);
+                local.z += rearT * 0.12;
+            }
+            // Middle - panoramic roof dome
+            else {
+                float roofCurve = 1.0 - pow(abs(z + 0.05) * 2.2, 2.0);
+                roofCurve = max(0.0, roofCurve);
+                local.y += roofCurve * 0.04;
             }
 
-            // Roof dome
-            float roofCurve = 1.0 - 4.0 * z * z;
-            roofCurve = max(0.0, roofCurve);
-            local.y += roofCurve * 0.05;
+            // Side taper - creates floating roof illusion
+            local.x *= 0.88 - abs(z) * 0.08;
 
-            // Side taper for sleek look
-            local.x *= 0.92 - abs(z) * 0.1;
+            // Narrow at top (tumblehome)
+            local.x *= 1.0 - max(0.0, y) * 0.1;
         }
+
     } else if (instance.shapeID == 16) {
-        // Wheel shape - cylinder approximation
-        // Flatten into disk shape and round edges
+        // Tesla Aero wheel - smooth cover style
+        // Distinctive turbine/pinwheel pattern
         float radius = length(local.yz);
         float maxRadius = 0.5;
-        if (radius > maxRadius * 0.85) {
-            float scale = (maxRadius * 0.85) / radius;
+
+        // Create smooth disc shape
+        if (radius > maxRadius * 0.9) {
+            float scale = (maxRadius * 0.9) / radius;
             local.y *= scale;
             local.z *= scale;
         }
-        // Make it thinner (wheel width)
-        local.x *= 0.4;
+
+        // Tire thickness (narrower = more aero)
+        local.x *= 0.35;
+
+        // Slight bulge for tire sidewall
+        float sidewall = 1.0 - abs(local.x) * 2.0;
+        float bulge = sidewall * 0.08 * (radius / maxRadius);
+        local.y *= 1.0 + bulge;
+        local.z *= 1.0 + bulge;
+
+    } else if (instance.shapeID == 17) {
+        // Headlight shape - LED bar style
+        // Thin horizontal strip that wraps around corner
+        local.y *= 0.25;  // Thin
+        local.z *= 0.6;   // Short depth
+        // Wrap around corner
+        if (local.x > 0.3) {
+            float wrapT = (local.x - 0.3) / 0.2;
+            local.z -= wrapT * 0.15;
+        } else if (local.x < -0.3) {
+            float wrapT = (-0.3 - local.x) / 0.2;
+            local.z -= wrapT * 0.15;
+        }
+
+    } else if (instance.shapeID == 18) {
+        // Taillight shape - continuous bar across rear
+        local.y *= 0.15;  // Very thin
+        local.x *= 0.95;  // Almost full width
+        local.z *= 0.3;   // Shallow
     }
 
     float3 scaled = local * instance.scale;
@@ -305,53 +391,144 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
     if (in.shapeID == 14) {
         baseColor = carPalette[in.materialID % 12];
 
-        // Car body lighting - more metallic/reflective
-        float shade = saturate(dot(normalize(in.normal), float3(0.4, 0.85, 0.2)));
-        float fresnel = pow(1.0 - abs(dot(normalize(in.normal), float3(0, 1, 0))), 3.0);
+        float3 N = normalize(in.normal);
+        float3 L = normalize(float3(0.4, 0.85, 0.2));  // Light direction
+        float3 V = float3(0, 0, 1);  // View direction (approximation)
+        float3 H = normalize(L + V);  // Half vector
 
-        // Metallic sheen
-        float3 lit = baseColor * (0.5 + 0.5 * shade);
-        lit += float3(0.15, 0.15, 0.18) * fresnel;
+        // Diffuse
+        float NdotL = saturate(dot(N, L));
+        float diffuse = 0.3 + 0.7 * NdotL;
 
-        // Subtle environment reflection
-        float envReflect = pow(saturate(in.normal.y), 2.0) * 0.15;
-        lit += float3(0.6, 0.7, 0.9) * envReflect;
+        // Specular (car paint is glossy)
+        float NdotH = saturate(dot(N, H));
+        float spec = pow(NdotH, 80.0) * 0.6;
+
+        // Fresnel - metallic paint has strong edge reflections
+        float fresnel = pow(1.0 - saturate(dot(N, V)), 4.0);
+
+        // Base metallic paint
+        float3 lit = baseColor * diffuse;
+
+        // Clear coat specular highlight
+        lit += float3(1.0, 1.0, 1.0) * spec;
+
+        // Environment reflection (sky blue on top, ground on bottom)
+        float3 envColor = mix(float3(0.2, 0.2, 0.25), float3(0.5, 0.6, 0.8), saturate(N.y * 0.5 + 0.5));
+        lit += envColor * fresnel * 0.35;
+
+        // Subtle metallic flake sparkle
+        float sparkle = fract(sin(dot(in.uv * 100.0, float2(12.9898, 78.233))) * 43758.5453);
+        lit += baseColor * sparkle * 0.03;
 
         return float4(lit, 1.0);
     }
 
     // Glass canopy (shapeID 15)
     if (in.shapeID == 15) {
-        // Dark tinted glass with reflections
-        float3 glassColor = float3(0.08, 0.10, 0.12);
+        // Tesla's signature dark tinted glass
+        float3 glassBase = float3(0.03, 0.04, 0.05);
 
-        float shade = saturate(dot(normalize(in.normal), float3(0.4, 0.85, 0.2)));
-        float fresnel = pow(1.0 - abs(dot(normalize(in.normal), float3(0, 1, 0))), 2.5);
+        float3 N = normalize(in.normal);
+        float3 V = float3(0, 0, 1);
 
-        // Glass tint + reflection
-        float3 lit = glassColor * (0.6 + 0.4 * shade);
-        // Sky reflection on top surfaces
-        float skyReflect = saturate(in.normal.y) * 0.3;
-        lit += float3(0.4, 0.5, 0.7) * (fresnel * 0.4 + skyReflect);
+        // Strong fresnel for glass
+        float fresnel = pow(1.0 - saturate(dot(N, V)), 3.0);
 
-        // Slight edge highlight
-        lit += float3(0.2, 0.25, 0.3) * fresnel * 0.3;
+        // Slight blue tint to reflections
+        float3 reflectColor = float3(0.3, 0.4, 0.55);
+
+        // Sky reflection on top, darker on sides
+        float skyFactor = saturate(N.y);
+        float3 envReflect = mix(float3(0.15, 0.18, 0.22), float3(0.5, 0.6, 0.75), skyFactor);
+
+        float3 lit = glassBase;
+        lit += reflectColor * fresnel * 0.5;
+        lit += envReflect * skyFactor * 0.25;
+
+        // Subtle edge highlight (pillar effect)
+        float edge = pow(1.0 - abs(dot(N, float3(1, 0, 0))), 8.0);
+        lit += float3(0.1, 0.1, 0.12) * edge;
 
         return float4(lit, 1.0);
     }
 
     // Wheels (shapeID 16)
     if (in.shapeID == 16) {
-        // Dark rubber/alloy wheels
-        float3 wheelColor = float3(0.12, 0.12, 0.14);
-        float shade = saturate(dot(normalize(in.normal), float3(0.4, 0.85, 0.2)));
+        // Tesla Aero wheel cover - smooth dark with subtle pattern
+        float3 N = normalize(in.normal);
 
-        // Tire rubber with subtle sheen
-        float3 lit = wheelColor * (0.5 + 0.5 * shade);
+        // Wheel face (pointing outward in X) vs tire (Y/Z normals)
+        float faceFactor = abs(N.x);
 
-        // Alloy rim highlight on outer edge
-        float rimHighlight = pow(abs(in.normal.x), 4.0) * 0.3;
-        lit += float3(0.5, 0.5, 0.55) * rimHighlight;
+        // Tire is dark rubber
+        float3 tireColor = float3(0.08, 0.08, 0.09);
+
+        // Aero cover is slightly lighter, metallic
+        float3 coverColor = float3(0.18, 0.19, 0.21);
+
+        // Blend based on which part we're looking at
+        float3 wheelColor = mix(tireColor, coverColor, faceFactor);
+
+        // Basic shading
+        float shade = saturate(dot(N, float3(0.4, 0.85, 0.2)));
+        float3 lit = wheelColor * (0.4 + 0.6 * shade);
+
+        // Metallic highlight on aero cover
+        float spec = pow(saturate(dot(N, normalize(float3(0.4, 0.85, 0.2) + float3(0, 0, 1)))), 40.0);
+        lit += float3(0.4, 0.4, 0.45) * spec * faceFactor;
+
+        // Subtle rim edge
+        float rimEdge = pow(1.0 - faceFactor, 3.0) * 0.15;
+        lit += float3(0.3, 0.3, 0.32) * rimEdge;
+
+        return float4(lit, 1.0);
+    }
+
+    // Headlights (shapeID 17)
+    if (in.shapeID == 17) {
+        // Bright white LED headlights
+        float3 N = normalize(in.normal);
+
+        // Glow is strongest facing forward
+        float forwardFactor = saturate(-N.z);
+
+        // Bright white core
+        float3 lightColor = float3(0.95, 0.97, 1.0);
+
+        // Intensity based on viewing angle
+        float intensity = 0.4 + 0.6 * forwardFactor;
+
+        // Add slight bloom effect
+        float bloom = pow(forwardFactor, 2.0) * 0.3;
+
+        float3 lit = lightColor * intensity;
+        lit += float3(0.8, 0.85, 1.0) * bloom;
+
+        return float4(lit, 1.0);
+    }
+
+    // Taillights (shapeID 18)
+    if (in.shapeID == 18) {
+        // Tesla's distinctive red LED taillight bar
+        float3 N = normalize(in.normal);
+
+        // Glow is strongest facing backward
+        float backFactor = saturate(N.z);
+
+        // Deep red with slight glow
+        float3 lightColor = float3(0.9, 0.08, 0.05);
+
+        float intensity = 0.5 + 0.5 * backFactor;
+
+        // Pulsing glow effect (subtle)
+        float pulse = 0.9 + 0.1 * sin(uniforms.time * 2.0);
+
+        float3 lit = lightColor * intensity * pulse;
+
+        // Add red bloom
+        float bloom = pow(backFactor, 2.0) * 0.4;
+        lit += float3(1.0, 0.2, 0.15) * bloom;
 
         return float4(lit, 1.0);
     }
