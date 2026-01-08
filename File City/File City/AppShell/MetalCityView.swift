@@ -459,8 +459,8 @@ struct MetalCityView: NSViewRepresentable {
             if pressedKeys.contains(1) { forwardAmount -= 1 }   // S
 
             // A/D for strafe
-            if pressedKeys.contains(0) { rightAmount -= 1 }     // A
-            if pressedKeys.contains(2) { rightAmount += 1 }     // D
+            if pressedKeys.contains(0) { rightAmount += 1 }     // A
+            if pressedKeys.contains(2) { rightAmount -= 1 }     // D
 
             // Space/Shift for up/down
             if pressedKeys.contains(49) { upAmount += 1 }       // Space

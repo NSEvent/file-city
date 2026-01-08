@@ -74,7 +74,7 @@ final class Camera {
     /// Rotate camera based on mouse movement
     func rotate(deltaX: Float, deltaY: Float) {
         guard isFirstPerson else { return }
-        fpYaw += deltaX * mouseSensitivity
+        fpYaw -= deltaX * mouseSensitivity
         fpPitch -= deltaY * mouseSensitivity
 
         // Clamp pitch to prevent gimbal lock
