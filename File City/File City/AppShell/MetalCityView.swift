@@ -86,6 +86,8 @@ struct MetalCityView: NSViewRepresentable {
         var isMouseCaptured: Bool = false
         private var movementTimer: Timer?
         private var lastMovementTime: CFTimeInterval = CACurrentMediaTime()
+        private var lastSpacePressTime: CFTimeInterval = 0
+        private let doubleTapInterval: CFTimeInterval = 0.3  // 300ms for double-tap
 
         init(appState: AppState) {
             self.appState = appState
@@ -425,6 +427,22 @@ struct MetalCityView: NSViewRepresentable {
             if keyCode == 3 { // F
                 toggleFirstPersonMode()
             }
+
+            // Space: double-tap toggles flying, single tap jumps (in gravity mode)
+            if keyCode == 49 { // Space
+                let now = CACurrentMediaTime()
+                if now - lastSpacePressTime < doubleTapInterval {
+                    // Double-tap: toggle flying
+                    renderer?.camera.toggleFlying()
+                    lastSpacePressTime = 0  // Reset to prevent triple-tap
+                } else {
+                    // Single tap: jump if in gravity mode
+                    if renderer?.camera.isFlying == false {
+                        renderer?.camera.jump()
+                    }
+                    lastSpacePressTime = now
+                }
+            }
         }
 
         func handleKeyUp(keyCode: UInt16) {
@@ -464,15 +482,15 @@ struct MetalCityView: NSViewRepresentable {
             if pressedKeys.contains(0) { rightAmount += 1 }     // A
             if pressedKeys.contains(2) { rightAmount -= 1 }     // D
 
-            // Space/Shift for up/down
-            if pressedKeys.contains(49) { upAmount += 1 }       // Space
-            if pressedKeys.contains(56) || pressedKeys.contains(60) { upAmount -= 1 } // Shift
-
-            // Apply movement if any keys are pressed
-            if forwardAmount != 0 || rightAmount != 0 || upAmount != 0 {
-                let blocks = appState?.blocks
-                renderer.camera.move(forward: forwardAmount, right: rightAmount, up: upAmount, deltaTime: deltaTime, blocks: blocks)
+            // Up/down only in flying mode (Space/Shift)
+            if renderer.camera.isFlying {
+                if pressedKeys.contains(49) { upAmount += 1 }       // Space
+                if pressedKeys.contains(56) || pressedKeys.contains(60) { upAmount -= 1 } // Shift
             }
+
+            // Always apply movement/physics (gravity needs to run even without input)
+            let blocks = appState?.blocks
+            renderer.camera.move(forward: forwardAmount, right: rightAmount, up: upAmount, deltaTime: deltaTime, blocks: blocks)
 
             // Center-screen hit testing for crosshair targeting
             updateCrosshairTarget()

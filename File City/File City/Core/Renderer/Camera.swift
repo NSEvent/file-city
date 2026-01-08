@@ -11,16 +11,22 @@ final class Camera {
 
     // MARK: - First-Person Mode Properties
     var isFirstPerson: Bool = false
-    var position = SIMD3<Float>(0, 2, 0)  // Eye position in first-person
+    var isFlying: Bool = false             // Fly mode (no gravity, Space/Shift for up/down)
+    var position = SIMD3<Float>(0, 2, 0)   // Eye position in first-person
     var fpYaw: Float = 0                   // Horizontal rotation (radians)
     var fpPitch: Float = 0                 // Vertical rotation (radians, clamped)
-    var velocity = SIMD3<Float>(0, 0, 0)   // Current velocity for smooth movement
+    var verticalVelocity: Float = 0        // Vertical velocity for gravity/jumping
 
     // Movement constants
     let playerHeight: Float = 2.0          // Eye height above ground
     let moveSpeed: Float = 20.0            // Units per second
     let mouseSensitivity: Float = 0.002    // Radians per pixel
     let maxPitch: Float = .pi / 2 - 0.1    // Prevent looking straight up/down
+
+    // Physics constants
+    let gravity: Float = -30.0             // Gravity acceleration (units/s²)
+    let jumpVelocity: Float = 12.0         // Initial jump velocity
+    let groundLevel: Float = 2.0           // Y position when on ground (eye height)
 
     // Isometric constants (original values)
     private let isoPitch: Float = 0.75
@@ -94,8 +100,25 @@ final class Camera {
     func move(forward forwardAmount: Float, right rightAmount: Float, up upAmount: Float, deltaTime: Float, blocks: [CityBlock]? = nil) {
         guard isFirstPerson else { return }
 
-        let movement = self.forward * forwardAmount + self.right * rightAmount + SIMD3<Float>(0, upAmount, 0)
-        var newPosition = position + movement * moveSpeed * deltaTime
+        // Horizontal movement (same for both modes)
+        var horizontalMovement = self.forward * forwardAmount + self.right * rightAmount
+        var newPosition = position + horizontalMovement * moveSpeed * deltaTime
+
+        // Vertical movement depends on mode
+        if isFlying {
+            // Flying mode: direct up/down control
+            newPosition.y += upAmount * moveSpeed * deltaTime
+        } else {
+            // Gravity mode: apply physics
+            verticalVelocity += gravity * deltaTime
+            newPosition.y += verticalVelocity * deltaTime
+
+            // Check if on ground
+            if newPosition.y <= groundLevel {
+                newPosition.y = groundLevel
+                verticalVelocity = 0
+            }
+        }
 
         // Clamp minimum height (stay above ground)
         newPosition.y = max(playerHeight * 0.5, newPosition.y)
@@ -147,6 +170,29 @@ final class Camera {
         }
 
         position = newPosition
+    }
+
+    /// Jump (only works in gravity mode when on ground)
+    func jump() {
+        guard isFirstPerson, !isFlying else { return }
+        // Only jump if on or near ground
+        if position.y <= groundLevel + 0.1 {
+            verticalVelocity = jumpVelocity
+        }
+    }
+
+    /// Toggle flying mode
+    func toggleFlying() {
+        guard isFirstPerson else { return }
+        isFlying.toggle()
+        if isFlying {
+            verticalVelocity = 0  // Stop any vertical momentum when entering fly mode
+        }
+    }
+
+    /// Check if player is on the ground
+    var isOnGround: Bool {
+        position.y <= groundLevel + 0.1
     }
 
     /// Toggle between isometric and first-person mode
