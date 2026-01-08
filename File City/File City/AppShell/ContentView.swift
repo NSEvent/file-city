@@ -1,53 +1,36 @@
 import AppKit
 import SwiftUI
 
-enum SidebarTab: String, CaseIterable {
-    case files = "Files"
-    case favorites = "Favorites"
-}
-
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
     @State private var searchQuery: String = ""
     @State private var isSearchExpanded: Bool = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var keyboardMonitor: Any?
-    @State private var selectedTab: SidebarTab = .files
     @FocusState private var isSearchFocused: Bool
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            VStack(spacing: 0) {
-                // Toolbar with navigation and search (only show for Files tab)
-                if selectedTab == .files {
+            HStack(spacing: 0) {
+                // Left: Favorites sidebar (Finder-style)
+                FavoritesSidebar()
+                    .frame(width: 180)
+
+                Divider()
+
+                // Right: Current folder contents
+                VStack(spacing: 0) {
                     SidebarToolbar(
                         searchQuery: $searchQuery,
                         isSearchExpanded: $isSearchExpanded,
                         isSearchFocused: $isSearchFocused
                     )
-                }
 
-                // Tab picker
-                Picker("", selection: $selectedTab) {
-                    ForEach(SidebarTab.allCases, id: \.self) { tab in
-                        Text(tab.rawValue).tag(tab)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-
-                Divider()
-
-                // Content based on selected tab
-                if selectedTab == .files {
                     FinderListView(searchQuery: searchQuery)
-                } else {
-                    FavoritesListView()
                 }
             }
-            .frame(minWidth: 320)
-            .navigationSplitViewColumnWidth(min: 320, ideal: 500, max: 500)
+            .frame(minWidth: 500)
+            .navigationSplitViewColumnWidth(min: 500, ideal: 680, max: 800)
         } detail: {
             ZStack {
                 MetalCityView()

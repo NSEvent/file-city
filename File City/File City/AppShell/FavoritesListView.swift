@@ -1,71 +1,65 @@
 import SwiftUI
 
-struct FavoritesListView: View {
+/// Finder-style favorites sidebar that displays user's Finder sidebar favorites
+struct FavoritesSidebar: View {
     @EnvironmentObject var appState: AppState
     @State private var favorites: [FinderFavoritesReader.Favorite] = []
     @State private var isLoading = true
+    @State private var hoveredID: UUID?
 
     var body: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 0) {
+            // Section header
+            Text("Favorites")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.top, 12)
+                .padding(.bottom, 6)
+
             if isLoading {
                 ProgressView()
+                    .scaleEffect(0.7)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if favorites.isEmpty {
                 emptyState
             } else {
-                favoritesList
+                ScrollView {
+                    LazyVStack(spacing: 1) {
+                        ForEach(favorites) { favorite in
+                            FavoriteRow(
+                                favorite: favorite,
+                                isSelected: appState.rootURL == favorite.url,
+                                isHovered: hoveredID == favorite.id
+                            )
+                            .onTapGesture {
+                                appState.openRoot(favorite.url)
+                            }
+                            .onHover { hovering in
+                                hoveredID = hovering ? favorite.id : nil
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.bottom, 8)
+                }
             }
         }
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
         .onAppear {
             loadFavorites()
         }
     }
 
-    private var favoritesList: some View {
-        List(favorites) { favorite in
-            Button {
-                appState.openRoot(favorite.url)
-            } label: {
-                HStack(spacing: 8) {
-                    if let icon = favorite.icon {
-                        Image(nsImage: icon)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 16, height: 16)
-                    } else {
-                        Image(systemName: "folder.fill")
-                            .foregroundStyle(.secondary)
-                            .frame(width: 16, height: 16)
-                    }
-
-                    Text(favorite.name)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-
-                    Spacer()
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
-        .listStyle(.plain)
-    }
-
     private var emptyState: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 8) {
             Image(systemName: "star.slash")
-                .font(.system(size: 32))
+                .font(.system(size: 20))
                 .foregroundStyle(.tertiary)
 
             Text("No Favorites")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-
-            Text("Add folders to Finder's sidebar to see them here.")
                 .font(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -81,3 +75,52 @@ struct FavoritesListView: View {
         }
     }
 }
+
+/// Individual row in the favorites sidebar
+private struct FavoriteRow: View {
+    let favorite: FinderFavoritesReader.Favorite
+    let isSelected: Bool
+    let isHovered: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            // Folder icon
+            if let icon = favorite.icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 16, height: 16)
+            } else {
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.blue)
+                    .frame(width: 16, height: 16)
+            }
+
+            // Name
+            Text(favorite.name)
+                .font(.system(size: 12))
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(backgroundColor)
+        .clipShape(RoundedRectangle(cornerRadius: 5))
+        .contentShape(Rectangle())
+    }
+
+    private var backgroundColor: Color {
+        if isSelected {
+            return Color.accentColor.opacity(0.2)
+        } else if isHovered {
+            return Color.primary.opacity(0.08)
+        }
+        return .clear
+    }
+}
+
+// Keep the old name as a typealias for compatibility
+typealias FavoritesListView = FavoritesSidebar
