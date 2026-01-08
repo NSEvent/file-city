@@ -836,7 +836,13 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             }
         }
         let target = SIMD3<Float>(block.position.x, maxY, block.position.z)
-        helicopterManager.spawn(at: target, targetID: block.nodeID, textureIndex: block.textureIndex)
+        helicopterManager.spawn(
+            at: target,
+            targetID: block.nodeID,
+            textureIndex: block.textureIndex,
+            footprint: block.footprint,
+            height: block.height
+        )
     }
     
     func spawnBeam(at block: CityBlock) {
