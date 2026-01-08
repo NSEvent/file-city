@@ -1034,6 +1034,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
         var roadInstances: [VoxelInstance] = []
 
+        // Horizontal roads (running along X axis) - need rotated UV (materialID 1)
         for zIndex in 0..<(zs.count - 1) {
             let roadZ = zs[zIndex] + stepZ * 0.5
             let instance = VoxelInstance(
@@ -1042,13 +1043,14 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 rotationY: 0,
                 rotationX: 0,
                 rotationZ: 0,
-                materialID: 0,
+                materialID: 1,  // Rotated UV for horizontal roads
                 textureIndex: roadTextureIndex,
                 shapeID: 0
             )
             roadInstances.append(instance)
         }
 
+        // Vertical roads (running along Z axis) - normal UV (materialID 0)
         for xIndex in 0..<(xs.count - 1) {
             let roadX = xs[xIndex] + stepX * 0.5
             let instance = VoxelInstance(
@@ -1057,7 +1059,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 rotationY: 0,
                 rotationX: 0,
                 rotationZ: 0,
-                materialID: 0,
+                materialID: 0,  // Normal UV for vertical roads
                 textureIndex: roadTextureIndex,
                 shapeID: 0
             )

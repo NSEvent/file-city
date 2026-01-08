@@ -212,19 +212,25 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
     // Sample texture if index is valid (>= 0)
     if (in.textureIndex >= 0) {
         float3 normal = abs(in.normal);
-        
+
         // Calculate UVs based on world position (scaled)
         // We use the vertex UVs which are 0..1 per face, but they stretch.
         // Instead, let's use the object-space UVs adjusted by scale to tile correctly.
         // Or simpler: Just multiply UV by relevant scale dimensions.
-        
+
         float2 tiledUV = in.uv;
-        
+
         // Determine which face we are on based on normal
         // Normals are roughly: (1,0,0), (-1,0,0), (0,1,0), (0,-1,0), (0,0,1), (0,0,-1)
         if (normal.y > 0.9) {
             // Top/Bottom: Scale by X and Z
-            tiledUV = in.uv * float2(in.scale.x, in.scale.z) * 0.5; // Scale factor adjustment
+            // materialID 1 = rotate UV 90 degrees (for horizontal roads)
+            if (in.materialID == 1) {
+                // Swap and rotate: road lines should run along X instead of Z
+                tiledUV = float2(in.uv.y, in.uv.x) * float2(in.scale.z, in.scale.x) * 0.5;
+            } else {
+                tiledUV = in.uv * float2(in.scale.x, in.scale.z) * 0.5;
+            }
         } else if (normal.x > 0.9) {
             // Sides X: Scale by Z and Y
             tiledUV = in.uv * float2(in.scale.z, in.scale.y) * 0.5;
@@ -234,12 +240,12 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
         }
 
         float4 texColor = textures.sample(textureSampler, tiledUV, uint(in.textureIndex));
-        
+
         // Blend with base color instead of replacing it, to keep lighting/shading
         // Or just use the texture color if we want the "Nano Banana" look pure.
         // Previous logic was pure replacement for debug. Let's blend nicely now.
         // baseColor = mix(baseColor, texColor.rgb, texColor.a * 0.9);
-        
+
         // For "Nano Banana" look, we usually want the texture to BE the building material.
         baseColor = texColor.rgb;
     }

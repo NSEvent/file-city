@@ -419,6 +419,109 @@ final class TextureGenerator {
         }
     }
 
+    private static func drawCircuitBoard(width: Int, height: Int, pixels: inout [UInt8]) {
+        // Circuit board / Matrix style floor
+        let seed: UInt64 = 0xC1BC_B0AD
+
+        for y in 0..<height {
+            for x in 0..<width {
+                let index = (y * width + x) * 4
+
+                // Dark PCB base color
+                let noise = Int(hash2D(x: x, y: y, seed: seed) % 8)
+                var r = 2 + noise / 2
+                var g = 8 + noise
+                var b = 4 + noise / 2
+
+                // Grid spacing for traces
+                let traceSpacingSmall = 16
+                let traceSpacingMed = 32
+                let traceSpacingLarge = 64
+
+                // Main trace lines (bright green)
+                let onMajorTraceX = (x % traceSpacingLarge) < 2
+                let onMajorTraceY = (y % traceSpacingLarge) < 2
+                let onMedTraceX = (x % traceSpacingMed) < 1
+                let onMedTraceY = (y % traceSpacingMed) < 1
+                let onSmallTraceX = (x % traceSpacingSmall) == 0
+                let onSmallTraceY = (y % traceSpacingSmall) == 0
+
+                // Major traces - bright glowing green
+                if onMajorTraceX || onMajorTraceY {
+                    r = 0; g = 255; b = 80
+                }
+                // Medium traces - dimmer green
+                else if onMedTraceX || onMedTraceY {
+                    r = 0; g = 180; b = 60
+                }
+                // Small traces - subtle green
+                else if onSmallTraceX || onSmallTraceY {
+                    r = 0; g = 80; b = 30
+                }
+
+                // Connection nodes / solder points at intersections
+                let nodeSpacing = 32
+                let nearNodeX = (x % nodeSpacing) < 4 || (x % nodeSpacing) > nodeSpacing - 4
+                let nearNodeY = (y % nodeSpacing) < 4 || (y % nodeSpacing) > nodeSpacing - 4
+                let atNode = nearNodeX && nearNodeY
+
+                if atNode {
+                    let nodeHash = hash2D(x: x / nodeSpacing, y: y / nodeSpacing, seed: seed)
+                    let nodeType = nodeHash % 4
+
+                    // Distance from node center
+                    let dx = abs((x % nodeSpacing) - nodeSpacing / 2)
+                    let dy = abs((y % nodeSpacing) - nodeSpacing / 2)
+                    let distFromCenter = dx > nodeSpacing / 2 - 4 ? nodeSpacing / 2 - dx : dx
+                    let distFromCenterY = dy > nodeSpacing / 2 - 4 ? nodeSpacing / 2 - dy : dy
+                    let dist = min(distFromCenter, distFromCenterY)
+
+                    if dist < 3 {
+                        if nodeType == 0 {
+                            // Bright active node
+                            r = 50; g = 255; b = 120
+                        } else if nodeType == 1 {
+                            // Gold solder point
+                            r = 200; g = 180; b = 50
+                        } else {
+                            // Standard node
+                            r = 0; g = 200; b = 80
+                        }
+                    }
+                }
+
+                // Random "data" pulses along traces (static pattern that looks like flowing data)
+                let pulseHash = hash2D(x: x / 8, y: y / 8, seed: seed + 1)
+                if (onMajorTraceX || onMajorTraceY) && (pulseHash % 5 == 0) {
+                    let brightness = Int(pulseHash % 100) + 155
+                    r = 20; g = brightness; b = 60 + Int(pulseHash % 40)
+                }
+
+                // Occasional "chip" rectangles
+                let chipX = x / 48
+                let chipY = y / 48
+                let chipHash = hash2D(x: chipX, y: chipY, seed: seed + 2)
+                if chipHash % 8 == 0 {
+                    let localX = x % 48
+                    let localY = y % 48
+                    if localX > 8 && localX < 40 && localY > 8 && localY < 40 {
+                        // Chip body
+                        r = 5; g = 20; b = 10
+                        // Chip pins on edges
+                        if (localX < 12 || localX > 36) && (localY % 6 < 3) {
+                            r = 150; g = 150; b = 100
+                        }
+                        if (localY < 12 || localY > 36) && (localX % 6 < 3) {
+                            r = 150; g = 150; b = 100
+                        }
+                    }
+                }
+
+                setColor(index: index, r: r, g: g, b: b, pixels: &pixels)
+            }
+        }
+    }
+
     private static func drawCarPaint(width: Int, height: Int, pixels: inout [UInt8], seed: String) {
         var rng = DeterministicRNG(seed: seed)
         let accent = vibrantAccent(seed: rng.next())
