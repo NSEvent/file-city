@@ -1840,41 +1840,63 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         return nil
     }
 
-    /// Pick a grapple target point - returns the world position where the ray hits a block
+    /// Pick a grapple target point - returns the world position where the ray hits a block, plane, or helicopter
     func pickGrappleTarget(at point: CGPoint, in size: CGSize) -> SIMD3<Float>? {
-        guard size.width > 1, size.height > 1, !blocks.isEmpty else { return nil }
-        let viewMatrix = camera.viewMatrix()
-        let projectionMatrix = camera.projectionMatrix()
-        let viewProjection = projectionMatrix * viewMatrix
-        let inverseViewProjection = simd_inverse(viewProjection)
-        let ndcX = (2.0 * Float(point.x) / Float(size.width)) - 1.0
-        let ndcY = (2.0 * Float(point.y) / Float(size.height)) - 1.0
-        let nearPoint = SIMD4<Float>(ndcX, ndcY, -1.0, 1.0)
-        let farPoint = SIMD4<Float>(ndcX, ndcY, 1.0, 1.0)
-        let worldNear = inverseViewProjection * nearPoint
-        let worldFar = inverseViewProjection * farPoint
-        let nearPosition = SIMD3<Float>(
-            worldNear.x / worldNear.w,
-            worldNear.y / worldNear.w,
-            worldNear.z / worldNear.w
-        )
-        let farPosition = SIMD3<Float>(
-            worldFar.x / worldFar.w,
-            worldFar.y / worldFar.w,
-            worldFar.z / worldFar.w
-        )
-        let rayOrigin = nearPosition
-        let rayDirection = simd_normalize(farPosition - nearPosition)
+        guard size.width > 1, size.height > 1 else { return nil }
+        let ray = rayFrom(point: point, in: size)
 
-        let ray = RayTracer.Ray(origin: rayOrigin, direction: rayDirection)
-        let tracer = RayTracer()
-        // Use wedgeYaw (fixed isometric angle) for wedge rotation - wedges are always rendered at this angle
-        if let hit = tracer.intersect(ray: ray, blocks: blocks, cameraYaw: camera.wedgeYaw) {
-            // Calculate hit point from ray origin + direction * distance
-            return rayOrigin + rayDirection * hit.distance
+        var closestHit: (position: SIMD3<Float>, distance: Float)?
+
+        // Check blocks
+        if !blocks.isEmpty {
+            let tracer = RayTracer()
+            if let hit = tracer.intersect(ray: RayTracer.Ray(origin: ray.origin, direction: ray.direction), blocks: blocks, cameraYaw: camera.wedgeYaw) {
+                let hitPoint = ray.origin + ray.direction * hit.distance
+                if closestHit == nil || hit.distance < closestHit!.distance {
+                    closestHit = (hitPoint, hit.distance)
+                }
+            }
         }
 
-        return nil
+        // Check planes (includes banners attached to them)
+        let now = CACurrentMediaTime()
+        for (index, path) in planePaths.enumerated() {
+            guard !explodedPlaneIndices.contains(index) else { continue }
+
+            let baseDistance = fmod(Float(now) * path.speed + path.phase, path.totalLength)
+            let offset = index < planeOffsets.count ? planeOffsets[index] : 0
+            let distance = fmod(baseDistance + offset, path.totalLength)
+            let position = positionAlongPath(path: path, distance: distance)
+            let radius = max(path.scale.x, path.scale.z) * 0.75
+
+            if let hitDist = intersectSphere(ray: ray, center: position, radius: radius) {
+                if closestHit == nil || hitDist < closestHit!.distance {
+                    closestHit = (position, hitDist)
+                }
+            }
+
+            // Also check banner area (below the plane)
+            if bannerTextureIndex >= 0 {
+                let bannerCenter = position - SIMD3<Float>(0, 5.0, 0)  // Banner hangs below
+                let bannerRadius: Float = 8.0  // Generous radius for banner
+                if let hitDist = intersectSphere(ray: ray, center: bannerCenter, radius: bannerRadius) {
+                    if closestHit == nil || hitDist < closestHit!.distance {
+                        closestHit = (bannerCenter, hitDist)
+                    }
+                }
+            }
+        }
+
+        // Check helicopters
+        for target in helicopterManager.getHelicopterHitTargets() {
+            if let hitDist = intersectSphere(ray: ray, center: target.position, radius: target.radius) {
+                if closestHit == nil || hitDist < closestHit!.distance {
+                    closestHit = (target.position, hitDist)
+                }
+            }
+        }
+
+        return closestHit?.position
     }
 
     func pickBeacon(at point: CGPoint, in size: CGSize) -> UUID? {

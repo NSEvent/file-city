@@ -65,20 +65,25 @@ final class HelicopterManager {
     func getActiveConstructionTargetIDs() -> Set<UUID> {
         var targets = Set<UUID>()
         let now = CACurrentMediaTime()
-        
+
         // Inbound helicopters (construction in progress)
         for heli in helicopters where heli.state == .inbound {
             targets.insert(heli.targetID)
         }
-        
+
         // Recent deliveries (construction wrapping up)
         for (id, time) in recentDeliveries {
             if now - time < 2.0 {
                 targets.insert(id)
             }
         }
-        
+
         return targets
+    }
+
+    /// Get helicopter positions and radii for hit testing
+    func getHelicopterHitTargets() -> [(position: SIMD3<Float>, radius: Float)] {
+        return helicopters.map { ($0.position, Float(4.0)) }  // Radius covers body + rotors
     }
     
     func clear() {
