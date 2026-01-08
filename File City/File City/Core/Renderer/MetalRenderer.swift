@@ -389,7 +389,11 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 beaconOffsetX = rotatedX
                 beaconOffsetZ = rotatedZ
                 towerHeight *= 1.25
-                baseY += towerSize * 0.25
+                // Adjust roofY to actual height at beacon offset (0.45 vs 0.5 edge)
+                // The wedge slopes, so at 0.45 offset the roof is lower than at the edge
+                let offsetRatio: Float = 0.45 / 0.5  // 0.9
+                roofY = baseTopY + (visualTopY - baseTopY) * offsetRatio
+                baseY = roofY + basePad
             }
             if block.shapeID == 2 {
                 let tipY = visualTopY
