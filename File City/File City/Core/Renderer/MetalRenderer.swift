@@ -259,7 +259,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
         let blocksChanged = blocks != self.blocks
         self.blocks = blocks
-        let cameraYaw = camera.yaw
+        let cameraYaw = camera.wedgeYaw  // Use fixed yaw for wedge rotation
         let inboundTargets = helicopterManager.getActiveConstructionTargetIDs()
         let beamTargets = beamManager.getActiveBeamTargetIDs()
         self.lastTargetedNodeIDs = inboundTargets.union(beamTargets)
@@ -371,7 +371,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             let beaconSize = towerSize * 0.16
             var beaconOffsetX: Float = 0
             var beaconOffsetZ: Float = 0
-            let rotationY = rotationYForWedge(block: block, cameraYaw: camera.yaw)
+            let rotationY = rotationYForWedge(block: block, cameraYaw: camera.wedgeYaw)
             if block.shapeID == 3 {
                 beaconOffsetX = footprintX * 0.45
             } else if block.shapeID == 4 {
@@ -852,11 +852,11 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         let footprintZ = Float(topBlock.footprint.y)
         let baseX = topBlock.position.x
         let baseZ = topBlock.position.z
-        let rotationY = rotationYForWedge(block: topBlock, cameraYaw: camera.yaw)
-        
+        let rotationY = rotationYForWedge(block: topBlock, cameraYaw: camera.wedgeYaw)
+
         var beaconOffsetX: Float = 0
         var beaconOffsetZ: Float = 0
-        
+
         if topBlock.shapeID == 3 {
             beaconOffsetX = footprintX * 0.45
         } else if topBlock.shapeID == 4 {

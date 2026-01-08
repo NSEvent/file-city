@@ -42,6 +42,10 @@ struct ContentView: View {
                     }
                     Spacer()
                 }
+                // Minecraft-style crosshair in first-person mode
+                if appState.isFirstPerson {
+                    CrosshairView()
+                }
             }
         }
         .onAppear {
@@ -321,5 +325,26 @@ private struct SidebarToolbar: View {
             searchQuery = ""
         }
         isSearchFocused = false
+    }
+}
+
+/// Minecraft-style crosshair for first-person mode
+private struct CrosshairView: View {
+    private let size: CGFloat = 20
+    private let thickness: CGFloat = 2
+
+    var body: some View {
+        ZStack {
+            // Horizontal line
+            Rectangle()
+                .fill(Color.white)
+                .frame(width: size, height: thickness)
+
+            // Vertical line
+            Rectangle()
+                .fill(Color.white)
+                .frame(width: thickness, height: size)
+        }
+        .shadow(color: .black.opacity(0.5), radius: 1, x: 1, y: 1)
     }
 }

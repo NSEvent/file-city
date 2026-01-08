@@ -1,6 +1,7 @@
 import Combine
 import MetalKit
 import SwiftUI
+import CoreGraphics
 
 struct MetalCityView: NSViewRepresentable {
     @EnvironmentObject var appState: AppState
@@ -22,6 +23,8 @@ struct MetalCityView: NSViewRepresentable {
         context.coordinator.renderer = MetalRenderer(view: view)
         view.delegate = context.coordinator.renderer
         context.coordinator.attachGestures(to: view)
+        context.coordinator.cityView = view
+        view.coordinator = context.coordinator
         view.onScroll = { deltaX, deltaY in
             context.coordinator.renderer?.camera.pan(deltaX: Float(-deltaX), deltaY: Float(-deltaY))
         }
@@ -50,12 +53,12 @@ struct MetalCityView: NSViewRepresentable {
         context.coordinator.appState = appState
         // Apply auto-fit BEFORE updating instances so first render has correct camera
         context.coordinator.applyPendingAutoFit(blocks: appState.blocks)
-        
+
         // Update Banner Text
         if let rootURL = appState.rootURL {
             context.coordinator.renderer?.setBannerText(rootURL.lastPathComponent)
         }
-        
+
         let activityNow = appState.activityNow()
         context.coordinator.renderer?.updateInstances(
             blocks: appState.blocks,
@@ -71,11 +74,23 @@ struct MetalCityView: NSViewRepresentable {
     final class Coordinator: NSObject {
         var renderer: MetalRenderer?
         weak var appState: AppState?
+        weak var cityView: CityMTKView?
         private var hoveredNodeID: UUID?
         private(set) var hoveredBeaconNodeID: UUID?
         private var cancellables = Set<AnyCancellable>()
         private var activityTimer: Timer?
         private var activityEndTime: CFTimeInterval = 0
+
+        // First-person mode state
+        var pressedKeys: Set<UInt16> = []
+        var isMouseCaptured: Bool = false
+        private var movementTimer: Timer?
+        private var lastMovementTime: CFTimeInterval = CACurrentMediaTime()
+        private var lastSpacePressTime: CFTimeInterval = 0
+        private var lastWPressTime: CFTimeInterval = 0
+        private let doubleTapInterval: CFTimeInterval = 0.3  // 300ms for double-tap
+        private var hitTestFrameCounter: Int = 0
+        private let hitTestInterval: Int = 4  // Run hit test every N frames
 
         init(appState: AppState) {
             self.appState = appState
@@ -113,14 +128,14 @@ struct MetalCityView: NSViewRepresentable {
                     self?.handleFileWrite(nodeID: nodeID)
                 }
                 .store(in: &cancellables)
-            
+
             appState.fileReadSubject
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] nodeID in
                     self?.handleFileRead(nodeID: nodeID)
                 }
                 .store(in: &cancellables)
-            
+
             // Clear helicopters on directory switch
             appState.$rootURL
                 .dropFirst()
@@ -137,7 +152,7 @@ struct MetalCityView: NSViewRepresentable {
                 renderer.spawnHelicopter(at: block)
             }
         }
-        
+
         private func handleFileRead(nodeID: UUID) {
             guard let appState, let renderer else { return }
             if let block = appState.blocks.first(where: { $0.nodeID == nodeID }) {
@@ -214,6 +229,10 @@ struct MetalCityView: NSViewRepresentable {
 
         func handleHover(_ point: CGPoint, in view: MTKView) {
             guard let renderer else { return }
+
+            // Skip hover handling in first-person mode with mouse captured
+            if renderer.camera.isFirstPerson && isMouseCaptured { return }
+
             let backingPoint = view.convertToBacking(point)
             if let planeIndex = renderer.pickPlane(at: backingPoint, in: view.drawableSize) {
                 renderer.setHoveredPlane(index: planeIndex)
@@ -318,6 +337,13 @@ struct MetalCityView: NSViewRepresentable {
 
         func handleClick(_ point: CGPoint, in view: MTKView) {
             guard let renderer else { return }
+
+            // In first-person mode, click captures mouse
+            if renderer.camera.isFirstPerson && !isMouseCaptured {
+                captureMouse()
+                return
+            }
+
             let backingPoint = view.convertToBacking(point)
 
             // Check for plane click first
@@ -346,6 +372,196 @@ struct MetalCityView: NSViewRepresentable {
             guard let url = appState?.url(for: block.nodeID) else { return }
             appState?.reveal(url)
         }
+
+        // MARK: - First-Person Mode Controls
+
+        func toggleFirstPersonMode() {
+            guard let renderer else { return }
+            renderer.camera.toggleFirstPerson()
+
+            if renderer.camera.isFirstPerson {
+                // Enter first-person: position at edge of city
+                if let blocks = appState?.blocks {
+                    renderer.camera.enterCityCenter(blocks: blocks)
+                }
+                startMovementTimer()
+                appState?.isFirstPerson = true
+            } else {
+                // Exit first-person: release mouse and stop timer
+                releaseMouse()
+                stopMovementTimer()
+                appState?.isFirstPerson = false
+            }
+        }
+
+        func captureMouse() {
+            guard !isMouseCaptured else { return }
+            isMouseCaptured = true
+            CGDisplayHideCursor(CGMainDisplayID())
+            CGAssociateMouseAndMouseCursorPosition(0)
+        }
+
+        func releaseMouse() {
+            guard isMouseCaptured else { return }
+            isMouseCaptured = false
+            CGDisplayShowCursor(CGMainDisplayID())
+            CGAssociateMouseAndMouseCursorPosition(1)
+        }
+
+        func handleMouseDelta(deltaX: CGFloat, deltaY: CGFloat) {
+            guard let renderer, renderer.camera.isFirstPerson, isMouseCaptured else { return }
+            renderer.camera.rotate(deltaX: Float(deltaX), deltaY: Float(deltaY))
+        }
+
+        func handleKeyDown(keyCode: UInt16) {
+            // Ignore key repeats (key already held down)
+            let isRepeat = pressedKeys.contains(keyCode)
+            pressedKeys.insert(keyCode)
+
+            // Skip double-tap detection for key repeats
+            guard !isRepeat else { return }
+
+            // ESC releases mouse in first-person mode
+            if keyCode == 53 { // ESC
+                if isMouseCaptured {
+                    releaseMouse()
+                } else if renderer?.camera.isFirstPerson == true {
+                    // ESC while not captured exits first-person mode
+                    toggleFirstPersonMode()
+                }
+            }
+
+            // F toggles first-person mode
+            if keyCode == 3 { // F
+                toggleFirstPersonMode()
+            }
+
+            // Space: double-tap toggles flying, single tap jumps (in gravity mode)
+            if keyCode == 49 { // Space
+                let now = CACurrentMediaTime()
+                if now - lastSpacePressTime < doubleTapInterval {
+                    // Double-tap: toggle flying
+                    renderer?.camera.toggleFlying()
+                    lastSpacePressTime = 0  // Reset to prevent triple-tap
+                } else {
+                    // Single tap: jump if in gravity mode
+                    if renderer?.camera.isFlying == false {
+                        renderer?.camera.jump()
+                    }
+                    lastSpacePressTime = now
+                }
+            }
+
+            // W: double-tap to sprint
+            if keyCode == 13 { // W
+                let now = CACurrentMediaTime()
+                if now - lastWPressTime < doubleTapInterval {
+                    // Double-tap: start sprinting
+                    renderer?.camera.isSprinting = true
+                    lastWPressTime = 0  // Reset to prevent triple-tap
+                } else {
+                    lastWPressTime = now
+                }
+            }
+        }
+
+        func handleKeyUp(keyCode: UInt16) {
+            pressedKeys.remove(keyCode)
+
+            // Stop sprinting when W is released
+            if keyCode == 13 { // W
+                renderer?.camera.isSprinting = false
+            }
+        }
+
+        private func startMovementTimer() {
+            stopMovementTimer()
+            lastMovementTime = CACurrentMediaTime()
+            movementTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+                self?.updateMovement()
+            }
+        }
+
+        private func stopMovementTimer() {
+            movementTimer?.invalidate()
+            movementTimer = nil
+        }
+
+        private func updateMovement() {
+            guard let renderer, renderer.camera.isFirstPerson else { return }
+
+            let now = CACurrentMediaTime()
+            let deltaTime = Float(now - lastMovementTime)
+            lastMovementTime = now
+
+            // Calculate movement direction from pressed keys
+            var forwardAmount: Float = 0
+            var rightAmount: Float = 0
+            var upAmount: Float = 0
+
+            // W/S for forward/back
+            if pressedKeys.contains(13) { forwardAmount += 1 }  // W
+            if pressedKeys.contains(1) { forwardAmount -= 1 }   // S
+
+            // A/D for strafe
+            if pressedKeys.contains(0) { rightAmount += 1 }     // A
+            if pressedKeys.contains(2) { rightAmount -= 1 }     // D
+
+            // Up/down only in flying mode (Space/Shift)
+            if renderer.camera.isFlying {
+                if pressedKeys.contains(49) { upAmount += 1 }       // Space
+                if pressedKeys.contains(56) || pressedKeys.contains(60) { upAmount -= 1 } // Shift
+            }
+
+            // Always apply movement/physics (gravity needs to run even without input)
+            let blocks = appState?.blocks
+            renderer.camera.move(forward: forwardAmount, right: rightAmount, up: upAmount, deltaTime: deltaTime, blocks: blocks)
+
+            // Center-screen hit testing for crosshair targeting (throttled to reduce lag)
+            hitTestFrameCounter += 1
+            if hitTestFrameCounter >= hitTestInterval {
+                hitTestFrameCounter = 0
+                updateCrosshairTarget()
+            }
+        }
+
+        private func updateCrosshairTarget() {
+            guard let renderer, let cityView, renderer.camera.isFirstPerson else { return }
+
+            // Use center of screen for hit testing
+            let size = cityView.drawableSize
+            let centerPoint = CGPoint(x: size.width / 2, y: size.height / 2)
+
+            // Check for plane hit first (makes them speed up)
+            if let planeIndex = renderer.pickPlane(at: centerPoint, in: size) {
+                renderer.setHoveredPlane(index: planeIndex)
+                // Clear block hover when looking at plane
+                if hoveredNodeID != nil {
+                    hoveredNodeID = nil
+                    appState?.hoveredURL = nil
+                    appState?.hoveredNodeID = nil
+                }
+                return
+            } else {
+                renderer.setHoveredPlane(index: nil)
+            }
+
+            // Check for block hit at center
+            if let blockHit = renderer.pickBlockHit(at: centerPoint, in: size) {
+                let block = blockHit.block
+                if hoveredNodeID != block.nodeID {
+                    hoveredNodeID = block.nodeID
+                    appState?.hoveredURL = appState?.url(for: block.nodeID)
+                    appState?.hoveredNodeID = block.nodeID
+                }
+            } else {
+                if hoveredNodeID != nil {
+                    hoveredNodeID = nil
+                    appState?.hoveredURL = nil
+                    appState?.hoveredNodeID = nil
+                }
+            }
+        }
     }
 }
 
@@ -357,6 +573,7 @@ final class CityMTKView: MTKView {
     var onClick: ((CGPoint) -> Void)?
     var onDoubleClick: ((CGPoint) -> Void)?
     var onRightClick: ((CGPoint) -> Void)?
+    weak var coordinator: MetalCityView.Coordinator?
     private var trackingArea: NSTrackingArea?
     private var pendingClickTimer: Timer?
     private var pendingClickPoint: CGPoint?
@@ -377,8 +594,20 @@ final class CityMTKView: MTKView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        onHover?(point)
+        // In first-person mode with captured mouse, use delta for look
+        if let coordinator, coordinator.isMouseCaptured {
+            coordinator.handleMouseDelta(deltaX: event.deltaX, deltaY: event.deltaY)
+        } else {
+            let point = convert(event.locationInWindow, from: nil)
+            onHover?(point)
+        }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        // Also handle mouse delta during drag for captured mode
+        if let coordinator, coordinator.isMouseCaptured {
+            coordinator.handleMouseDelta(deltaX: event.deltaX, deltaY: event.deltaY)
+        }
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -405,7 +634,7 @@ final class CityMTKView: MTKView {
             }
         }
     }
-    
+
     override func rightMouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         onRightClick?(point)
@@ -422,10 +651,27 @@ final class CityMTKView: MTKView {
     }
 
     override func keyDown(with event: NSEvent) {
+        // Handle first-person movement keys
+        coordinator?.handleKeyDown(keyCode: event.keyCode)
+
+        // Also pass to original handler for other keys
         if let key = event.charactersIgnoringModifiers, !key.isEmpty {
             onKey?(key)
+        }
+    }
+
+    override func keyUp(with event: NSEvent) {
+        coordinator?.handleKeyUp(keyCode: event.keyCode)
+    }
+
+    override func flagsChanged(with event: NSEvent) {
+        // Track modifier key state changes (Shift)
+        let shiftPressed = event.modifierFlags.contains(.shift)
+        if shiftPressed {
+            coordinator?.pressedKeys.insert(56)
         } else {
-            super.keyDown(with: event)
+            coordinator?.pressedKeys.remove(56)
+            coordinator?.pressedKeys.remove(60)
         }
     }
 }
