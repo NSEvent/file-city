@@ -1831,7 +1831,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
         let ray = RayTracer.Ray(origin: rayOrigin, direction: rayDirection)
         let tracer = RayTracer()
-        if let hit = tracer.intersect(ray: ray, blocks: blocks, cameraYaw: camera.yaw),
+        // Use wedgeYaw (fixed isometric angle) for wedge rotation - wedges are always rendered at this angle
+        if let hit = tracer.intersect(ray: ray, blocks: blocks, cameraYaw: camera.wedgeYaw),
            let block = blocks.first(where: { $0.nodeID == hit.blockID }) {
             return (block, hit.distance)
         }
@@ -1867,7 +1868,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
         let ray = RayTracer.Ray(origin: rayOrigin, direction: rayDirection)
         let tracer = RayTracer()
-        if let hit = tracer.intersect(ray: ray, blocks: blocks, cameraYaw: camera.yaw) {
+        // Use wedgeYaw (fixed isometric angle) for wedge rotation - wedges are always rendered at this angle
+        if let hit = tracer.intersect(ray: ray, blocks: blocks, cameraYaw: camera.wedgeYaw) {
             // Calculate hit point from ray origin + direction * distance
             return rayOrigin + rayDirection * hit.distance
         }
