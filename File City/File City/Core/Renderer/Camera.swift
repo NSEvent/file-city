@@ -31,6 +31,16 @@ final class Camera {
     let grappleSpeed: Float = 80.0         // Speed when being pulled by grapple
     let grappleArrivalDistance: Float = 3.0 // Stop grappling when this close
 
+    // Grapple attachment (hold shift to stay attached)
+    enum GrappleAttachment {
+        case none
+        case block(position: SIMD3<Float>)
+        case plane(index: Int)
+        case helicopter(index: Int)
+    }
+    var grappleAttachment: GrappleAttachment = .none
+    var isShiftHeld: Bool = false
+
     var moveSpeed: Float {
         isSprinting ? sprintSpeed : walkSpeed
     }
@@ -213,20 +223,29 @@ final class Camera {
         }
     }
 
-    /// Start grappling towards a target point
-    func startGrapple(to target: SIMD3<Float>) {
+    /// Start grappling towards a target point with optional attachment info
+    func startGrapple(to target: SIMD3<Float>, attachment: GrappleAttachment = .none) {
         guard isFirstPerson else { return }
         isGrappling = true
         grappleTarget = target
+        grappleAttachment = attachment
         verticalVelocity = 0  // Cancel any falling
     }
 
-    /// Stop grappling (called when arriving or releasing)
+    /// Stop grappling and detach (called when shift is released)
     func stopGrapple() {
         isGrappling = false
+        grappleAttachment = .none
+    }
+
+    /// Check if currently attached to something
+    var isAttached: Bool {
+        if case .none = grappleAttachment { return false }
+        return !isGrappling  // Attached when done grappling but still holding
     }
 
     /// Update grapple movement (call every frame while grappling)
+    /// Returns true if still grappling
     func updateGrapple(deltaTime: Float) -> Bool {
         guard isFirstPerson, isGrappling else { return false }
 
@@ -237,6 +256,11 @@ final class Camera {
         if distance < grappleArrivalDistance {
             isGrappling = false
             verticalVelocity = 0  // Soft landing
+
+            // If shift is held, stay attached; otherwise clear attachment
+            if !isShiftHeld {
+                grappleAttachment = .none
+            }
             return false
         }
 
@@ -246,6 +270,21 @@ final class Camera {
         position += normalizedDir * moveAmount
 
         return true
+    }
+
+    /// Update position while attached to a moving object
+    func updateAttachment(targetPosition: SIMD3<Float>) {
+        guard isFirstPerson, isAttached, isShiftHeld else {
+            if !isShiftHeld {
+                grappleAttachment = .none
+            }
+            return
+        }
+
+        // Follow the target with a small offset (so we're not inside it)
+        let offset = SIMD3<Float>(0, -2.0, 0)  // Hang slightly below
+        position = targetPosition + offset
+        verticalVelocity = 0
     }
 
     /// Toggle flying mode

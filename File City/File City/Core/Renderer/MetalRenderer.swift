@@ -1840,12 +1840,12 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         return nil
     }
 
-    /// Pick a grapple target point - returns the world position where the ray hits a block, plane, or helicopter
-    func pickGrappleTarget(at point: CGPoint, in size: CGSize) -> SIMD3<Float>? {
+    /// Pick a grapple target - returns position and attachment type for holding onto moving objects
+    func pickGrappleTarget(at point: CGPoint, in size: CGSize) -> (position: SIMD3<Float>, attachment: Camera.GrappleAttachment)? {
         guard size.width > 1, size.height > 1 else { return nil }
         let ray = rayFrom(point: point, in: size)
 
-        var closestHit: (position: SIMD3<Float>, distance: Float)?
+        var closestHit: (position: SIMD3<Float>, distance: Float, attachment: Camera.GrappleAttachment)?
 
         // Check blocks
         if !blocks.isEmpty {
@@ -1853,7 +1853,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             if let hit = tracer.intersect(ray: RayTracer.Ray(origin: ray.origin, direction: ray.direction), blocks: blocks, cameraYaw: camera.wedgeYaw) {
                 let hitPoint = ray.origin + ray.direction * hit.distance
                 if closestHit == nil || hit.distance < closestHit!.distance {
-                    closestHit = (hitPoint, hit.distance)
+                    closestHit = (hitPoint, hit.distance, .block(position: hitPoint))
                 }
             }
         }
@@ -1871,7 +1871,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
             if let hitDist = intersectSphere(ray: ray, center: position, radius: radius) {
                 if closestHit == nil || hitDist < closestHit!.distance {
-                    closestHit = (position, hitDist)
+                    closestHit = (position, hitDist, .plane(index: index))
                 }
             }
 
@@ -1881,22 +1881,44 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 let bannerRadius: Float = 8.0  // Generous radius for banner
                 if let hitDist = intersectSphere(ray: ray, center: bannerCenter, radius: bannerRadius) {
                     if closestHit == nil || hitDist < closestHit!.distance {
-                        closestHit = (bannerCenter, hitDist)
+                        closestHit = (bannerCenter, hitDist, .plane(index: index))
                     }
                 }
             }
         }
 
         // Check helicopters
-        for target in helicopterManager.getHelicopterHitTargets() {
+        let heliTargets = helicopterManager.getHelicopterHitTargets()
+        for (index, target) in heliTargets.enumerated() {
             if let hitDist = intersectSphere(ray: ray, center: target.position, radius: target.radius) {
                 if closestHit == nil || hitDist < closestHit!.distance {
-                    closestHit = (target.position, hitDist)
+                    closestHit = (target.position, hitDist, .helicopter(index: index))
                 }
             }
         }
 
-        return closestHit?.position
+        if let hit = closestHit {
+            return (hit.position, hit.attachment)
+        }
+        return nil
+    }
+
+    /// Get current position of a plane by index (for grapple attachment following)
+    func planePosition(index: Int) -> SIMD3<Float>? {
+        guard index >= 0, index < planePaths.count, !explodedPlaneIndices.contains(index) else { return nil }
+        let path = planePaths[index]
+        let now = CACurrentMediaTime()
+        let baseDistance = fmod(Float(now) * path.speed + path.phase, path.totalLength)
+        let offset = index < planeOffsets.count ? planeOffsets[index] : 0
+        let distance = fmod(baseDistance + offset, path.totalLength)
+        return positionAlongPath(path: path, distance: distance)
+    }
+
+    /// Get current position of a helicopter by index (for grapple attachment following)
+    func helicopterPosition(index: Int) -> SIMD3<Float>? {
+        let targets = helicopterManager.getHelicopterHitTargets()
+        guard index >= 0, index < targets.count else { return nil }
+        return targets[index].position
     }
 
     func pickBeacon(at point: CGPoint, in size: CGSize) -> UUID? {

@@ -467,21 +467,31 @@ struct MetalCityView: NSViewRepresentable {
         }
 
         func handleShiftPressed() {
+            renderer?.camera.isShiftHeld = true
             tryGrapple()
+        }
+
+        func handleShiftReleased() {
+            renderer?.camera.isShiftHeld = false
+            // If attached, release
+            if renderer?.camera.isAttached == true {
+                renderer?.camera.stopGrapple()
+            }
         }
 
         private func tryGrapple() {
             guard let renderer, let cityView,
                   renderer.camera.isFirstPerson,
                   !renderer.camera.isFlying,
-                  !renderer.camera.isGrappling else { return }
+                  !renderer.camera.isGrappling,
+                  !renderer.camera.isAttached else { return }
 
             // Cast ray from center of screen
             let size = cityView.drawableSize
             let centerPoint = CGPoint(x: size.width / 2, y: size.height / 2)
 
-            if let hitPoint = renderer.pickGrappleTarget(at: centerPoint, in: size) {
-                renderer.camera.startGrapple(to: hitPoint)
+            if let result = renderer.pickGrappleTarget(at: centerPoint, in: size) {
+                renderer.camera.startGrapple(to: result.position, attachment: result.attachment)
             }
         }
 
@@ -518,6 +528,33 @@ struct MetalCityView: NSViewRepresentable {
             if renderer.camera.isGrappling {
                 _ = renderer.camera.updateGrapple(deltaTime: deltaTime)
                 // Skip normal movement while grappling
+                return
+            }
+
+            // Handle attachment to moving objects (hold shift)
+            if renderer.camera.isAttached {
+                switch renderer.camera.grappleAttachment {
+                case .plane(let index):
+                    if let pos = renderer.planePosition(index: index) {
+                        renderer.camera.updateAttachment(targetPosition: pos)
+                    } else {
+                        // Plane gone (exploded?), detach
+                        renderer.camera.stopGrapple()
+                    }
+                case .helicopter(let index):
+                    if let pos = renderer.helicopterPosition(index: index) {
+                        renderer.camera.updateAttachment(targetPosition: pos)
+                    } else {
+                        // Helicopter gone, detach
+                        renderer.camera.stopGrapple()
+                    }
+                case .block:
+                    // Static attachment, nothing to update
+                    break
+                case .none:
+                    break
+                }
+                // Skip normal movement while attached
                 return
             }
 
@@ -704,6 +741,10 @@ final class CityMTKView: MTKView {
         } else {
             coordinator?.pressedKeys.remove(56)
             coordinator?.pressedKeys.remove(60)
+            // Handle shift release for grapple detachment
+            if wasShiftPressed {
+                coordinator?.handleShiftReleased()
+            }
         }
     }
 }
