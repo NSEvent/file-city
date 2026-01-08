@@ -23,6 +23,7 @@ final class AppState: ObservableObject {
     @Published var hoveredBeaconURL: URL?
     @Published var activityInfoLines: [String]?
     @Published private(set) var activityVersion: UInt = 0
+    @Published var isFirstPerson: Bool = false
 
     private let scanner = DirectoryScanner()
     private let mapper = CityMapper()

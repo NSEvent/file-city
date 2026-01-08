@@ -380,10 +380,12 @@ struct MetalCityView: NSViewRepresentable {
                     renderer.camera.enterCityCenter(blocks: blocks)
                 }
                 startMovementTimer()
+                appState?.isFirstPerson = true
             } else {
                 // Exit first-person: release mouse and stop timer
                 releaseMouse()
                 stopMovementTimer()
+                appState?.isFirstPerson = false
             }
         }
 
@@ -470,6 +472,33 @@ struct MetalCityView: NSViewRepresentable {
             if forwardAmount != 0 || rightAmount != 0 || upAmount != 0 {
                 let blocks = appState?.blocks
                 renderer.camera.move(forward: forwardAmount, right: rightAmount, up: upAmount, deltaTime: deltaTime, blocks: blocks)
+            }
+
+            // Center-screen hit testing for crosshair targeting
+            updateCrosshairTarget()
+        }
+
+        private func updateCrosshairTarget() {
+            guard let renderer, let cityView, renderer.camera.isFirstPerson else { return }
+
+            // Use center of screen for hit testing
+            let size = cityView.drawableSize
+            let centerPoint = CGPoint(x: size.width / 2, y: size.height / 2)
+
+            // Check for block hit at center
+            if let blockHit = renderer.pickBlockHit(at: centerPoint, in: size) {
+                let block = blockHit.block
+                if hoveredNodeID != block.nodeID {
+                    hoveredNodeID = block.nodeID
+                    appState?.hoveredURL = appState?.url(for: block.nodeID)
+                    appState?.hoveredNodeID = block.nodeID
+                }
+            } else {
+                if hoveredNodeID != nil {
+                    hoveredNodeID = nil
+                    appState?.hoveredURL = nil
+                    appState?.hoveredNodeID = nil
+                }
             }
         }
     }
