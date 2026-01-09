@@ -58,18 +58,18 @@ final class Camera {
         var isBoosting: Bool = false
 
         // Physics constants
-        static let baseThrust: Float = 45.0
-        static let boostThrust: Float = 85.0
+        static let baseThrust: Float = 12.0
+        static let boostThrust: Float = 30.0
         static let gravity: Float = 9.8
         static let pitchRate: Float = 1.2      // Radians per second
         static let rollRate: Float = 2.0       // Radians per second
         static let maxPitch: Float = .pi / 3   // 60 degrees
         static let maxRoll: Float = .pi / 2.5  // 72 degrees
-        static let liftCoefficient: Float = 0.8
-        static let dragCoefficient: Float = 0.02
-        static let minSpeed: Float = 25.0      // Stall speed
-        static let maxSpeed: Float = 80.0
-        static let boostMaxSpeed: Float = 120.0
+        static let liftCoefficient: Float = 0.30
+        static let dragCoefficient: Float = 0.01
+        static let minSpeed: Float = 15.0      // Stall speed
+        static let maxSpeed: Float = 60.0
+        static let boostMaxSpeed: Float = 90.0
 
         var forwardVector: SIMD3<Float> {
             SIMD3<Float>(
