@@ -1535,47 +1535,38 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 // Use piloted flight state
                 position = state.position
 
-                // Compute full 3D orientation using rotation matrix approach
+                // Compute full 3D orientation matching physics convention
                 let yaw = state.yaw
                 let pitch = state.pitch
                 let roll = state.roll
 
-                // Start with identity basis vectors
-                // Forward = +Z, Right = +X, Up = +Y in local space
-
-                // Apply yaw (rotation around Y axis)
                 let cosY = cos(yaw)
                 let sinY = sin(yaw)
-
-                // Apply pitch (rotation around X axis, after yaw)
                 let cosP = cos(pitch)
                 let sinP = sin(pitch)
-
-                // Apply roll (rotation around Z axis, after yaw and pitch)
                 let cosR = cos(roll)
                 let sinR = sin(roll)
 
-                // Combined rotation: first yaw, then pitch, then roll
-                // Forward vector (local +Z transformed)
+                // Forward vector (matches physics forwardVector)
                 let forward = SIMD3<Float>(
-                    sinY * cosP,
-                    -sinP,
-                    cosY * cosP
+                    cosP * sinY,
+                    sinP,
+                    cosP * cosY
                 )
 
-                // Right vector (local +X transformed)
-                let rightVec = SIMD3<Float>(
-                    cosY * cosR + sinY * sinP * sinR,
-                    cosP * sinR,
-                    -sinY * cosR + cosY * sinP * sinR
+                // Right vector (horizontal, yaw only)
+                let flatRight = SIMD3<Float>(cosY, 0, -sinY)
+
+                // Up vector before roll (perpendicular to forward and right)
+                let pitchedUp = SIMD3<Float>(
+                    -sinP * sinY,
+                    cosP,
+                    -sinP * cosY
                 )
 
-                // Up vector (local +Y transformed)
-                let upVec = SIMD3<Float>(
-                    -cosY * sinR + sinY * sinP * cosR,
-                    cosP * cosR,
-                    sinY * sinR + cosY * sinP * cosR
-                )
+                // Apply roll around forward axis
+                let rightVec = flatRight * cosR + pitchedUp * sinR
+                let upVec = -flatRight * sinR + pitchedUp * cosR
 
                 // Use transformed vectors for part positioning
                 direction = forward
