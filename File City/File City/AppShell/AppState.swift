@@ -44,7 +44,6 @@ final class AppState: ObservableObject {
     private var gitStatusTask: Task<Void, Never>?
     private var gitCleanByPath: [String: Bool] = [:]
     private var historicalTreeCache: [String: FileNode] = [:]
-    private let maxHistoryCommits = 200
     private var lastLoadedCommitID: String?
     private var timeTravelLoadTask: Task<Void, Never>?
     private var focusNodeIDByURL: [URL: UUID] = [:]
@@ -316,81 +315,8 @@ final class AppState: ObservableObject {
     }
 
     func gitStatusLines(for url: URL) -> [String] {
-        let title = "\(url.lastPathComponent) (git)"
-        guard isDirectory(url) else {
-            return [title, "Not a folder"]
-        }
-        let result = runGitStatus(at: url)
-        guard !result.output.isEmpty else {
-            if result.error.isEmpty {
-                return [title, "Git status unavailable"]
-            }
-            return [title, "Git status error", result.error]
-        }
-        let lines = result.output
-            .split(separator: "\n")
-            .map { String($0) }
-        guard let first = lines.first else {
-            return [title, "Git status unavailable"]
-        }
-        var linesResult: [String] = [title]
-        let branchLine = first.hasPrefix("## ") ? String(first.dropFirst(3)) : first
-        linesResult.append(branchLine.isEmpty ? "Unknown branch" : branchLine)
-        let changes = lines.dropFirst()
-        if changes.isEmpty {
-            linesResult.append("Clean")
-        } else {
-            let formatted = changes.prefix(5).map { formatGitStatusLine($0) }
-            linesResult.append(contentsOf: formatted)
-        }
-        return linesResult
-    }
-
-    private func formatGitStatusLine(_ line: String) -> String {
-        guard line.count >= 3 else { return line }
-        let status = String(line.prefix(2))
-        let path = line.dropFirst(3)
-        if status == "??" {
-            return "Untracked:\t\(path)"
-        }
-        if status == " M" {
-            return "Modified:\t\(path)"
-        }
-        if status == "M " {
-            return "Staged:\t\(path)"
-        }
-        if status == "A " {
-            return "Added:\t\(path)"
-        }
-        if status == " D" {
-            return "Deleted:\t\(path)"
-        }
-        if status == "R " || status == "R?" {
-            return "Renamed:\t\(path)"
-        }
-        return line
-    }
-
-    private func runGitStatus(at url: URL) -> (output: String, error: String) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = ["-C", url.path, "status", "--porcelain=1", "-b"]
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-        do {
-            try process.run()
-        } catch {
-            return ("", error.localizedDescription)
-        }
-        process.waitUntilExit()
-        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: outputData, encoding: .utf8) ?? ""
-        let error = String(data: errorData, encoding: .utf8) ?? ""
-        guard process.terminationStatus == 0 else { return ("", error) }
-        return (output, error)
+        // Delegate to GitService for consistent formatting
+        GitService.formatStatusLines(for: url)
     }
 
     private func refreshGitStatuses() {
@@ -402,7 +328,7 @@ final class AppState: ObservableObject {
             results.reserveCapacity(nodes.count)
             for node in nodes.values where node.isGitRepo {
                 if Task.isCancelled { return }
-                results[node.id] = AppState.isGitRepoClean(url: node.url)
+                results[node.id] = GitService.isRepositoryClean(at: node.url)
             }
             await MainActor.run {
                 guard rootPath == self.rootURL?.path else { return }
@@ -430,26 +356,6 @@ final class AppState: ObservableObject {
         }
     }
 
-    nonisolated private static func isGitRepoClean(url: URL) -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = ["-C", url.path, "status", "--porcelain=1", "-b"]
-        let outputPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = Pipe()
-        do {
-            try process.run()
-        } catch {
-            return false
-        }
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else { return false }
-        let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: data, encoding: .utf8) ?? ""
-        let lines = output.split(separator: "\n")
-        return lines.count <= 1
-    }
-
     // MARK: - Time Machine Methods
 
     /// Fetch git commit history for the current root
@@ -460,9 +366,8 @@ final class AppState: ObservableObject {
             return
         }
 
-        // Check if this is a git repo
-        let gitDir = rootURL.appendingPathComponent(".git")
-        isRootGitRepo = FileManager.default.fileExists(atPath: gitDir.path)
+        // Check if this is a git repo using GitService
+        isRootGitRepo = GitService.isGitRepository(at: rootURL)
 
         guard isRootGitRepo else {
             commitHistory = []
@@ -472,59 +377,10 @@ final class AppState: ObservableObject {
         }
 
         Task {
-            let history = await fetchGitHistory(at: rootURL, limit: maxHistoryCommits)
+            let history = await GitService.fetchCommitHistory(at: rootURL, limit: Constants.Git.maxCommitHistory)
             commitHistory = history
             timeTravelMode = .live
             sliderPosition = 1.0
-        }
-    }
-
-    /// Fetch git history from command line
-    private func fetchGitHistory(at url: URL, limit: Int) async -> [GitCommit] {
-        await withCheckedContinuation { continuation in
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-            process.arguments = ["-C", url.path, "log", "--format=%H %ct %s", "-n", "\(limit)"]
-            let outputPipe = Pipe()
-            process.standardOutput = outputPipe
-            process.standardError = Pipe()
-
-            do {
-                try process.run()
-            } catch {
-                continuation.resume(returning: [])
-                return
-            }
-
-            process.waitUntilExit()
-            guard process.terminationStatus == 0 else {
-                continuation.resume(returning: [])
-                return
-            }
-
-            let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8) ?? ""
-            var commits: [GitCommit] = []
-
-            for line in output.split(separator: "\n") {
-                let parts = line.split(separator: " ", maxSplits: 2)
-                guard parts.count >= 2 else { continue }
-
-                let hash = String(parts[0])
-                let shortHash = String(hash.prefix(7))
-                let timestamp = TimeInterval(parts[1]) ?? 0
-                let subject = parts.count > 2 ? String(parts[2]) : ""
-
-                let commit = GitCommit(
-                    id: hash,
-                    shortHash: shortHash,
-                    timestamp: Date(timeIntervalSince1970: timestamp),
-                    subject: subject
-                )
-                commits.append(commit)
-            }
-
-            continuation.resume(returning: commits)
         }
     }
 
@@ -633,33 +489,12 @@ final class AppState: ObservableObject {
 
     /// Fetch git tree at commit and build FileNode
     private func fetchAndBuildHistoricalTree(commit: GitCommit, rootURL: URL) async -> FileNode? {
-        await withCheckedContinuation { continuation in
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-            process.arguments = ["-C", rootURL.path, "ls-tree", "-r", "-l", commit.id]
-            let outputPipe = Pipe()
-            process.standardOutput = outputPipe
-            process.standardError = Pipe()
-
-            do {
-                try process.run()
-            } catch {
-                continuation.resume(returning: nil)
-                return
-            }
-
-            process.waitUntilExit()
-            guard process.terminationStatus == 0 else {
-                continuation.resume(returning: nil)
-                return
-            }
-
-            let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8) ?? ""
-
-            let result = gitTreeScanner.buildTree(from: output, rootURL: rootURL, maxDepth: 2)
-            continuation.resume(returning: result.root)
+        guard let output = await GitService.fetchTreeAtCommit(commit.id, at: rootURL) else {
+            return nil
         }
+
+        let result = gitTreeScanner.buildTree(from: output, rootURL: rootURL, maxDepth: Constants.Scanning.maxDepth)
+        return result.root
     }
 
     /// Apply a historical FileNode tree to the city
@@ -679,7 +514,7 @@ final class AppState: ObservableObject {
     }
 
     private func countNodes(_ node: FileNode) -> Int {
-        1 + node.children.reduce(0) { $0 + countNodes($1) }
+        TreeIndexer.countNodes(node)
     }
 
     /// Get current commit for display (if in historical mode)
@@ -882,62 +717,60 @@ final class AppState: ObservableObject {
     }
 
     private func handleFSEventsActivity(url: URL, kind: ActivityKind) {
-        let now = activityNow()
-        if now < ignoreActivityUntil { return }
-        // Ignore internal git operations
-        if url.path.contains("/.git/") || url.path.hasSuffix("/.git") { return }
-        
         // Don't overwrite fs_usage events which have more detail
+        let now = activityNow()
         if let existing = activityByURL[url], now - existing.startedAt < 0.3 {
             return
         }
-        activityByURL[url] = NodeActivityPulse(
-            kind: kind,
-            startedAt: now,
-            processName: "FSEvents",
-            url: url
-        )
-        if kind == .write {
-            if let nodeID = resolveActivityNodeID(url: url) {
-                fileWriteSubject.send(nodeID)
-            }
-        } else if kind == .read {
-            if let nodeID = resolveActivityNodeID(url: url) {
-                fileReadSubject.send(nodeID)
-            }
-        }
-        activityVersion &+= 1
+        handleActivity(url: url, kind: kind, processName: "FSEvents", showInfo: false)
     }
 
     private func handleActivityEvent(_ event: FileActivityEvent) {
+        handleActivity(url: event.url, kind: event.kind, processName: event.processName, showInfo: true)
+    }
+
+    /// Unified activity handler for both FSEvents and privileged helper events
+    private func handleActivity(url: URL, kind: ActivityKind, processName: String, showInfo: Bool) {
         let now = activityNow()
         if now < ignoreActivityUntil { return }
+
         // Ignore internal git operations
-        if event.url.path.contains("/.git/") || event.url.path.hasSuffix("/.git") { return }
-        
-        activityByURL[event.url] = NodeActivityPulse(
-            kind: event.kind,
+        if isGitInternalPath(url) { return }
+
+        activityByURL[url] = NodeActivityPulse(
+            kind: kind,
             startedAt: now,
-            processName: event.processName,
-            url: event.url
+            processName: processName,
+            url: url
         )
-        if event.kind == .write {
-            if let nodeID = resolveActivityNodeID(url: event.url) {
+
+        // Send activity notifications
+        if let nodeID = resolveActivityNodeID(url: url) {
+            if kind == .write {
                 fileWriteSubject.send(nodeID)
-            }
-        } else if event.kind == .read {
-            if let nodeID = resolveActivityNodeID(url: event.url) {
+            } else if kind == .read {
                 fileReadSubject.send(nodeID)
             }
         }
+
         activityVersion &+= 1
-        let verb = event.kind == .write ? "Write" : "Read"
-        let pathLine = relativePath(for: event.url) ?? event.url.lastPathComponent
-        activityInfoLines = [
-            "\(event.processName) • \(verb)",
-            pathLine
-        ]
-        activityInfoExpiresAt = now + 2.0
+
+        // Show info panel for privileged helper events (more reliable source)
+        if showInfo {
+            let verb = kind == .write ? "Write" : "Read"
+            let pathLine = relativePath(for: url) ?? url.lastPathComponent
+            activityInfoLines = [
+                "\(processName) • \(verb)",
+                pathLine
+            ]
+            activityInfoExpiresAt = now + 2.0
+        }
+    }
+
+    /// Check if a URL is within a .git directory (internal git operations)
+    private func isGitInternalPath(_ url: URL) -> Bool {
+        let path = url.path
+        return path.contains("/.git/") || path.hasSuffix("/.git")
     }
 
     private func resolveActivityNodeID(url: URL) -> UUID? {
@@ -983,45 +816,18 @@ final class AppState: ObservableObject {
         return String(relative)
     }
 
-    private func buildFocusMap(root: FileNode) -> [URL: UUID] {
-        var map: [URL: UUID] = [:]
-        for child in root.children {
-            indexFocusURLs(node: child, focusID: child.id, map: &map)
-        }
-        return map
-    }
+    // MARK: - Tree Indexing (delegated to TreeIndexer)
 
-    private func indexFocusURLs(node: FileNode, focusID: UUID, map: inout [URL: UUID]) {
-        map[node.url] = focusID
-        for child in node.children {
-            indexFocusURLs(node: child, focusID: focusID, map: &map)
-        }
+    private func buildFocusMap(root: FileNode) -> [URL: UUID] {
+        TreeIndexer.buildFocusMap(root: root)
     }
 
     private func buildNodeIDMap(root: FileNode) -> [UUID: FileNode] {
-        var map: [UUID: FileNode] = [:]
-        indexNodeIDMap(node: root, map: &map)
-        return map
+        TreeIndexer.buildNodeByID(root: root)
     }
 
     private func buildNodeURLMap(root: FileNode) -> [URL: FileNode] {
-        var map: [URL: FileNode] = [:]
-        indexNodeURLMap(node: root, map: &map)
-        return map
-    }
-
-    private func indexNodeIDMap(node: FileNode, map: inout [UUID: FileNode]) {
-        map[node.id] = node
-        for child in node.children {
-            indexNodeIDMap(node: child, map: &map)
-        }
-    }
-
-    private func indexNodeURLMap(node: FileNode, map: inout [URL: FileNode]) {
-        map[node.url] = node
-        for child in node.children {
-            indexNodeURLMap(node: child, map: &map)
-        }
+        TreeIndexer.buildNodeByURL(root: root)
     }
 
     private func displayType(_ type: FileNode.NodeType) -> String {

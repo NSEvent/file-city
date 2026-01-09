@@ -7,7 +7,7 @@ final class Camera {
 
     // MARK: - Isometric Mode Properties
     var target = SIMD3<Float>(0, 0, 0)
-    var distance: Float = 60
+    var distance: Float = Constants.Camera.defaultDistance
 
     // MARK: - First-Person Mode Properties
     var isFirstPerson: Bool = false
@@ -17,19 +17,19 @@ final class Camera {
     var fpPitch: Float = 0                 // Vertical rotation (radians, clamped)
     var verticalVelocity: Float = 0        // Vertical velocity for gravity/jumping
 
-    // Movement constants
-    let playerHeight: Float = 3.5          // Player body height (for collision)
-    let walkSpeed: Float = 20.0            // Normal walk speed (units per second)
-    let sprintSpeed: Float = 35.0          // Sprint speed (units per second)
-    var isSprinting: Bool = false          // Currently sprinting
-    let mouseSensitivity: Float = 0.002    // Radians per pixel
-    let maxPitch: Float = .pi / 2 - 0.1    // Prevent looking straight up/down
+    // Movement constants (from Constants.Movement)
+    var playerHeight: Float { Constants.Movement.playerHeight }
+    var walkSpeed: Float { Constants.Movement.walkSpeed }
+    var sprintSpeed: Float { Constants.Movement.sprintSpeed }
+    var isSprinting: Bool = false
+    var mouseSensitivity: Float { Constants.Movement.mouseSensitivity }
+    var maxPitch: Float { Constants.Movement.maxPitch }
 
     // Grapple state
     var isGrappling: Bool = false
     var grappleTarget: SIMD3<Float> = .zero
-    let grappleSpeed: Float = 80.0         // Speed when being pulled by grapple
-    let grappleArrivalDistance: Float = 3.0 // Stop grappling when this close
+    var grappleSpeed: Float { Constants.Grapple.speed }
+    var grappleArrivalDistance: Float { Constants.Grapple.arrivalDistance }
 
     // Grapple attachment (hold shift to stay attached)
     enum GrappleAttachment {
@@ -57,19 +57,19 @@ final class Camera {
         var yaw: Float = 0            // Heading (radians)
         var isBoosting: Bool = false
 
-        // Physics constants
-        static let baseThrust: Float = 12.0
-        static let boostThrust: Float = 30.0
-        static let gravity: Float = 9.8
-        static let pitchRate: Float = 1.2      // Radians per second
-        static let rollRate: Float = 2.0       // Radians per second
-        static let maxPitch: Float = .pi / 3   // 60 degrees
-        static let maxRoll: Float = .pi / 2.5  // 72 degrees
-        static let liftCoefficient: Float = 0.30
-        static let dragCoefficient: Float = 0.01
-        static let minSpeed: Float = 15.0      // Stall speed
-        static let maxSpeed: Float = 60.0
-        static let boostMaxSpeed: Float = 90.0
+        // Physics constants (delegated to Constants.PlanePhysics)
+        static var baseThrust: Float { Constants.PlanePhysics.baseThrust }
+        static var boostThrust: Float { Constants.PlanePhysics.boostThrust }
+        static var gravity: Float { Constants.PlanePhysics.gravity }
+        static var pitchRate: Float { Constants.PlanePhysics.pitchRate }
+        static var rollRate: Float { Constants.PlanePhysics.rollRate }
+        static var maxPitch: Float { Constants.PlanePhysics.maxPitch }
+        static var maxRoll: Float { Constants.PlanePhysics.maxRoll }
+        static var liftCoefficient: Float { Constants.PlanePhysics.liftCoefficient }
+        static var dragCoefficient: Float { Constants.PlanePhysics.dragCoefficient }
+        static var minSpeed: Float { Constants.PlanePhysics.minSpeed }
+        static var maxSpeed: Float { Constants.PlanePhysics.maxSpeed }
+        static var boostMaxSpeed: Float { Constants.PlanePhysics.boostMaxSpeed }
 
         var forwardVector: SIMD3<Float> {
             SIMD3<Float>(
@@ -88,22 +88,22 @@ final class Camera {
     var planeFlightState: PlaneFlightState?
     var thirdPersonCameraPosition: SIMD3<Float> = .zero
     var cameraLookOffset: SIMD2<Float> = .zero        // Mouse look offset (yaw, pitch)
-    let thirdPersonDistance: Float = 25.0
-    let thirdPersonHeight: Float = 10.0
+    var thirdPersonDistance: Float { Constants.PlanePhysics.thirdPersonDistance }
+    var thirdPersonHeight: Float { Constants.PlanePhysics.thirdPersonHeight }
     let maxLookOffset: Float = 0.5                    // Max radians for mouse look freedom
 
     var moveSpeed: Float {
         isSprinting ? sprintSpeed : walkSpeed
     }
 
-    // Physics constants
-    let gravity: Float = -30.0             // Gravity acceleration (units/s²)
-    let jumpVelocity: Float = 18.0         // Initial jump velocity
-    let groundLevel: Float = 3.5           // Eye height when on ground
+    // Physics constants (from Constants.Movement)
+    var gravity: Float { Constants.Movement.gravity }
+    var jumpVelocity: Float { Constants.Movement.jumpVelocity }
+    var groundLevel: Float { Constants.Movement.groundLevel }
 
-    // Isometric constants (original values)
-    private let isoPitch: Float = 0.75
-    private let isoYaw: Float = 0.7853982  // ~45°
+    // Isometric constants (from Constants.Camera)
+    private var isoPitch: Float { Constants.Camera.isometricPitch }
+    private var isoYaw: Float { Constants.Camera.isometricYaw }
 
     // MARK: - Computed Properties
 
@@ -143,7 +143,7 @@ final class Camera {
 
     func zoom(delta: Float) {
         guard !isFirstPerson else { return }
-        distance = max(0.02, distance - delta * 20)
+        distance = max(Constants.Camera.minDistance, distance - delta * 20)
     }
 
     func pan(deltaX: Float, deltaY: Float) {
@@ -200,7 +200,7 @@ final class Camera {
 
         // Collision detection with buildings using sliding collision
         if let blocks {
-            let playerRadius: Float = 0.5  // Player collision radius
+            let playerRadius = Constants.Movement.playerRadius
             let playerFeetY = newPosition.y - playerHeight * 0.5
             let playerHeadY = newPosition.y + 0.2  // Small buffer above eye level
             let prevFeetY = position.y - playerHeight * 0.5
@@ -643,8 +643,8 @@ final class Camera {
     }
 
     func projectionMatrix() -> simd_float4x4 {
-        let fov: Float = isFirstPerson ? 1.2 : 0.75  // Wider FOV for first-person
-        return perspective(fovY: fov, aspect: aspect, near: 0.01, far: 2000)
+        let fov: Float = isFirstPerson ? Constants.Camera.firstPersonFOV : Constants.Camera.isometricFOV
+        return perspective(fovY: fov, aspect: aspect, near: Constants.Camera.nearPlane, far: Constants.Camera.farPlane)
     }
 
     private func lookAt(eye: SIMD3<Float>, target: SIMD3<Float>, up: SIMD3<Float>) -> simd_float4x4 {
