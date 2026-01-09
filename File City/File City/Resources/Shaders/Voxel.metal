@@ -287,48 +287,72 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
     float3 scaled = local * instance.scale;
     float3 normal = in.normal;
 
-    // Apply rotations: Z, then X, then Y
-    if (instance.rotationZ != 0.0) {
-        float c = cos(instance.rotationZ);
-        float s = sin(instance.rotationZ);
-        
-        float x = scaled.x * c - scaled.y * s;
-        float y = scaled.x * s + scaled.y * c;
-        scaled.x = x;
-        scaled.y = y;
-        
-        float nx = normal.x * c - normal.y * s;
-        float ny = normal.x * s + normal.y * c;
-        normal.x = nx;
-        normal.y = ny;
-    }
-    if (instance.rotationX != 0.0) {
-        float c = cos(instance.rotationX);
-        float s = sin(instance.rotationX);
-        
-        float y = scaled.y * c - scaled.z * s;
-        float z = scaled.y * s + scaled.z * c;
-        scaled.y = y;
-        scaled.z = z;
-        
-        float ny = normal.y * c - normal.z * s;
-        float nz = normal.y * s + normal.z * c;
-        normal.y = ny;
-        normal.z = nz;
-    }
-    if (instance.rotationY != 0.0) {
-        float c = cos(instance.rotationY);
-        float s = sin(instance.rotationY);
-        
-        float x = scaled.x * c - scaled.z * s;
-        float z = scaled.x * s + scaled.z * c;
-        scaled.x = x;
-        scaled.z = z;
-        
-        float nx = normal.x * c - normal.z * s;
-        float nz = normal.x * s + normal.z * c;
-        normal.x = nx;
-        normal.z = nz;
+    // Explicitly reconstruct the physics basis vectors to match CPU logic exactly.
+    // This prevents parts (like the tail) from disconnecting due to Euler order mismatches.
+    // CPU Logic:
+    // 1. Yaw & Pitch -> Forward, FlatRight, PitchedUp
+    // 2. Roll -> Rotates Right/Up around Forward
+    
+    // Recover raw Physics Yaw.
+    // CPU passes rotationY = atan2(cosY, sinY) = pi/2 - Y.
+    // So Y = pi/2 - rotationY.
+    float physY = 1.5707963 - instance.rotationY;
+    float physP = instance.rotationZ; // Pitch is passed in Z
+    float physR = instance.rotationX; // Roll is passed in X
+    
+    // Precompute trig
+    float cY = cos(physY);
+    float sY = sin(physY);
+    float cP = cos(physP);
+    float sP = sin(physP);
+    float cR = cos(physR);
+    float sR = sin(physR);
+    
+    // 1. Forward (matches CPU)
+    float3 fwd = float3(cP * sY, sP, cP * cY);
+    
+    // 2. Flat Right (matches CPU)
+    float3 flatRight = float3(cY, 0.0, -sY);
+    
+    // 3. Pitched Up (matches CPU)
+    float3 pitchedUp = float3(-sP * sY, cP, -sP * cY);
+    
+    // 4. Apply Roll to get final Basis Vectors
+    float3 rightVec = flatRight * cR + pitchedUp * sR;
+    float3 upVec = -flatRight * sR + pitchedUp * cR;
+    
+    // 5. Construct Rotation Matrix
+    // Map Model Local Axes to World Basis Vectors.
+    // Model: X is Body (Forward). Y is Up. Z is Wings (Left/Right).
+    // We map:
+    // Local X -> fwd
+    // Local Y -> upVec
+    // Local Z -> -rightVec (Since Model Z seems to point Left relative to Physics Right)
+    
+    // If rotations are all zero:
+    // rotationY = 90 -> physY = 0.
+    // fwd = (0, 0, 1)
+    // rightVec = (1, 0, 0)
+    // upVec = (0, 1, 0)
+    // Matrix: X->Z, Y->Y, Z->-X.
+    // Model X(1,0,0) -> (0,0,1). Correct (aligns with Physics Z-Fwd).
+    
+    float3x3 rotMat;
+    rotMat[0] = fwd;        // Local X column
+    rotMat[1] = upVec;      // Local Y column
+    rotMat[2] = -rightVec;  // Local Z column
+    
+    // Apply Rotation
+    // Use the matrix for both position and normal
+    // Note: If scale is non-uniform, normals technically need inverse-transpose, 
+    // but for simple voxel art this is usually fine or handled by separate normal rotation.
+    // Here we rotate the *scaled* vector, so it's effectively a world-space rotation.
+    
+    // Only apply this complex rotation if we are actually rotating
+    // (Optimization: checks could be removed if performance isn't bottleneck)
+    if (instance.rotationX != 0.0 || instance.rotationZ != 0.0 || instance.rotationY != 0.0) {
+        scaled = rotMat * scaled;
+        normal = rotMat * normal;
     }
 
     float3 world = scaled + instance.position;
