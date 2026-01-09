@@ -41,6 +41,10 @@ struct ContentView: View {
                         SelectionInfoPanel()
                     }
                     Spacer()
+                    // Time Machine slider (only for git repos with history)
+                    if appState.isRootGitRepo && !appState.commitHistory.isEmpty {
+                        TimeMachineSlider()
+                    }
                 }
                 // Minecraft-style crosshair in first-person mode
                 if appState.isFirstPerson {

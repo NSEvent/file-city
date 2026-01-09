@@ -25,7 +25,14 @@ final class AppState: ObservableObject {
     @Published private(set) var activityVersion: UInt = 0
     @Published var isFirstPerson: Bool = false
 
+    // MARK: - Time Machine State
+    @Published var timeTravelMode: TimeTravelMode = .live
+    @Published var commitHistory: [GitCommit] = []
+    @Published var sliderPosition: Double = 1.0  // 0=oldest, 1=newest/live
+    @Published var isRootGitRepo: Bool = false
+
     private let scanner = DirectoryScanner()
+    private let gitTreeScanner = GitTreeScanner()
     private let mapper = CityMapper()
     private let searchIndex = SearchIndex()
     private let pinStore = PinStore()
@@ -34,6 +41,10 @@ final class AppState: ObservableObject {
     let fileReadSubject = PassthroughSubject<UUID, Never>()
     private var gitStatusTask: Task<Void, Never>?
     private var gitCleanByPath: [String: Bool] = [:]
+    private var historicalTreeCache: [String: FileNode] = [:]
+    private let maxHistoryCommits = 200
+    private var lastLoadedCommitID: String?
+    private var timeTravelLoadTask: Task<Void, Never>?
     private var focusNodeIDByURL: [URL: UUID] = [:]
     private var nodeByID: [UUID: FileNode] = [:]
     private var nodeByURL: [URL: FileNode] = [:]
@@ -90,6 +101,7 @@ final class AppState: ObservableObject {
                 DispatchQueue.main.async { [weak self] in
                     self?.scanRoot(autoFit: true)
                     self?.startWatchingRoot()
+                    self?.loadGitHistory()
                 }
             }
         }
@@ -245,8 +257,13 @@ final class AppState: ObservableObject {
         activityInfoLines = nil
         selectedURLs = []
         selectedFocusNodeIDs = []
+        // Clear time travel state when changing roots
+        historicalTreeCache = [:]
+        timeTravelMode = .live
+        sliderPosition = 1.0
         scanRoot(autoFit: true)
         startWatchingRoot()
+        loadGitHistory()
     }
 
     func goToParent() {
@@ -260,8 +277,13 @@ final class AppState: ObservableObject {
         activityInfoLines = nil
         selectedURLs = []
         selectedFocusNodeIDs = []
+        // Clear time travel state when changing roots
+        historicalTreeCache = [:]
+        timeTravelMode = .live
+        sliderPosition = 1.0
         scanRoot(autoFit: true)
         startWatchingRoot()
+        loadGitHistory()
     }
 
     func canGoToParent() -> Bool {
@@ -426,6 +448,242 @@ final class AppState: ObservableObject {
         return lines.count <= 1
     }
 
+    // MARK: - Time Machine Methods
+
+    /// Fetch git commit history for the current root
+    func loadGitHistory() {
+        guard let rootURL else {
+            isRootGitRepo = false
+            commitHistory = []
+            return
+        }
+
+        // Check if this is a git repo
+        let gitDir = rootURL.appendingPathComponent(".git")
+        isRootGitRepo = FileManager.default.fileExists(atPath: gitDir.path)
+
+        guard isRootGitRepo else {
+            commitHistory = []
+            timeTravelMode = .live
+            sliderPosition = 1.0
+            return
+        }
+
+        Task {
+            let history = await fetchGitHistory(at: rootURL, limit: maxHistoryCommits)
+            commitHistory = history
+            timeTravelMode = .live
+            sliderPosition = 1.0
+        }
+    }
+
+    /// Fetch git history from command line
+    private func fetchGitHistory(at url: URL, limit: Int) async -> [GitCommit] {
+        await withCheckedContinuation { continuation in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", url.path, "log", "--format=%H %ct %s", "-n", "\(limit)"]
+            let outputPipe = Pipe()
+            process.standardOutput = outputPipe
+            process.standardError = Pipe()
+
+            do {
+                try process.run()
+            } catch {
+                continuation.resume(returning: [])
+                return
+            }
+
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else {
+                continuation.resume(returning: [])
+                return
+            }
+
+            let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8) ?? ""
+            var commits: [GitCommit] = []
+
+            for line in output.split(separator: "\n") {
+                let parts = line.split(separator: " ", maxSplits: 2)
+                guard parts.count >= 2 else { continue }
+
+                let hash = String(parts[0])
+                let shortHash = String(hash.prefix(7))
+                let timestamp = TimeInterval(parts[1]) ?? 0
+                let subject = parts.count > 2 ? String(parts[2]) : ""
+
+                let commit = GitCommit(
+                    id: hash,
+                    shortHash: shortHash,
+                    timestamp: Date(timeIntervalSince1970: timestamp),
+                    subject: subject
+                )
+                commits.append(commit)
+            }
+
+            continuation.resume(returning: commits)
+        }
+    }
+
+    /// Update time travel position during slider drag
+    /// - Parameters:
+    ///   - position: Slider position (0 = oldest, 1 = newest/live)
+    ///   - live: If true, immediately load and display the historical tree
+    func updateTimeTravelPosition(_ position: Double, live: Bool = false) {
+        guard !commitHistory.isEmpty else { return }
+        sliderPosition = position
+
+        let previousMode = timeTravelMode
+
+        if position >= 0.99 {
+            timeTravelMode = .live
+            // Return to live if we were in historical mode
+            if live && !previousMode.isLive {
+                lastLoadedCommitID = nil
+                scanRoot()
+                startWatchingRoot()
+            }
+        } else {
+            // Map position to commit index (1.0 = newest = index 0)
+            let invertedPosition = 1.0 - position
+            let index = Int(invertedPosition * Double(commitHistory.count - 1))
+            let clampedIndex = max(0, min(commitHistory.count - 1, index))
+            let commit = commitHistory[clampedIndex]
+            timeTravelMode = .historical(commit)
+
+            // Load tree immediately if live mode and commit changed
+            if live && commit.id != lastLoadedCommitID {
+                lastLoadedCommitID = commit.id
+                loadHistoricalTreeLive(commit: commit)
+            }
+        }
+    }
+
+    /// Load historical tree during live scrubbing (optimized for responsiveness)
+    private func loadHistoricalTreeLive(commit: GitCommit) {
+        // Stop file watching
+        watcher?.stop()
+        activityWatcher?.stop()
+        socketWatcher?.stop()
+
+        // Cancel any pending load
+        timeTravelLoadTask?.cancel()
+
+        // Check cache first - if cached, apply immediately
+        if let cachedTree = historicalTreeCache[commit.id] {
+            applyHistoricalTree(cachedTree)
+            return
+        }
+
+        // Fetch in background
+        timeTravelLoadTask = Task {
+            guard let rootURL else { return }
+            let tree = await fetchAndBuildHistoricalTree(commit: commit, rootURL: rootURL)
+
+            // Check if we're still on this commit (user may have moved slider)
+            guard !Task.isCancelled,
+                  case .historical(let currentCommit) = timeTravelMode,
+                  currentCommit.id == commit.id,
+                  let tree else { return }
+
+            historicalTreeCache[commit.id] = tree
+            applyHistoricalTree(tree)
+        }
+    }
+
+    /// Commit to time travel position (load historical tree)
+    func commitTimeTravel() {
+        switch timeTravelMode {
+        case .live:
+            scanRoot()
+            startWatchingRoot()
+
+        case .historical(let commit):
+            // Stop file watching in historical mode
+            watcher?.stop()
+            activityWatcher?.stop()
+            socketWatcher?.stop()
+
+            // Check cache first
+            if let cachedTree = historicalTreeCache[commit.id] {
+                applyHistoricalTree(cachedTree)
+            } else {
+                Task {
+                    guard let rootURL else { return }
+                    let tree = await fetchAndBuildHistoricalTree(commit: commit, rootURL: rootURL)
+                    if let tree {
+                        historicalTreeCache[commit.id] = tree
+                        applyHistoricalTree(tree)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Return to live mode
+    func returnToLive() {
+        sliderPosition = 1.0
+        timeTravelMode = .live
+        scanRoot()
+        startWatchingRoot()
+    }
+
+    /// Fetch git tree at commit and build FileNode
+    private func fetchAndBuildHistoricalTree(commit: GitCommit, rootURL: URL) async -> FileNode? {
+        await withCheckedContinuation { continuation in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", rootURL.path, "ls-tree", "-r", "-l", commit.id]
+            let outputPipe = Pipe()
+            process.standardOutput = outputPipe
+            process.standardError = Pipe()
+
+            do {
+                try process.run()
+            } catch {
+                continuation.resume(returning: nil)
+                return
+            }
+
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else {
+                continuation.resume(returning: nil)
+                return
+            }
+
+            let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8) ?? ""
+
+            let result = gitTreeScanner.buildTree(from: output, rootURL: rootURL, maxDepth: 2)
+            continuation.resume(returning: result.root)
+        }
+    }
+
+    /// Apply a historical FileNode tree to the city
+    private func applyHistoricalTree(_ root: FileNode) {
+        nodeCount = countNodes(root)
+        searchIndex.reset()
+        searchIndex.indexNode(root)
+        blocks = mapper.map(root: root, rules: .default, pinStore: pinStore)
+        focusNodeIDByURL = buildFocusMap(root: root)
+        nodeByID = buildNodeIDMap(root: root)
+        nodeByURL = buildNodeURLMap(root: root)
+        // Clear selection when changing history
+        selectedURLs = []
+        selectedFocusNodeIDs = []
+        hoveredURL = nil
+        hoveredNodeID = nil
+    }
+
+    private func countNodes(_ node: FileNode) -> Int {
+        1 + node.children.reduce(0) { $0 + countNodes($1) }
+    }
+
+    /// Get current commit for display (if in historical mode)
+    func currentHistoricalCommit() -> GitCommit? {
+        timeTravelMode.commit
+    }
 
     func actionContainerURL() -> URL? {
         guard let rootURL else { return nil }
@@ -438,6 +696,7 @@ final class AppState: ObservableObject {
     }
 
     func createFolder() {
+        guard timeTravelMode.isLive else { return }  // No file ops in historical mode
         guard let containerURL = actionContainerURL() else { return }
         guard let name = promptForName(title: "New Folder", message: "Enter a folder name.", placeholder: "New Folder") else { return }
         let newURL = containerURL.appendingPathComponent(name, isDirectory: true)
@@ -451,6 +710,7 @@ final class AppState: ObservableObject {
     }
 
     func createFile() {
+        guard timeTravelMode.isLive else { return }  // No file ops in historical mode
         guard let containerURL = actionContainerURL() else { return }
         guard let name = promptForName(title: "New File", message: "Enter a file name.", placeholder: "untitled.txt") else { return }
         let newURL = containerURL.appendingPathComponent(name, isDirectory: false)
@@ -464,6 +724,7 @@ final class AppState: ObservableObject {
     }
 
     func renameSelected() {
+        guard timeTravelMode.isLive else { return }  // No file ops in historical mode
         guard let selectedURL = selectedURLs.first else { return }
         let currentName = selectedURL.lastPathComponent
         guard let name = promptForName(title: "Rename", message: "Enter a new name.", placeholder: currentName, defaultValue: currentName) else { return }
@@ -478,6 +739,7 @@ final class AppState: ObservableObject {
     }
 
     func moveSelected() {
+        guard timeTravelMode.isLive else { return }  // No file ops in historical mode
         guard !selectedURLs.isEmpty else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -499,6 +761,7 @@ final class AppState: ObservableObject {
     }
 
     func trashSelected() {
+        guard timeTravelMode.isLive else { return }  // No file ops in historical mode
         guard !selectedURLs.isEmpty else { return }
         let count = selectedURLs.count
         let alert = NSAlert()
