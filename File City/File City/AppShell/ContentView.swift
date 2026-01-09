@@ -41,8 +41,8 @@ struct ContentView: View {
                         SelectionInfoPanel()
                     }
                     Spacer()
-                    // Time Machine slider (only for git repos with history)
-                    if appState.isRootGitRepo && !appState.commitHistory.isEmpty {
+                    // Time Machine slider (only for git repos with history, hidden in FPS mode)
+                    if appState.isRootGitRepo && !appState.commitHistory.isEmpty && !appState.isFirstPerson {
                         TimeMachineSlider()
                     }
                 }
