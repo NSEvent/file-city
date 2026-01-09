@@ -39,8 +39,8 @@ final class RayTracerTests: XCTestCase {
         let rayDir = SIMD3<Float>(0, 0, -1)
         let ray = RayTracer.Ray(origin: rayOrigin, direction: rayDir)
         
-        let hit = tracer.intersect(ray: ray, blocks: [block])
-        
+        let hit = tracer.intersect(ray: ray, blocks: [block], cameraYaw: 0)
+
         XCTAssertNotNil(hit, "Should hit the standard block")
         // Hit distance should be dist from 20 to 5 = 15
         XCTAssertEqual(hit!.distance, 15.0, accuracy: 0.001)
@@ -53,7 +53,7 @@ final class RayTracerTests: XCTestCase {
         // Ray aimed too high (y=15)
         let ray = RayTracer.Ray(origin: SIMD3<Float>(0, 15, 20), direction: SIMD3<Float>(0, 0, -1))
         
-        let hit = tracer.intersect(ray: ray, blocks: [block])
+        let hit = tracer.intersect(ray: ray, blocks: [block], cameraYaw: 0)
         XCTAssertNil(hit, "Should miss above the block")
     }
 
@@ -62,25 +62,25 @@ final class RayTracerTests: XCTestCase {
         let block = createBlock(position: SIMD3<Float>(0, 10, 0), width: 10, height: 10, shapeID: 0)
 
         let ray = RayTracer.Ray(origin: SIMD3<Float>(0, 15, 20), direction: SIMD3<Float>(0, 0, -1))
-        let hit = tracer.intersect(ray: ray, blocks: [block])
+        let hit = tracer.intersect(ray: ray, blocks: [block], cameraYaw: 0)
 
         XCTAssertNotNil(hit, "Should hit a raised block")
     }
-    
+
     func testIntersectPyramidTip() {
         // Pyramid block: Height 10.
         // Vertex shader logic: Top becomes 1.5x height = 15.
         // Tip is at (0, 15, 0).
         let block = createBlock(position: SIMD3<Float>(0, 0, 0), width: 10, height: 10, shapeID: 2) // 2 = Pyramid
-        
+
         // Ray aiming at y=14 (near tip)
         // At y=14, the pyramid should be very narrow but hittable at x=0, z=0
         let ray = RayTracer.Ray(origin: SIMD3<Float>(0, 14, 20), direction: SIMD3<Float>(0, 0, -1))
-        
-        let hit = tracer.intersect(ray: ray, blocks: [block])
+
+        let hit = tracer.intersect(ray: ray, blocks: [block], cameraYaw: 0)
         XCTAssertNotNil(hit, "Should hit the pyramid tip")
     }
-    
+
     func testMissPyramidEmptySpace() {
         // Pyramid block: Height 10.
         // AABB would be height 15 (1.5x) or 17.5 (1.75x) depending on logic.
@@ -92,22 +92,22 @@ final class RayTracerTests: XCTestCase {
         // Waist is at y=5 (0.5h). Tip is at y=15.
         // y=10 is midpoint of upper section. Width should be ~50% of waist width (which is full width 10).
         // So width at y=10 is approx 5 (-2.5..2.5).
-        
+
         let block = createBlock(position: SIMD3<Float>(0, 0, 0), width: 10, height: 10, shapeID: 2)
-        
+
         // Ray aiming at y=10, x=4. This is inside the AABB (x range -5..5) but outside the pyramid (width ~5 range -2.5..2.5)
         let ray = RayTracer.Ray(origin: SIMD3<Float>(4, 10, 20), direction: SIMD3<Float>(0, 0, -1))
-        
-        let hit = tracer.intersect(ray: ray, blocks: [block])
+
+        let hit = tracer.intersect(ray: ray, blocks: [block], cameraYaw: 0)
         XCTAssertNil(hit, "Should miss the empty space around the pyramid")
     }
-    
+
     func testIntersectTaperedBlock() {
         // Taper block (1).
         // Top is scaled by 0.4. Height 1.5x.
         // Base width 10. Top width 4.
         let block = createBlock(position: SIMD3<Float>(0, 0, 0), width: 10, height: 10, shapeID: 1)
-        
+
         // Aim at the top flat cap. y > 14? Top is at 15.
         // Let's aim at the side near the top. y=10.
         // At y=10 (mid of top section), width is lerp(10, 4, 0.5) = 7?
@@ -115,21 +115,21 @@ final class RayTracerTests: XCTestCase {
         // So top quad is size 4x4.
         // Bottom of top section (waist) is size 10x10.
         // At y=10 (midway 5..15), width is 7.
-        
+
         // Ray at x=0 should definitely hit
         let rayHit = RayTracer.Ray(origin: SIMD3<Float>(0, 10, 20), direction: SIMD3<Float>(0, 0, -1))
-        XCTAssertNotNil(tracer.intersect(ray: rayHit, blocks: [block]))
-        
+        XCTAssertNotNil(tracer.intersect(ray: rayHit, blocks: [block], cameraYaw: 0))
+
         // Ray at x=4.5 (width 9) should miss (width is ~7)
         let rayMiss = RayTracer.Ray(origin: SIMD3<Float>(4.5, 10, 20), direction: SIMD3<Float>(0, 0, -1))
-        XCTAssertNil(tracer.intersect(ray: rayMiss, blocks: [block]), "Should miss the tapered side")
+        XCTAssertNil(tracer.intersect(ray: rayMiss, blocks: [block], cameraYaw: 0), "Should miss the tapered side")
     }
 
     func testIntersectCylinderBlock() {
         let block = createBlock(position: SIMD3<Float>(0, 0, 0), width: 10, height: 10, shapeID: 5)
 
         let ray = RayTracer.Ray(origin: SIMD3<Float>(0, 5, 20), direction: SIMD3<Float>(0, 0, -1))
-        let hit = tracer.intersect(ray: ray, blocks: [block])
+        let hit = tracer.intersect(ray: ray, blocks: [block], cameraYaw: 0)
 
         XCTAssertNotNil(hit, "Should hit the cylinder block")
     }

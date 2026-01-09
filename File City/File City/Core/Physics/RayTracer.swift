@@ -205,10 +205,7 @@ final class RayTracer {
         return hit ? minT : nil
     }
 
-    private func rotationYForWedge(block: CityBlock, cameraYaw: Float) -> Float {
-        guard block.shapeID == 3 || block.shapeID == 4 else { return 0 }
-        return cameraYaw + (.pi / 4)
-    }
+    // Note: rotationYForWedge moved to GeometryHelpers.swift
 
     private func rotateY(point: SIMD3<Float>, around center: SIMD3<Float>, radians: Float) -> SIMD3<Float> {
         let translated = point - center

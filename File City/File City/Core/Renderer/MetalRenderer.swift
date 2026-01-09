@@ -337,17 +337,14 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                         activityDuration: self.lastActivityDuration)
     }
 
-    private func rotationYForWedge(block: CityBlock, cameraYaw: Float) -> Float {
-        guard block.shapeID == 3 || block.shapeID == 4 else { return 0 }
-        return cameraYaw + (.pi / 4)
-    }
+    // Note: rotationYForWedge moved to GeometryHelpers.swift
 
     private func buildGitTowerInstances(blocks: [CityBlock], selectedNodeIDs: Set<UUID>, hoveredBeaconNodeID: UUID?) -> [VoxelInstance] {
         var topBlocks: [UUID: CityBlock] = [:]
         var topHeights: [UUID: Float] = [:]
         gitBeaconBoxes.removeAll()
         for block in blocks where block.isGitRepo {
-            let topY = visualTopY(for: block)
+            let topY = block.visualTopY
             if let existing = topHeights[block.nodeID], existing >= topY {
                 continue
             }
@@ -364,11 +361,11 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             let towerMaterialID = block.isGitClean ? gitCleanMaterialID : gitTowerMaterialID
             let footprintX = Float(block.footprint.x)
             let footprintZ = Float(block.footprint.y)
-            let baseTopY = block.position.y + Float(block.height)
-            let visualTopY = visualTopY(for: block)
-            var roofY = visualTopY
+            let baseTopY = block.baseTopY
+            let blockVisualTop = block.visualTopY
+            var roofY = blockVisualTop
             if block.shapeID == 2 {
-                roofY = baseTopY + (visualTopY - baseTopY) * 0.42
+                roofY = baseTopY + (blockVisualTop - baseTopY) * 0.42
             }
             let baseX = block.position.x
             let baseZ = block.position.z
@@ -396,18 +393,18 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 // Adjust roofY to actual height at beacon offset (0.45 vs 0.5 edge)
                 // The wedge slopes, so at 0.45 offset the roof is lower than at the edge
                 let offsetRatio: Float = 0.45 / 0.5  // 0.9
-                roofY = baseTopY + (visualTopY - baseTopY) * offsetRatio
+                roofY = baseTopY + (blockVisualTop - baseTopY) * offsetRatio
                 baseY = roofY + basePad
             }
             if block.shapeID == 2 {
-                let tipY = visualTopY
+                let tipY = blockVisualTop
                 towerHeight = max(0.8, tipY - baseY)
             }
             let mastY = baseY + towerHeight * 0.5
             let crossbarY = baseY + towerHeight * 0.8
             var beaconY = baseY + towerHeight + beaconSize * 0.5
             if block.shapeID == 2 {
-                beaconY = visualTopY + beaconSize * 0.5
+                beaconY = blockVisualTop + beaconSize * 0.5
             }
             let towerBaseX = baseX + beaconOffsetX
             let towerBaseZ = baseZ + beaconOffsetZ
@@ -486,21 +483,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         return instances
     }
 
-    private func visualTopY(for block: CityBlock) -> Float {
-        let baseTop = block.position.y + Float(block.height)
-        let spireBoost: Float
-        switch block.shapeID {
-        case 3, 4:
-            // Wedges tilt up by 1.5x extent (0.5 * 1.5 = 0.75)
-            spireBoost = Float(block.height) * 0.75
-        case 1, 2:
-            // Spire/Pyramid move top up by 0.5x height
-            spireBoost = Float(block.height) * 0.5
-        default:
-            spireBoost = 0
-        }
-        return baseTop + spireBoost
-    }
+    // Note: visualTopY moved to CityBlock.visualTopY computed property
 
     func setBannerText(_ text: String) {
         guard text != bannerText else { return }
@@ -829,11 +812,11 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     }
 
     func spawnHelicopter(at block: CityBlock) {
-        var maxY = visualTopY(for: block)
+        var maxY = block.visualTopY
         // Find the highest block at this X/Z location to avoid collisions with stacked blocks
         for other in blocks {
             if abs(other.position.x - block.position.x) < 0.1 && abs(other.position.z - block.position.z) < 0.1 {
-                let top = visualTopY(for: other)
+                let top = other.visualTopY
                 if top > maxY {
                     maxY = top
                 }
@@ -848,16 +831,16 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             height: block.height
         )
     }
-    
+
     func spawnBeam(at block: CityBlock) {
         // Find the top-most block at this location to ensure we spawn from the roof
         var topBlock = block
-        var maxVisualTop = visualTopY(for: block)
-        
+        var maxVisualTop = block.visualTopY
+
         // Scan for higher blocks in the same column
         for other in blocks {
             if abs(other.position.x - block.position.x) < 0.1 && abs(other.position.z - block.position.z) < 0.1 {
-                let top = visualTopY(for: other)
+                let top = other.visualTopY
                 if top > maxVisualTop {
                     maxVisualTop = top
                     topBlock = other
@@ -2341,7 +2324,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             minZ = min(minZ, block.position.z - halfZ)
             maxZ = max(maxZ, block.position.z + halfZ)
             minY = min(minY, block.position.y)
-            maxY = max(maxY, visualTopY(for: block))
+            maxY = max(maxY, block.visualTopY)
         }
 
         return (SIMD3<Float>(minX, minY, minZ), SIMD3<Float>(maxX, maxY, maxZ))
