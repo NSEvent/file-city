@@ -1537,8 +1537,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 direction = SIMD3<Float>(sin(state.yaw), 0, cos(state.yaw))
                 right = SIMD3<Float>(cos(state.yaw), 0, -sin(state.yaw))
                 rotationY = atan2(direction.z, direction.x)  // Must match normal plane convention
-                rotationX = state.pitch   // Visual pitch - nose up/down
-                rotationZ = -state.roll   // Visual roll - bank left/right (negated for correct visual)
+                rotationX = state.roll    // Visual roll - bank left/right
+                rotationZ = state.pitch   // Visual pitch - nose up/down
                 glow = state.isBoosting ? (0.8 + 0.2 * sin(Float(now) * 25.0)) : 0.0
                 showFlames = state.isBoosting
             } else {

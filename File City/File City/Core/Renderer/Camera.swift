@@ -486,8 +486,8 @@ final class Camera {
         state.pitch = max(-PlaneFlightState.maxPitch, min(PlaneFlightState.maxPitch, state.pitch + pitchDelta))
         state.roll = max(-PlaneFlightState.maxRoll, min(PlaneFlightState.maxRoll, state.roll + rollDelta))
 
-        // 2. Banking turns: roll affects yaw rate
-        let bankTurnRate = sin(state.roll) * 0.8
+        // 2. Banking turns: roll affects yaw rate (negated to match coordinate system)
+        let bankTurnRate = -sin(state.roll) * 0.8
         state.yaw += bankTurnRate * dt
 
         // Wrap yaw to 0..2π

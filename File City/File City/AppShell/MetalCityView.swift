@@ -661,15 +661,15 @@ struct MetalCityView: NSViewRepresentable {
         private func updatePlaneControls(deltaTime: Float) {
             guard let renderer else { return }
 
-            // W = pitch down (nose down), S = pitch up (nose up)
+            // W = nose down, S = nose up
             var pitchInput: Float = 0
-            if pressedKeys.contains(13) { pitchInput -= 1 }  // W - pitch down
-            if pressedKeys.contains(1) { pitchInput += 1 }   // S - pitch up
+            if pressedKeys.contains(13) { pitchInput -= 1 }  // W - nose down
+            if pressedKeys.contains(1) { pitchInput += 1 }   // S - nose up
 
-            // A = roll right, D = roll left (reversed for intuitive control)
+            // A = bank left, D = bank right (standard flight sim)
             var rollInput: Float = 0
-            if pressedKeys.contains(0) { rollInput += 1 }    // A - roll right
-            if pressedKeys.contains(2) { rollInput -= 1 }    // D - roll left
+            if pressedKeys.contains(0) { rollInput -= 1 }    // A - roll left
+            if pressedKeys.contains(2) { rollInput += 1 }    // D - roll right
 
             // Space = boost
             let isBoosting = pressedKeys.contains(49)        // Space
