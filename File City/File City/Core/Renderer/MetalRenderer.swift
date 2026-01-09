@@ -1527,18 +1527,66 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             let rotationZ: Float  // roll
             let direction: SIMD3<Float>
             let right: SIMD3<Float>
+            let up: SIMD3<Float>  // Local up vector for part positioning
             let glow: Float
             let showFlames: Bool
 
             if let state = flightState {
                 // Use piloted flight state
                 position = state.position
-                // Compute direction/right from yaw, then derive rotationY to match rendering convention
-                direction = SIMD3<Float>(sin(state.yaw), 0, cos(state.yaw))
-                right = SIMD3<Float>(cos(state.yaw), 0, -sin(state.yaw))
-                rotationY = atan2(direction.z, direction.x)  // Must match normal plane convention
-                rotationX = state.roll    // Visual roll - bank left/right
-                rotationZ = state.pitch   // Visual pitch - nose up/down
+
+                // Compute full 3D orientation using rotation matrix approach
+                let yaw = state.yaw
+                let pitch = state.pitch
+                let roll = state.roll
+
+                // Start with identity basis vectors
+                // Forward = +Z, Right = +X, Up = +Y in local space
+
+                // Apply yaw (rotation around Y axis)
+                let cosY = cos(yaw)
+                let sinY = sin(yaw)
+
+                // Apply pitch (rotation around X axis, after yaw)
+                let cosP = cos(pitch)
+                let sinP = sin(pitch)
+
+                // Apply roll (rotation around Z axis, after yaw and pitch)
+                let cosR = cos(roll)
+                let sinR = sin(roll)
+
+                // Combined rotation: first yaw, then pitch, then roll
+                // Forward vector (local +Z transformed)
+                let forward = SIMD3<Float>(
+                    sinY * cosP,
+                    -sinP,
+                    cosY * cosP
+                )
+
+                // Right vector (local +X transformed)
+                let rightVec = SIMD3<Float>(
+                    cosY * cosR + sinY * sinP * sinR,
+                    cosP * sinR,
+                    -sinY * cosR + cosY * sinP * sinR
+                )
+
+                // Up vector (local +Y transformed)
+                let upVec = SIMD3<Float>(
+                    -cosY * sinR + sinY * sinP * cosR,
+                    cosP * cosR,
+                    sinY * sinR + cosY * sinP * cosR
+                )
+
+                // Use transformed vectors for part positioning
+                direction = forward
+                right = rightVec
+                up = upVec
+
+                // Derive rotationY to match rendering convention (use flat yaw direction)
+                let flatDir = SIMD3<Float>(sin(yaw), 0, cos(yaw))
+                rotationY = atan2(flatDir.z, flatDir.x)
+                rotationX = roll     // Visual roll - bank left/right
+                rotationZ = pitch    // Visual pitch - nose up/down
                 glow = state.isBoosting ? (0.8 + 0.2 * sin(Float(now) * 25.0)) : 0.0
                 showFlames = state.isBoosting
             } else {
@@ -1556,6 +1604,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 let nextPosition = positionAlongPath(path: path, distance: nextDistance)
                 direction = simd_normalize(nextPosition - position)
                 right = simd_normalize(SIMD3<Float>(-direction.z, 0, direction.x))
+                up = SIMD3<Float>(0, 1, 0)  // World up for non-piloted planes
                 rotationY = atan2(direction.z, direction.x)
                 rotationX = 0
                 rotationZ = 0
@@ -1579,7 +1628,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 shapeID: 6
             )
             pointer[baseIndex + 1] = VoxelInstance(
-                position: SIMD3<Float>(position.x, position.y + 0.1, position.z),
+                position: position + up * 0.1,
                 _pad0: 0,
                 scale: SIMD3<Float>(1.4, 0.08, 6.3),
                 _pad1: 0,
@@ -1596,7 +1645,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             let thrusterOffset = path.scale.z * 0.35
             let thrusterBack = path.scale.x * 0.05
             pointer[baseIndex + 2] = VoxelInstance(
-                position: position - direction * thrusterBack + right * thrusterOffset - SIMD3<Float>(0, 0.12, 0),
+                position: position - direction * thrusterBack + right * thrusterOffset - up * 0.12,
                 _pad0: 0,
                 scale: SIMD3<Float>(0.55, 0.25, 0.55),
                 _pad1: 0,
@@ -1611,7 +1660,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 shapeID: 0
             )
             pointer[baseIndex + 3] = VoxelInstance(
-                position: position - direction * thrusterBack - right * thrusterOffset - SIMD3<Float>(0, 0.12, 0),
+                position: position - direction * thrusterBack - right * thrusterOffset - up * 0.12,
                 _pad0: 0,
                 scale: SIMD3<Float>(0.55, 0.25, 0.55),
                 _pad1: 0,
@@ -1628,7 +1677,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             let flameScale = showFlames ? SIMD3<Float>(0.9, 0.25, 0.25) : SIMD3<Float>(0, 0, 0)
             let flameBack = thrusterBack + path.scale.x * 0.18
             pointer[baseIndex + 4] = VoxelInstance(
-                position: position - direction * flameBack + right * thrusterOffset - SIMD3<Float>(0, 0.1, 0),
+                position: position - direction * flameBack + right * thrusterOffset - up * 0.1,
                 _pad0: 0,
                 scale: flameScale,
                 _pad1: 0,
@@ -1643,7 +1692,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 shapeID: 7
             )
             pointer[baseIndex + 5] = VoxelInstance(
-                position: position - direction * flameBack - right * thrusterOffset - SIMD3<Float>(0, 0.1, 0),
+                position: position - direction * flameBack - right * thrusterOffset - up * 0.1,
                 _pad0: 0,
                 scale: flameScale,
                 _pad1: 0,
@@ -1660,7 +1709,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             // Horizontal stabilizer (small tail wing)
             let tailBack = path.scale.x * 0.42
             pointer[baseIndex + 6] = VoxelInstance(
-                position: position - bodyOffset - direction * tailBack + SIMD3<Float>(0, 0.15, 0),
+                position: position - bodyOffset - direction * tailBack + up * 0.15,
                 _pad0: 0,
                 scale: SIMD3<Float>(1.0, 0.06, 2.8),
                 _pad1: 0,
@@ -1676,7 +1725,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             )
             // Vertical fin (tail)
             pointer[baseIndex + 7] = VoxelInstance(
-                position: position - bodyOffset - direction * tailBack + SIMD3<Float>(0, 0.55, 0),
+                position: position - bodyOffset - direction * tailBack + up * 0.55,
                 _pad0: 0,
                 scale: SIMD3<Float>(1.2, 0.9, 0.08),
                 _pad1: 0,
