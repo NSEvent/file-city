@@ -410,9 +410,12 @@ struct MetalCityView: NSViewRepresentable {
 
         func handleMouseDelta(deltaX: CGFloat, deltaY: CGFloat) {
             guard let renderer, renderer.camera.isFirstPerson, isMouseCaptured else { return }
-            // Don't rotate camera when piloting plane - camera stays locked behind plane
-            guard !renderer.camera.isPilotingPlane else { return }
-            renderer.camera.rotate(deltaX: Float(deltaX), deltaY: Float(deltaY))
+            if renderer.camera.isPilotingPlane {
+                // Allow limited mouse look while piloting (flight sim style)
+                renderer.camera.adjustPlaneCameraLook(deltaX: Float(deltaX), deltaY: Float(deltaY))
+            } else {
+                renderer.camera.rotate(deltaX: Float(deltaX), deltaY: Float(deltaY))
+            }
         }
 
         func handleKeyDown(keyCode: UInt16) {
@@ -663,10 +666,10 @@ struct MetalCityView: NSViewRepresentable {
             if pressedKeys.contains(13) { pitchInput -= 1 }  // W - pitch down
             if pressedKeys.contains(1) { pitchInput += 1 }   // S - pitch up
 
-            // A = roll left, D = roll right
+            // A = roll right, D = roll left (reversed for intuitive control)
             var rollInput: Float = 0
-            if pressedKeys.contains(0) { rollInput -= 1 }    // A - roll left
-            if pressedKeys.contains(2) { rollInput += 1 }    // D - roll right
+            if pressedKeys.contains(0) { rollInput += 1 }    // A - roll right
+            if pressedKeys.contains(2) { rollInput -= 1 }    // D - roll left
 
             // Space = boost
             let isBoosting = pressedKeys.contains(49)        // Space

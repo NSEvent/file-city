@@ -87,8 +87,10 @@ final class Camera {
     var pilotingMode: PilotingMode = .none
     var planeFlightState: PlaneFlightState?
     var thirdPersonCameraPosition: SIMD3<Float> = .zero
+    var cameraLookOffset: SIMD2<Float> = .zero        // Mouse look offset (yaw, pitch)
     let thirdPersonDistance: Float = 25.0
-    let thirdPersonHeight: Float = 8.0
+    let thirdPersonHeight: Float = 10.0
+    let maxLookOffset: Float = 0.5                    // Max radians for mouse look freedom
 
     var moveSpeed: Float {
         isSprinting ? sprintSpeed : walkSpeed
@@ -438,6 +440,7 @@ final class Camera {
 
         pilotingMode = .flyingPlane(index: index)
         thirdPersonCameraPosition = planePosition - forwardDir * thirdPersonDistance + SIMD3<Float>(0, thirdPersonHeight, 0)
+        cameraLookOffset = .zero  // Reset mouse look
 
         // Clear grapple state
         isGrappling = false
@@ -551,6 +554,19 @@ final class Camera {
 
         state.isBoosting = isBoosting
         planeFlightState = state
+
+        // Gradually return look offset to center
+        cameraLookOffset *= 0.95
+    }
+
+    /// Adjust camera look offset while piloting (flight sim style mouse look)
+    func adjustPlaneCameraLook(deltaX: Float, deltaY: Float) {
+        cameraLookOffset.x -= deltaX * mouseSensitivity
+        cameraLookOffset.y -= deltaY * mouseSensitivity
+
+        // Clamp to max offset
+        cameraLookOffset.x = max(-maxLookOffset, min(maxLookOffset, cameraLookOffset.x))
+        cameraLookOffset.y = max(-maxLookOffset * 0.5, min(maxLookOffset, cameraLookOffset.y))
     }
 
     /// Set position to center of city at ground level
@@ -584,14 +600,20 @@ final class Camera {
     func viewMatrix() -> simd_float4x4 {
         // Third-person plane view
         if case .flyingPlane(_) = pilotingMode, let flightState = planeFlightState {
-            // Calculate camera position behind and above plane - fixed offset, no smoothing
+            // Camera always stays directly behind and above the plane (based on yaw only)
             let planeForward = SIMD3<Float>(sin(flightState.yaw), 0, cos(flightState.yaw))
-
-            // Camera offset: fixed distance behind and above (no pitch adjustment for stability)
             let cameraPos = flightState.position - planeForward * thirdPersonDistance + SIMD3<Float>(0, thirdPersonHeight, 0)
 
-            // Look at the plane position
-            let lookTarget = flightState.position
+            // Look at the plane, with optional mouse look offset
+            var lookTarget = flightState.position
+
+            // Apply mouse look offset to look direction
+            if cameraLookOffset != .zero {
+                let lookDir = simd_normalize(lookTarget - cameraPos)
+                let right = simd_normalize(simd_cross(SIMD3<Float>(0, 1, 0), lookDir))
+                let up = simd_cross(lookDir, right)
+                lookTarget = lookTarget + right * cameraLookOffset.x * 20.0 + up * cameraLookOffset.y * 20.0
+            }
 
             return lookAt(eye: cameraPos, target: lookTarget, up: SIMD3<Float>(0, 1, 0))
         } else if isFirstPerson {
