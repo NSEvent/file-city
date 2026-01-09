@@ -10,7 +10,7 @@ WRAPPER_NAME := $(shell $(BUILD_SETTINGS) 2>/dev/null | awk -F ' = ' '/WRAPPER_N
 APP_PATH := $(TARGET_BUILD_DIR)/$(WRAPPER_NAME)
 PROCESS_NAME := $(basename $(WRAPPER_NAME))
 
-.PHONY: build install app-path clean
+.PHONY: build install app-path clean test
 
 build:
 	xcodebuild -scheme "$(SCHEME)" -configuration $(CONFIG) \
@@ -25,3 +25,6 @@ app-path:
 
 clean:
 	xcodebuild -scheme "$(SCHEME)" clean
+
+test:
+	xcodebuild test -scheme "$(SCHEME)" -destination "platform=macOS"
