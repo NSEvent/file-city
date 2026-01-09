@@ -24,6 +24,8 @@ final class AppState: ObservableObject {
     @Published var activityInfoLines: [String]?
     @Published private(set) var activityVersion: UInt = 0
     @Published var isFirstPerson: Bool = false
+    @Published var canBoardPlane: Bool = false
+    @Published var isPilotingPlane: Bool = false
 
     // MARK: - Time Machine State
     @Published var timeTravelMode: TimeTravelMode = .live

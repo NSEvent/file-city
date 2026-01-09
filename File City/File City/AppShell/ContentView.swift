@@ -47,8 +47,12 @@ struct ContentView: View {
                     }
                 }
                 // Minecraft-style crosshair in first-person mode
-                if appState.isFirstPerson {
+                if appState.isFirstPerson && !appState.isPilotingPlane {
                     CrosshairView()
+                }
+                // "Press E to board" prompt when attached to plane
+                if appState.isFirstPerson && appState.canBoardPlane && !appState.isPilotingPlane {
+                    BoardPlanePromptView()
                 }
             }
         }
@@ -350,5 +354,23 @@ private struct CrosshairView: View {
                 .frame(width: thickness, height: size)
         }
         .shadow(color: .black.opacity(0.5), radius: 1, x: 1, y: 1)
+    }
+}
+
+/// Prompt shown when player can board a plane
+private struct BoardPlanePromptView: View {
+    var body: some View {
+        VStack {
+            Spacer()
+            Text("Press E to board")
+                .font(.title2)
+                .fontWeight(.semibold)
+                .foregroundColor(.white)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(.black.opacity(0.6))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .padding(.bottom, 100)
+        }
     }
 }

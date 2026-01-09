@@ -34,6 +34,10 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private var planeOffsets: [Float] = []
     private var lastPlaneUpdateTime: CFTimeInterval = CACurrentMediaTime()
     private var hoveredPlaneIndex: Int?
+
+    // Plane piloting
+    private(set) var pilotedPlaneIndex: Int?
+    var pilotedPlaneFlightState: Camera.PlaneFlightState?
     private let helicopterManager = HelicopterManager()
     private let beamManager = BeamManager()
     private var helicopterInstanceBuffer: MTLBuffer?
@@ -1513,21 +1517,51 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 continue
             }
 
-            let isHovered = hoveredPlaneIndex == index
-            let speedBoost: Float = isHovered ? 1.6 : 1.0
-            if index < planeOffsets.count, speedBoost > 1.0 {
-                planeOffsets[index] = fmod(planeOffsets[index] + Float(deltaTime) * path.speed * (speedBoost - 1.0), path.totalLength)
+            // Check if this plane is being piloted
+            let isPiloted = index == pilotedPlaneIndex
+            let flightState = isPiloted ? pilotedPlaneFlightState : nil
+
+            let position: SIMD3<Float>
+            let rotationY: Float
+            let rotationX: Float  // pitch
+            let rotationZ: Float  // roll
+            let direction: SIMD3<Float>
+            let right: SIMD3<Float>
+            let glow: Float
+            let showFlames: Bool
+
+            if let state = flightState {
+                // Use piloted flight state
+                position = state.position
+                // Compute direction/right from yaw, then derive rotationY to match rendering convention
+                direction = SIMD3<Float>(sin(state.yaw), 0, cos(state.yaw))
+                right = SIMD3<Float>(cos(state.yaw), 0, -sin(state.yaw))
+                rotationY = atan2(direction.z, direction.x)  // Must match normal plane convention
+                rotationX = 0  // Keep plane model level - pitch/roll affect flight physics only
+                rotationZ = 0
+                glow = state.isBoosting ? (0.8 + 0.2 * sin(Float(now) * 25.0)) : 0.0
+                showFlames = state.isBoosting
+            } else {
+                // Normal path-following plane
+                let isHovered = hoveredPlaneIndex == index
+                let speedBoost: Float = isHovered ? 1.6 : 1.0
+                if index < planeOffsets.count, speedBoost > 1.0 {
+                    planeOffsets[index] = fmod(planeOffsets[index] + Float(deltaTime) * path.speed * (speedBoost - 1.0), path.totalLength)
+                }
+                let baseDistance = fmod(Float(now) * path.speed + path.phase, path.totalLength)
+                let offset = index < planeOffsets.count ? planeOffsets[index] : 0
+                let distance = fmod(baseDistance + offset, path.totalLength)
+                position = positionAlongPath(path: path, distance: distance)
+                let nextDistance = fmod(distance + 1.0, path.totalLength)
+                let nextPosition = positionAlongPath(path: path, distance: nextDistance)
+                direction = simd_normalize(nextPosition - position)
+                right = simd_normalize(SIMD3<Float>(-direction.z, 0, direction.x))
+                rotationY = atan2(direction.z, direction.x)
+                rotationX = 0
+                rotationZ = 0
+                glow = isHovered ? (0.6 + 0.4 * sin(Float(now) * 18.0)) : 0.0
+                showFlames = isHovered
             }
-            let baseDistance = fmod(Float(now) * path.speed + path.phase, path.totalLength)
-            let offset = index < planeOffsets.count ? planeOffsets[index] : 0
-            let distance = fmod(baseDistance + offset, path.totalLength)
-            let position = positionAlongPath(path: path, distance: distance)
-            let nextDistance = fmod(distance + 1.0, path.totalLength)
-            let nextPosition = positionAlongPath(path: path, distance: nextDistance)
-            let direction = simd_normalize(nextPosition - position)
-            let right = simd_normalize(SIMD3<Float>(-direction.z, 0, direction.x))
-            let rotationY = atan2(direction.z, direction.x)
-            let glow = isHovered ? (0.6 + 0.4 * sin(Float(now) * 18.0)) : 0.0
             let bodyOffset = direction * (path.scale.x * 0.1)  // Shift body back so longer tail extends rearward
             pointer[baseIndex] = VoxelInstance(
                 position: position - bodyOffset,
@@ -1535,8 +1569,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 scale: path.scale,
                 _pad1: 0,
                 rotationY: rotationY,
-                rotationX: 0,
-                rotationZ: 0,
+                rotationX: rotationX,
+                rotationZ: rotationZ,
                 _pad2: 0,
                 materialID: 0,
                 highlight: 0,
@@ -1550,8 +1584,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 scale: SIMD3<Float>(1.4, 0.08, 6.3),
                 _pad1: 0,
                 rotationY: rotationY,
-                rotationX: 0,
-                rotationZ: 0,
+                rotationX: rotationX,
+                rotationZ: rotationZ,
                 _pad2: 0,
                 materialID: 0,
                 highlight: 0,
@@ -1567,8 +1601,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 scale: SIMD3<Float>(0.55, 0.25, 0.55),
                 _pad1: 0,
                 rotationY: rotationY,
-                rotationX: 0,
-                rotationZ: 0,
+                rotationX: rotationX,
+                rotationZ: rotationZ,
                 _pad2: 0,
                 materialID: 0,
                 highlight: 0,
@@ -1582,8 +1616,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 scale: SIMD3<Float>(0.55, 0.25, 0.55),
                 _pad1: 0,
                 rotationY: rotationY,
-                rotationX: 0,
-                rotationZ: 0,
+                rotationX: rotationX,
+                rotationZ: rotationZ,
                 _pad2: 0,
                 materialID: 0,
                 highlight: 0,
@@ -1591,7 +1625,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 textureIndex: planeTextureIndex,
                 shapeID: 0
             )
-            let flameScale = isHovered ? SIMD3<Float>(0.9, 0.25, 0.25) : SIMD3<Float>(0, 0, 0)
+            let flameScale = showFlames ? SIMD3<Float>(0.9, 0.25, 0.25) : SIMD3<Float>(0, 0, 0)
             let flameBack = thrusterBack + path.scale.x * 0.18
             pointer[baseIndex + 4] = VoxelInstance(
                 position: position - direction * flameBack + right * thrusterOffset - SIMD3<Float>(0, 0.1, 0),
@@ -1599,8 +1633,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 scale: flameScale,
                 _pad1: 0,
                 rotationY: rotationY,
-                rotationX: 0,
-                rotationZ: 0,
+                rotationX: rotationX,
+                rotationZ: rotationZ,
                 _pad2: 0,
                 materialID: 0,
                 highlight: 0,
@@ -1614,8 +1648,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 scale: flameScale,
                 _pad1: 0,
                 rotationY: rotationY,
-                rotationX: 0,
-                rotationZ: 0,
+                rotationX: rotationX,
+                rotationZ: rotationZ,
                 _pad2: 0,
                 materialID: 0,
                 highlight: 0,
@@ -1631,8 +1665,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 scale: SIMD3<Float>(1.0, 0.06, 2.8),
                 _pad1: 0,
                 rotationY: rotationY,
-                rotationX: 0,
-                rotationZ: 0,
+                rotationX: rotationX,
+                rotationZ: rotationZ,
                 _pad2: 0,
                 materialID: 0,
                 highlight: 0,
@@ -1647,8 +1681,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 scale: SIMD3<Float>(1.2, 0.9, 0.08),
                 _pad1: 0,
                 rotationY: rotationY,
-                rotationX: 0,
-                rotationZ: 0,
+                rotationX: rotationX,
+                rotationZ: rotationZ,
                 _pad2: 0,
                 materialID: 0,
                 highlight: 0,
@@ -1657,30 +1691,34 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 shapeID: 0
             )
             
-            // Banner (Attach to all planes if texture exists)
-            if bannerTextureIndex >= 0 {
+            // Banner (Attach to all path-following planes if texture exists, skip for piloted plane)
+            if bannerTextureIndex >= 0 && !isPiloted {
+                // Get path distance for banner calculation (only for path-following planes)
+                let baseDistance = fmod(Float(now) * path.speed + path.phase, path.totalLength)
+                let offset = index < planeOffsets.count ? planeOffsets[index] : 0
+                let pathDistance = fmod(baseDistance + offset, path.totalLength)
+
                 let ropeLen: Float = 2.5
                 let segmentCount = 8
                 let segmentLen: Float = 1.5
-                let totalLen = Float(segmentCount) * segmentLen
                 let uWidth = 1.0 / Float(segmentCount)
-                
+
                 // Trail start position (behind tail)
-                let tailDist = distance - tailBack - ropeLen
-                
+                let tailDist = pathDistance - tailBack - ropeLen
+
                 for i in 0..<segmentCount {
                     let segDist = tailDist - Float(i) * segmentLen - segmentLen * 0.5
-                    
+
                     // Wrap distance for closed loop path
                     var d = segDist
                     if d < 0 { d += path.totalLength }
-                    
+
                     let pos = positionAlongPath(path: path, distance: d)
                     let nextPos = positionAlongPath(path: path, distance: d + 0.1) // Look ahead slightly
-                    
+
                     let dir = simd_normalize(nextPos - pos)
                     let rotY = atan2(dir.z, dir.x)
-                    
+
                     // uOffset calculation:
                     // Segments are 0..7. 0 is trailing the plane (Right side in World Space for L->R flight).
                     // 7 is the tail end (Left side).
@@ -1690,7 +1728,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                     // i=0 -> 7 * 0.125 = 0.875.
                     // i=7 -> 0 * 0.125 = 0.0.
                     let uOffset = Float(segmentCount - 1 - i) * uWidth
-                    
+
                     pointer[baseIndex + 8 + i] = VoxelInstance(
                         position: pos,
                         _pad0: 0,
@@ -1710,8 +1748,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                     )
                 }
             } else {
-                // Zero out unused slots (8..16)
-                // Actually 8..(8+segmentCount). Max 16 allocated.
+                // Zero out unused slots (8..16) - piloted planes or no banner texture
                 for i in 0..<8 {
                      pointer[baseIndex + 8 + i] = VoxelInstance(position: .zero, scale: .zero, rotationY: 0, rotationX: 0, rotationZ: 0, materialID: 0, textureIndex: -1, shapeID: 0)
                 }
@@ -2050,6 +2087,11 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
     /// Get current position of a plane by index (for grapple attachment following)
     func planePosition(index: Int) -> SIMD3<Float>? {
+        // If this plane is being piloted, return the piloted position
+        if index == pilotedPlaneIndex, let state = pilotedPlaneFlightState {
+            return state.position
+        }
+
         guard index >= 0, index < planePaths.count, !explodedPlaneIndices.contains(index) else { return nil }
         let path = planePaths[index]
         let now = CACurrentMediaTime()
@@ -2057,6 +2099,37 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         let offset = index < planeOffsets.count ? planeOffsets[index] : 0
         let distance = fmod(baseDistance + offset, path.totalLength)
         return positionAlongPath(path: path, distance: distance)
+    }
+
+    /// Get current yaw (heading) of a plane by index
+    func planeYaw(index: Int) -> Float? {
+        // If this plane is being piloted, return the piloted yaw
+        if index == pilotedPlaneIndex, let state = pilotedPlaneFlightState {
+            return state.yaw
+        }
+
+        guard index >= 0, index < planePaths.count, !explodedPlaneIndices.contains(index) else { return nil }
+        let path = planePaths[index]
+        let now = CACurrentMediaTime()
+        let baseDistance = fmod(Float(now) * path.speed + path.phase, path.totalLength)
+        let offset = index < planeOffsets.count ? planeOffsets[index] : 0
+        let distance = fmod(baseDistance + offset, path.totalLength)
+        let position = positionAlongPath(path: path, distance: distance)
+        let nextPosition = positionAlongPath(path: path, distance: fmod(distance + 1.0, path.totalLength))
+        let direction = simd_normalize(nextPosition - position)
+        return atan2(direction.z, direction.x)
+    }
+
+    /// Start piloting a plane
+    func startPilotingPlane(index: Int) {
+        guard index >= 0, index < planePaths.count, !explodedPlaneIndices.contains(index) else { return }
+        pilotedPlaneIndex = index
+    }
+
+    /// Stop piloting and optionally respawn the plane on its path
+    func stopPilotingPlane() {
+        pilotedPlaneIndex = nil
+        pilotedPlaneFlightState = nil
     }
 
     /// Get current position of a helicopter by index (for grapple attachment following)

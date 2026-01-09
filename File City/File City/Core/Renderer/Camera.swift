@@ -43,6 +43,53 @@ final class Camera {
     var grappleAttachment: GrappleAttachment = .none
     var isShiftHeld: Bool = false
 
+    // MARK: - Plane Piloting
+    enum PilotingMode {
+        case none
+        case flyingPlane(index: Int)
+    }
+
+    struct PlaneFlightState {
+        var position: SIMD3<Float>
+        var velocity: SIMD3<Float>
+        var pitch: Float = 0          // Nose up/down (radians)
+        var roll: Float = 0           // Bank left/right (radians)
+        var yaw: Float = 0            // Heading (radians)
+        var isBoosting: Bool = false
+
+        // Physics constants
+        static let baseThrust: Float = 45.0
+        static let boostThrust: Float = 85.0
+        static let gravity: Float = 9.8
+        static let pitchRate: Float = 1.2      // Radians per second
+        static let rollRate: Float = 2.0       // Radians per second
+        static let maxPitch: Float = .pi / 3   // 60 degrees
+        static let maxRoll: Float = .pi / 2.5  // 72 degrees
+        static let liftCoefficient: Float = 0.8
+        static let dragCoefficient: Float = 0.02
+        static let minSpeed: Float = 25.0      // Stall speed
+        static let maxSpeed: Float = 80.0
+        static let boostMaxSpeed: Float = 120.0
+
+        var forwardVector: SIMD3<Float> {
+            SIMD3<Float>(
+                cos(pitch) * sin(yaw),
+                sin(pitch),
+                cos(pitch) * cos(yaw)
+            )
+        }
+
+        var speed: Float {
+            simd_length(velocity)
+        }
+    }
+
+    var pilotingMode: PilotingMode = .none
+    var planeFlightState: PlaneFlightState?
+    var thirdPersonCameraPosition: SIMD3<Float> = .zero
+    let thirdPersonDistance: Float = 25.0
+    let thirdPersonHeight: Float = 8.0
+
     var moveSpeed: Float {
         isSprinting ? sprintSpeed : walkSpeed
     }
@@ -371,6 +418,141 @@ final class Camera {
         }
     }
 
+    // MARK: - Plane Piloting Methods
+
+    /// Board a plane and enter piloting mode
+    func boardPlane(index: Int, planePosition: SIMD3<Float>, planeYaw: Float) {
+        guard isFirstPerson else { return }
+
+        // Initialize flight state
+        let initialSpeed: Float = 50.0
+        let forwardDir = SIMD3<Float>(sin(planeYaw), 0, cos(planeYaw))
+        planeFlightState = PlaneFlightState(
+            position: planePosition,
+            velocity: forwardDir * initialSpeed,
+            pitch: 0,
+            roll: 0,
+            yaw: planeYaw,
+            isBoosting: false
+        )
+
+        pilotingMode = .flyingPlane(index: index)
+        thirdPersonCameraPosition = planePosition - forwardDir * thirdPersonDistance + SIMD3<Float>(0, thirdPersonHeight, 0)
+
+        // Clear grapple state
+        isGrappling = false
+        grappleAttachment = .none
+    }
+
+    /// Exit the plane and return to first-person falling mode
+    func exitPlane() -> SIMD3<Float> {
+        guard case .flyingPlane(_) = pilotingMode,
+              let flightState = planeFlightState else {
+            return position
+        }
+
+        let exitPosition = flightState.position
+        pilotingMode = .none
+        planeFlightState = nil
+
+        // Set player position to plane position
+        position = exitPosition
+        verticalVelocity = 0
+        isFlying = false  // Start falling
+
+        return exitPosition
+    }
+
+    /// Check if currently piloting a plane
+    var isPilotingPlane: Bool {
+        if case .flyingPlane(_) = pilotingMode { return true }
+        return false
+    }
+
+    /// Update plane physics based on control inputs
+    func updatePlanePhysics(deltaTime: Float, pitchInput: Float, rollInput: Float, isBoosting: Bool) {
+        guard case .flyingPlane(_) = pilotingMode,
+              var state = planeFlightState else { return }
+
+        let dt = deltaTime
+
+        // 1. Apply control inputs to orientation
+        let pitchDelta = pitchInput * PlaneFlightState.pitchRate * dt
+        let rollDelta = rollInput * PlaneFlightState.rollRate * dt
+
+        state.pitch = max(-PlaneFlightState.maxPitch, min(PlaneFlightState.maxPitch, state.pitch + pitchDelta))
+        state.roll = max(-PlaneFlightState.maxRoll, min(PlaneFlightState.maxRoll, state.roll + rollDelta))
+
+        // 2. Banking turns: roll affects yaw rate
+        let bankTurnRate = sin(state.roll) * 0.8
+        state.yaw += bankTurnRate * dt
+
+        // Wrap yaw to 0..2π
+        while state.yaw < 0 { state.yaw += 2 * .pi }
+        while state.yaw >= 2 * .pi { state.yaw -= 2 * .pi }
+
+        // 3. Calculate forward direction from orientation
+        let forward = state.forwardVector
+
+        // 4. Calculate forces
+        let speed = state.speed
+
+        // Thrust
+        let thrustMagnitude = isBoosting ? PlaneFlightState.boostThrust : PlaneFlightState.baseThrust
+        let thrust = forward * thrustMagnitude
+
+        // Lift (depends on speed and roll - banking reduces effective lift)
+        let liftMagnitude = speed * PlaneFlightState.liftCoefficient * cos(state.roll)
+        let lift = SIMD3<Float>(0, liftMagnitude, 0)
+
+        // Drag (opposes velocity, proportional to speed squared)
+        var drag = SIMD3<Float>.zero
+        if speed > 0.1 {
+            drag = -simd_normalize(state.velocity) * speed * speed * PlaneFlightState.dragCoefficient
+        }
+
+        // Gravity
+        let gravity = SIMD3<Float>(0, -PlaneFlightState.gravity, 0)
+
+        // 5. Sum forces and update velocity
+        let totalForce = thrust + lift + drag + gravity
+        state.velocity += totalForce * dt
+
+        // 6. Speed limits
+        let maxSpeed = isBoosting ? PlaneFlightState.boostMaxSpeed : PlaneFlightState.maxSpeed
+        let currentSpeed = simd_length(state.velocity)
+        if currentSpeed > maxSpeed {
+            state.velocity = simd_normalize(state.velocity) * maxSpeed
+        }
+        // Minimum speed (stall prevention while airborne)
+        if currentSpeed < PlaneFlightState.minSpeed && state.position.y > 10 {
+            state.velocity = simd_normalize(state.velocity) * PlaneFlightState.minSpeed
+        }
+
+        // 7. Update position
+        state.position += state.velocity * dt
+
+        // 8. Minimum altitude (don't crash into ground)
+        if state.position.y < 5.0 {
+            state.position.y = 5.0
+            state.velocity.y = max(0, state.velocity.y)
+            state.pitch = max(0, state.pitch)  // Force nose up when low
+        }
+
+        // 9. Roll auto-leveling when no input
+        if rollInput == 0 {
+            state.roll *= 0.98
+        }
+
+        // 10. Pitch tends toward level flight when no input
+        if pitchInput == 0 {
+            state.pitch *= 0.99
+        }
+
+        state.isBoosting = isBoosting
+        planeFlightState = state
+    }
+
     /// Set position to center of city at ground level
     func enterCityCenter(blocks: [CityBlock]) {
         guard isFirstPerson, !blocks.isEmpty else { return }
@@ -400,7 +582,19 @@ final class Camera {
     // MARK: - View Matrix
 
     func viewMatrix() -> simd_float4x4 {
-        if isFirstPerson {
+        // Third-person plane view
+        if case .flyingPlane(_) = pilotingMode, let flightState = planeFlightState {
+            // Calculate camera position behind and above plane - fixed offset, no smoothing
+            let planeForward = SIMD3<Float>(sin(flightState.yaw), 0, cos(flightState.yaw))
+
+            // Camera offset: fixed distance behind and above (no pitch adjustment for stability)
+            let cameraPos = flightState.position - planeForward * thirdPersonDistance + SIMD3<Float>(0, thirdPersonHeight, 0)
+
+            // Look at the plane position
+            let lookTarget = flightState.position
+
+            return lookAt(eye: cameraPos, target: lookTarget, up: SIMD3<Float>(0, 1, 0))
+        } else if isFirstPerson {
             let lookTarget = position + lookDirection
             return lookAt(eye: position, target: lookTarget, up: SIMD3<Float>(0, 1, 0))
         } else {

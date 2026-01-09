@@ -410,6 +410,8 @@ struct MetalCityView: NSViewRepresentable {
 
         func handleMouseDelta(deltaX: CGFloat, deltaY: CGFloat) {
             guard let renderer, renderer.camera.isFirstPerson, isMouseCaptured else { return }
+            // Don't rotate camera when piloting plane - camera stays locked behind plane
+            guard !renderer.camera.isPilotingPlane else { return }
             renderer.camera.rotate(deltaX: Float(deltaX), deltaY: Float(deltaY))
         }
 
@@ -464,6 +466,22 @@ struct MetalCityView: NSViewRepresentable {
                 }
             }
 
+            // E: board/exit plane
+            if keyCode == 14 { // E
+                guard let renderer else { return }
+
+                // If already flying a plane, exit
+                if renderer.camera.isPilotingPlane {
+                    exitPlane()
+                    return
+                }
+
+                // If attached to a plane, board it
+                if case .plane(let index) = renderer.camera.grappleAttachment {
+                    boardPlane(index: index)
+                }
+            }
+
         }
 
         func handleShiftPressed() {
@@ -495,6 +513,31 @@ struct MetalCityView: NSViewRepresentable {
             }
         }
 
+        private func boardPlane(index: Int) {
+            guard let renderer else { return }
+            guard let planePos = renderer.planePosition(index: index),
+                  let planeYaw = renderer.planeYaw(index: index) else { return }
+
+            // Board the plane - transition camera to piloting mode
+            renderer.camera.boardPlane(index: index, planePosition: planePos, planeYaw: planeYaw)
+            renderer.startPilotingPlane(index: index)
+
+            // Update AppState
+            appState?.isPilotingPlane = true
+            appState?.canBoardPlane = false
+        }
+
+        private func exitPlane() {
+            guard let renderer else { return }
+
+            // Exit the plane - returns to first-person at plane position
+            _ = renderer.camera.exitPlane()
+            renderer.stopPilotingPlane()
+
+            // Update AppState
+            appState?.isPilotingPlane = false
+        }
+
         func handleKeyUp(keyCode: UInt16) {
             pressedKeys.remove(keyCode)
 
@@ -524,6 +567,12 @@ struct MetalCityView: NSViewRepresentable {
             let deltaTime = Float(now - lastMovementTime)
             lastMovementTime = now
 
+            // Handle plane piloting (takes highest priority)
+            if renderer.camera.isPilotingPlane {
+                updatePlaneControls(deltaTime: deltaTime)
+                return
+            }
+
             // Handle grapple movement (takes priority over normal movement)
             if renderer.camera.isGrappling {
                 _ = renderer.camera.updateGrapple(deltaTime: deltaTime)
@@ -537,9 +586,14 @@ struct MetalCityView: NSViewRepresentable {
                 case .plane(let index):
                     if let pos = renderer.planePosition(index: index) {
                         renderer.camera.updateAttachment(targetPosition: pos)
+                        // Can board this plane
+                        if appState?.canBoardPlane != true {
+                            appState?.canBoardPlane = true
+                        }
                     } else {
                         // Plane gone (exploded?), detach
                         renderer.camera.stopGrapple()
+                        appState?.canBoardPlane = false
                     }
                 case .helicopter(let index):
                     if let pos = renderer.helicopterPosition(index: index) {
@@ -563,6 +617,11 @@ struct MetalCityView: NSViewRepresentable {
                 }
                 // Skip normal movement while attached
                 return
+            } else {
+                // Not attached, clear boarding prompt if showing
+                if appState?.canBoardPlane == true {
+                    appState?.canBoardPlane = false
+                }
             }
 
             // Calculate movement direction from pressed keys
@@ -594,6 +653,34 @@ struct MetalCityView: NSViewRepresentable {
                 hitTestFrameCounter = 0
                 updateCrosshairTarget()
             }
+        }
+
+        private func updatePlaneControls(deltaTime: Float) {
+            guard let renderer else { return }
+
+            // W = pitch down (nose down), S = pitch up (nose up)
+            var pitchInput: Float = 0
+            if pressedKeys.contains(13) { pitchInput -= 1 }  // W - pitch down
+            if pressedKeys.contains(1) { pitchInput += 1 }   // S - pitch up
+
+            // A = roll left, D = roll right
+            var rollInput: Float = 0
+            if pressedKeys.contains(0) { rollInput -= 1 }    // A - roll left
+            if pressedKeys.contains(2) { rollInput += 1 }    // D - roll right
+
+            // Space = boost
+            let isBoosting = pressedKeys.contains(49)        // Space
+
+            // Update plane physics
+            renderer.camera.updatePlanePhysics(
+                deltaTime: deltaTime,
+                pitchInput: pitchInput,
+                rollInput: rollInput,
+                isBoosting: isBoosting
+            )
+
+            // Sync flight state to renderer for rendering
+            renderer.pilotedPlaneFlightState = renderer.camera.planeFlightState
         }
 
         private func updateCrosshairTarget() {
