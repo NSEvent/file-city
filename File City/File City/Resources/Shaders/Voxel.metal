@@ -805,3 +805,92 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
     }
     return float4(finalColor, 1.0);
 }
+
+// MARK: - Procedural Sky Shader
+
+struct SkyVertexIn {
+    float2 position [[attribute(0)]];
+};
+
+struct SkyVertexOut {
+    float4 position [[position]];
+    float3 viewDir;
+};
+
+struct SkyUniforms {
+    float4x4 inverseViewProjection;
+    float time;
+    float3 sunDirection;
+};
+
+vertex SkyVertexOut sky_vertex(SkyVertexIn in [[stage_in]],
+                               constant SkyUniforms &uniforms [[buffer(1)]]) {
+    SkyVertexOut out;
+
+    // Fullscreen quad in clip space
+    out.position = float4(in.position, 0.9999, 1.0);  // z near 1.0 to be behind everything
+
+    // Compute view direction by transforming clip coordinates through inverse VP
+    float4 farPoint = uniforms.inverseViewProjection * float4(in.position, 1.0, 1.0);
+    float4 nearPoint = uniforms.inverseViewProjection * float4(in.position, -1.0, 1.0);
+
+    float3 farWorld = farPoint.xyz / farPoint.w;
+    float3 nearWorld = nearPoint.xyz / nearPoint.w;
+
+    out.viewDir = normalize(farWorld - nearWorld);
+
+    return out;
+}
+
+fragment float4 sky_fragment(SkyVertexOut in [[stage_in]],
+                             constant SkyUniforms &uniforms [[buffer(0)]]) {
+    float3 dir = normalize(in.viewDir);
+
+    // Horizon factor: 0 at horizon, 1 at zenith, negative below horizon
+    float horizon = dir.y;
+
+    // Sky gradient colors
+    float3 zenithColor = float3(0.25, 0.45, 0.85);      // Deep blue at top
+    float3 horizonColor = float3(0.7, 0.8, 0.95);       // Light blue-white at horizon
+    float3 groundColor = float3(0.35, 0.35, 0.38);      // Muted gray below horizon
+
+    // Blend sky gradient
+    float3 skyColor;
+    if (horizon > 0) {
+        // Above horizon: blend from horizon to zenith
+        float t = pow(horizon, 0.5);  // Bias toward horizon color
+        skyColor = mix(horizonColor, zenithColor, t);
+    } else {
+        // Below horizon: blend to ground
+        float t = saturate(-horizon * 2.0);
+        skyColor = mix(horizonColor, groundColor, t);
+    }
+
+    // Sun
+    float3 sunDir = normalize(uniforms.sunDirection);
+    float sunDot = dot(dir, sunDir);
+
+    // Sun disk (sharp bright center)
+    float sunDisk = smoothstep(0.9995, 0.9999, sunDot);
+    float3 sunColor = float3(1.0, 0.98, 0.9);
+
+    // Sun glow (soft halo around sun)
+    float sunGlow = pow(saturate(sunDot), 8.0) * 0.5;
+    float3 glowColor = float3(1.0, 0.9, 0.7);
+
+    // Sun haze near horizon
+    float hazeStrength = exp(-abs(horizon) * 3.0) * pow(saturate(sunDot), 2.0) * 0.4;
+    float3 hazeColor = float3(1.0, 0.85, 0.6);
+
+    // Combine
+    float3 finalColor = skyColor;
+    finalColor += glowColor * sunGlow;
+    finalColor += hazeColor * hazeStrength;
+    finalColor = mix(finalColor, sunColor, sunDisk);
+
+    // Subtle atmospheric haze at horizon
+    float horizonHaze = exp(-abs(horizon) * 5.0) * 0.15;
+    finalColor = mix(finalColor, float3(0.85, 0.88, 0.95), horizonHaze);
+
+    return float4(finalColor, 1.0);
+}

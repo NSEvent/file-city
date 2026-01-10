@@ -10,6 +10,17 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private let depthState: MTLDepthStencilState
     private let samplerState: MTLSamplerState
     private let cubeVertexBuffer: MTLBuffer
+
+    // Sky rendering
+    private let skyPipelineState: MTLRenderPipelineState
+    private let skyDepthState: MTLDepthStencilState
+    private let skyVertexBuffer: MTLBuffer
+
+    struct SkyUniforms {
+        var inverseViewProjection: simd_float4x4
+        var time: Float
+        var sunDirection: SIMD3<Float>
+    }
     private var textureArray: MTLTexture?
     private var instanceBuffer: MTLBuffer?
     private var instanceCount: Int = 0
@@ -176,6 +187,45 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             return nil
         }
         self.cubeVertexBuffer = cubeVertexBuffer
+
+        // Sky pipeline setup
+        let skyDescriptor = MTLRenderPipelineDescriptor()
+        skyDescriptor.vertexFunction = library.makeFunction(name: "sky_vertex")
+        skyDescriptor.fragmentFunction = library.makeFunction(name: "sky_fragment")
+        skyDescriptor.colorAttachments[0].pixelFormat = view.colorPixelFormat
+        skyDescriptor.depthAttachmentPixelFormat = view.depthStencilPixelFormat
+
+        let skyVertexDescriptor = MTLVertexDescriptor()
+        skyVertexDescriptor.attributes[0].format = .float2
+        skyVertexDescriptor.attributes[0].offset = 0
+        skyVertexDescriptor.attributes[0].bufferIndex = 0
+        skyVertexDescriptor.layouts[0].stride = MemoryLayout<SIMD2<Float>>.stride
+        skyDescriptor.vertexDescriptor = skyVertexDescriptor
+
+        do {
+            skyPipelineState = try device.makeRenderPipelineState(descriptor: skyDescriptor)
+        } catch {
+            return nil
+        }
+
+        // Sky depth state: always pass, no write (sky is always behind everything)
+        let skyDepthDescriptor = MTLDepthStencilDescriptor()
+        skyDepthDescriptor.depthCompareFunction = .always
+        skyDepthDescriptor.isDepthWriteEnabled = false
+        guard let skyDepthState = device.makeDepthStencilState(descriptor: skyDepthDescriptor) else {
+            return nil
+        }
+        self.skyDepthState = skyDepthState
+
+        // Fullscreen quad for sky (clip space coordinates)
+        let skyQuadVertices: [SIMD2<Float>] = [
+            SIMD2<Float>(-1, -1), SIMD2<Float>(1, -1), SIMD2<Float>(-1, 1),
+            SIMD2<Float>(-1, 1), SIMD2<Float>(1, -1), SIMD2<Float>(1, 1)
+        ]
+        guard let skyVertexBuffer = device.makeBuffer(bytes: skyQuadVertices, length: MemoryLayout<SIMD2<Float>>.stride * skyQuadVertices.count, options: []) else {
+            return nil
+        }
+        self.skyVertexBuffer = skyVertexBuffer
 
         super.init()
         loadTextures()
@@ -900,11 +950,34 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             return
         }
         let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor)
+
+        // Render sky first
+        let viewMatrix = camera.viewMatrix()
+        let projectionMatrix = camera.projectionMatrix()
+        let viewProjection = projectionMatrix * viewMatrix
+        let inverseViewProjection = viewProjection.inverse
+
+        encoder?.setRenderPipelineState(skyPipelineState)
+        encoder?.setDepthStencilState(skyDepthState)
+        encoder?.setVertexBuffer(skyVertexBuffer, offset: 0, index: 0)
+
+        // Sun direction: slightly to the right and high in the sky
+        let sunAngle = Float(CACurrentMediaTime()) * 0.02  // Very slow rotation
+        var skyUniforms = SkyUniforms(
+            inverseViewProjection: inverseViewProjection,
+            time: Float(CACurrentMediaTime()),
+            sunDirection: normalize(SIMD3<Float>(sin(sunAngle) * 0.5, 0.6, cos(sunAngle) * 0.8))
+        )
+        encoder?.setVertexBytes(&skyUniforms, length: MemoryLayout<SkyUniforms>.stride, index: 1)
+        encoder?.setFragmentBytes(&skyUniforms, length: MemoryLayout<SkyUniforms>.stride, index: 0)
+        encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
+
+        // Switch to main scene rendering
         encoder?.setRenderPipelineState(pipelineState)
         encoder?.setDepthStencilState(depthState)
         encoder?.setVertexBuffer(cubeVertexBuffer, offset: 0, index: 0)
 
-        var uniforms = Uniforms(viewProjection: camera.projectionMatrix() * camera.viewMatrix(),
+        var uniforms = Uniforms(viewProjection: viewProjection,
                                 time: Float(CACurrentMediaTime()))
         encoder?.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 2)
         encoder?.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 2)
