@@ -21,6 +21,21 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         var time: Float
         var sunDirection: SIMD3<Float>
     }
+
+    // Ground plane rendering
+    private let groundPipelineState: MTLRenderPipelineState
+
+    struct GroundUniforms {
+        var viewProjection: simd_float4x4
+        var cameraPosition: SIMD3<Float>
+        var groundSize: Float
+        var time: Float
+        var fogDensity: Float
+        var _pad: SIMD2<Float> = .zero
+    }
+
+    // Fog settings
+    private let fogDensity: Float = 0.0005
     private var textureArray: MTLTexture?
     private var instanceBuffer: MTLBuffer?
     private var instanceCount: Int = 0
@@ -89,7 +104,10 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     struct Uniforms {
         var viewProjection: simd_float4x4
         var time: Float
-        var _pad: SIMD3<Float> = .zero
+        var fogDensity: Float
+        var _pad: SIMD2<Float> = .zero
+        var cameraPosition: SIMD3<Float>
+        var _pad2: Float = 0
     }
 
     private struct CarPath {
@@ -226,6 +244,20 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             return nil
         }
         self.skyVertexBuffer = skyVertexBuffer
+
+        // Ground plane pipeline (uses same vertex descriptor as sky)
+        let groundDescriptor = MTLRenderPipelineDescriptor()
+        groundDescriptor.vertexFunction = library.makeFunction(name: "ground_vertex")
+        groundDescriptor.fragmentFunction = library.makeFunction(name: "ground_fragment")
+        groundDescriptor.colorAttachments[0].pixelFormat = view.colorPixelFormat
+        groundDescriptor.depthAttachmentPixelFormat = view.depthStencilPixelFormat
+        groundDescriptor.vertexDescriptor = skyVertexDescriptor  // Same 2D position layout
+
+        do {
+            groundPipelineState = try device.makeRenderPipelineState(descriptor: groundDescriptor)
+        } catch {
+            return nil
+        }
 
         super.init()
         loadTextures()
@@ -972,13 +1004,32 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         encoder?.setFragmentBytes(&skyUniforms, length: MemoryLayout<SkyUniforms>.stride, index: 0)
         encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
 
+        // Render ground plane
+        let cameraPos = camera.eyePosition()
+        encoder?.setRenderPipelineState(groundPipelineState)
+        encoder?.setDepthStencilState(depthState)  // Use regular depth state for ground
+        encoder?.setVertexBuffer(skyVertexBuffer, offset: 0, index: 0)  // Reuse same quad
+
+        var groundUniforms = GroundUniforms(
+            viewProjection: viewProjection,
+            cameraPosition: cameraPos,
+            groundSize: 500.0,  // Large ground plane
+            time: Float(CACurrentMediaTime()),
+            fogDensity: fogDensity
+        )
+        encoder?.setVertexBytes(&groundUniforms, length: MemoryLayout<GroundUniforms>.stride, index: 1)
+        encoder?.setFragmentBytes(&groundUniforms, length: MemoryLayout<GroundUniforms>.stride, index: 0)
+        encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
+
         // Switch to main scene rendering
         encoder?.setRenderPipelineState(pipelineState)
         encoder?.setDepthStencilState(depthState)
         encoder?.setVertexBuffer(cubeVertexBuffer, offset: 0, index: 0)
 
         var uniforms = Uniforms(viewProjection: viewProjection,
-                                time: Float(CACurrentMediaTime()))
+                                time: Float(CACurrentMediaTime()),
+                                fogDensity: fogDensity,
+                                cameraPosition: cameraPos)
         encoder?.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 2)
         encoder?.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 2)
         

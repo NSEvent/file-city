@@ -28,7 +28,10 @@ struct InstanceData {
 struct Uniforms {
     float4x4 viewProjection;
     float time;
-    float3 pad;
+    float fogDensity;
+    float2 pad;
+    float3 cameraPosition;
+    float pad2;
 };
 
 struct VertexOut {
@@ -37,6 +40,7 @@ struct VertexOut {
     float3 localNormal [[flat]];
     float2 uv;
     float3 scale [[flat]];
+    float3 worldPos;
     int textureIndex [[flat]];
     uint materialID [[flat]];
     int shapeID [[flat]];
@@ -372,6 +376,7 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
     float3 world = scaled + instance.position;
     VertexOut out;
     out.position = uniforms.viewProjection * float4(world, 1.0);
+    out.worldPos = world;
     out.normal = normal;
     out.uv = in.uv;
     out.scale = instance.scale;
@@ -384,6 +389,15 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
     out.activityKind = instance.activityKind;
     out.localNormal = originalNormal;
     return out;
+}
+
+// Helper function to apply distance fog
+inline float3 applyFog(float3 color, float3 worldPos, float3 cameraPos, float fogDensity) {
+    float dist = length(worldPos - cameraPos);
+    float fogFactor = 1.0 - exp(-dist * fogDensity);
+    fogFactor = saturate(fogFactor);
+    float3 fogColor = float3(0.75, 0.78, 0.83);
+    return mix(color, fogColor, fogFactor);
 }
 
 fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
@@ -459,6 +473,7 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
         float sparkle = fract(sin(dot(in.uv * 100.0, float2(12.9898, 78.233))) * 43758.5453);
         lit += baseColor * sparkle * 0.03;
 
+        lit = applyFog(lit, in.worldPos, uniforms.cameraPosition, uniforms.fogDensity);
         return float4(lit, 1.0);
     }
 
@@ -488,6 +503,7 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
         float edge = pow(1.0 - abs(dot(N, float3(1, 0, 0))), 8.0);
         lit += float3(0.1, 0.1, 0.12) * edge;
 
+        lit = applyFog(lit, in.worldPos, uniforms.cameraPosition, uniforms.fogDensity);
         return float4(lit, 1.0);
     }
 
@@ -520,6 +536,7 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
         float rimEdge = pow(1.0 - faceFactor, 3.0) * 0.15;
         lit += float3(0.3, 0.3, 0.32) * rimEdge;
 
+        lit = applyFog(lit, in.worldPos, uniforms.cameraPosition, uniforms.fogDensity);
         return float4(lit, 1.0);
     }
 
@@ -543,6 +560,7 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
         float3 lit = lightColor * intensity;
         lit += float3(0.8, 0.85, 1.0) * bloom;
 
+        lit = applyFog(lit, in.worldPos, uniforms.cameraPosition, uniforms.fogDensity);
         return float4(lit, 1.0);
     }
 
@@ -568,6 +586,7 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
         float bloom = pow(backFactor, 2.0) * 0.4;
         lit += float3(1.0, 0.2, 0.15) * bloom;
 
+        lit = applyFog(lit, in.worldPos, uniforms.cameraPosition, uniforms.fogDensity);
         return float4(lit, 1.0);
     }
 
@@ -743,10 +762,11 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
         
         // Final color
         finalColor = beamColor * pulse;
-        
+
         // Fade out alpha at edges to avoid hard lines
         float edgeFade = smoothstep(0.8, 0.0, dist);
-        
+
+        finalColor = applyFog(finalColor, in.worldPos, uniforms.cameraPosition, uniforms.fogDensity);
         return float4(finalColor, alpha * edgeFade * 0.9);
     } else if (in.shapeID == 13) {
         // Banner - Sample from signLabels array
@@ -803,6 +823,14 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
             finalColor *= (0.9 + 0.1 * fold);
         }
     }
+
+    // Apply distance fog
+    float dist = length(in.worldPos - uniforms.cameraPosition);
+    float fogFactor = 1.0 - exp(-dist * uniforms.fogDensity);
+    fogFactor = saturate(fogFactor);
+    float3 fogColor = float3(0.75, 0.78, 0.83);  // Light gray-blue fog matching sky horizon
+    finalColor = mix(finalColor, fogColor, fogFactor);
+
     return float4(finalColor, 1.0);
 }
 
@@ -891,6 +919,74 @@ fragment float4 sky_fragment(SkyVertexOut in [[stage_in]],
     // Subtle atmospheric haze at horizon
     float horizonHaze = exp(-abs(horizon) * 5.0) * 0.15;
     finalColor = mix(finalColor, float3(0.85, 0.88, 0.95), horizonHaze);
+
+    return float4(finalColor, 1.0);
+}
+
+// MARK: - Ground Plane Shader
+
+struct GroundVertexIn {
+    float2 position [[attribute(0)]];
+};
+
+struct GroundVertexOut {
+    float4 position [[position]];
+    float3 worldPos;
+    float distance;
+};
+
+struct GroundUniforms {
+    float4x4 viewProjection;
+    float3 cameraPosition;
+    float groundSize;
+    float time;
+    float fogDensity;
+    float2 pad;
+};
+
+vertex GroundVertexOut ground_vertex(GroundVertexIn in [[stage_in]],
+                                     constant GroundUniforms &uniforms [[buffer(1)]]) {
+    GroundVertexOut out;
+
+    // Scale the quad to cover a large area, centered at origin, below roads (which are at y = -0.6)
+    float3 worldPos = float3(in.position.x * uniforms.groundSize, -1.1, in.position.y * uniforms.groundSize);
+    out.worldPos = worldPos;
+    out.position = uniforms.viewProjection * float4(worldPos, 1.0);
+    out.distance = length(worldPos - uniforms.cameraPosition);
+
+    return out;
+}
+
+fragment float4 ground_fragment(GroundVertexOut in [[stage_in]],
+                                constant GroundUniforms &uniforms [[buffer(0)]]) {
+    float3 worldPos = in.worldPos;
+    float2 pos = worldPos.xz;
+
+    // Grassy green base colors
+    float3 grassLight = float3(0.35, 0.45, 0.28);   // Light grass green
+    float3 grassDark = float3(0.25, 0.35, 0.20);    // Darker grass green
+
+    // Organic noise pattern (multiple octaves for natural grass look)
+    float noise1 = fract(sin(dot(floor(pos / 6.0), float2(12.9898, 78.233))) * 43758.5453);
+    float noise2 = fract(sin(dot(floor(pos / 15.0), float2(39.346, 11.135))) * 43758.5453);
+    float noise3 = fract(sin(dot(floor(pos / 40.0), float2(73.156, 52.235))) * 43758.5453);
+    float combinedNoise = noise1 * 0.5 + noise2 * 0.3 + noise3 * 0.2;
+
+    // Mix between light and dark grass
+    float3 baseColor = mix(grassDark, grassLight, combinedNoise);
+
+    // Subtle yellow-green variation for natural grass look
+    float tintNoise = fract(sin(dot(floor(pos / 25.0), float2(45.17, 93.42))) * 43758.5453);
+    float3 yellowTint = float3(1.05, 1.02, 0.95);   // Slightly yellow
+    float3 blueTint = float3(0.95, 1.0, 1.05);      // Slightly blue-green
+    baseColor *= mix(yellowTint, blueTint, tintNoise);
+
+    // Distance-based fog - blend to sky horizon color
+    float3 fogColor = float3(0.75, 0.78, 0.83);
+    float fogFactor = 1.0 - exp(-in.distance * uniforms.fogDensity);
+    fogFactor = saturate(fogFactor);
+
+    float3 finalColor = mix(baseColor, fogColor, fogFactor);
 
     return float4(finalColor, 1.0);
 }
