@@ -28,7 +28,10 @@ struct InstanceData {
 struct Uniforms {
     float4x4 viewProjection;
     float time;
-    float3 pad;
+    float fogDensity;
+    float2 pad;
+    float3 cameraPosition;
+    float pad2;
 };
 
 struct VertexOut {
@@ -37,6 +40,7 @@ struct VertexOut {
     float3 localNormal [[flat]];
     float2 uv;
     float3 scale [[flat]];
+    float3 worldPos;
     int textureIndex [[flat]];
     uint materialID [[flat]];
     int shapeID [[flat]];
@@ -372,6 +376,7 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
     float3 world = scaled + instance.position;
     VertexOut out;
     out.position = uniforms.viewProjection * float4(world, 1.0);
+    out.worldPos = world;
     out.normal = normal;
     out.uv = in.uv;
     out.scale = instance.scale;
@@ -384,6 +389,15 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
     out.activityKind = instance.activityKind;
     out.localNormal = originalNormal;
     return out;
+}
+
+// Helper function to apply distance fog
+inline float3 applyFog(float3 color, float3 worldPos, float3 cameraPos, float fogDensity) {
+    float dist = length(worldPos - cameraPos);
+    float fogFactor = 1.0 - exp(-dist * fogDensity);
+    fogFactor = saturate(fogFactor);
+    float3 fogColor = float3(0.75, 0.78, 0.83);
+    return mix(color, fogColor, fogFactor);
 }
 
 fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
@@ -459,6 +473,7 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
         float sparkle = fract(sin(dot(in.uv * 100.0, float2(12.9898, 78.233))) * 43758.5453);
         lit += baseColor * sparkle * 0.03;
 
+        lit = applyFog(lit, in.worldPos, uniforms.cameraPosition, uniforms.fogDensity);
         return float4(lit, 1.0);
     }
 
@@ -488,6 +503,7 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
         float edge = pow(1.0 - abs(dot(N, float3(1, 0, 0))), 8.0);
         lit += float3(0.1, 0.1, 0.12) * edge;
 
+        lit = applyFog(lit, in.worldPos, uniforms.cameraPosition, uniforms.fogDensity);
         return float4(lit, 1.0);
     }
 
@@ -520,6 +536,7 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
         float rimEdge = pow(1.0 - faceFactor, 3.0) * 0.15;
         lit += float3(0.3, 0.3, 0.32) * rimEdge;
 
+        lit = applyFog(lit, in.worldPos, uniforms.cameraPosition, uniforms.fogDensity);
         return float4(lit, 1.0);
     }
 
@@ -543,6 +560,7 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
         float3 lit = lightColor * intensity;
         lit += float3(0.8, 0.85, 1.0) * bloom;
 
+        lit = applyFog(lit, in.worldPos, uniforms.cameraPosition, uniforms.fogDensity);
         return float4(lit, 1.0);
     }
 
@@ -568,6 +586,7 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
         float bloom = pow(backFactor, 2.0) * 0.4;
         lit += float3(1.0, 0.2, 0.15) * bloom;
 
+        lit = applyFog(lit, in.worldPos, uniforms.cameraPosition, uniforms.fogDensity);
         return float4(lit, 1.0);
     }
 
@@ -743,10 +762,11 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
         
         // Final color
         finalColor = beamColor * pulse;
-        
+
         // Fade out alpha at edges to avoid hard lines
         float edgeFade = smoothstep(0.8, 0.0, dist);
-        
+
+        finalColor = applyFog(finalColor, in.worldPos, uniforms.cameraPosition, uniforms.fogDensity);
         return float4(finalColor, alpha * edgeFade * 0.9);
     } else if (in.shapeID == 13) {
         // Banner - Sample from signLabels array
@@ -803,5 +823,198 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
             finalColor *= (0.9 + 0.1 * fold);
         }
     }
+
+    // Apply distance fog
+    float dist = length(in.worldPos - uniforms.cameraPosition);
+    float fogFactor = 1.0 - exp(-dist * uniforms.fogDensity);
+    fogFactor = saturate(fogFactor);
+    float3 fogColor = float3(0.75, 0.78, 0.83);  // Light gray-blue fog matching sky horizon
+    finalColor = mix(finalColor, fogColor, fogFactor);
+
+    return float4(finalColor, 1.0);
+}
+
+// MARK: - Procedural Sky Shader
+
+struct SkyVertexIn {
+    float2 position [[attribute(0)]];
+};
+
+struct SkyVertexOut {
+    float4 position [[position]];
+    float3 viewDir;
+};
+
+struct SkyUniforms {
+    float4x4 inverseViewProjection;
+    float time;
+    float3 sunDirection;
+};
+
+vertex SkyVertexOut sky_vertex(SkyVertexIn in [[stage_in]],
+                               constant SkyUniforms &uniforms [[buffer(1)]]) {
+    SkyVertexOut out;
+
+    // Fullscreen quad in clip space
+    out.position = float4(in.position, 0.9999, 1.0);  // z near 1.0 to be behind everything
+
+    // Compute view direction by transforming clip coordinates through inverse VP
+    float4 farPoint = uniforms.inverseViewProjection * float4(in.position, 1.0, 1.0);
+    float4 nearPoint = uniforms.inverseViewProjection * float4(in.position, -1.0, 1.0);
+
+    float3 farWorld = farPoint.xyz / farPoint.w;
+    float3 nearWorld = nearPoint.xyz / nearPoint.w;
+
+    out.viewDir = normalize(farWorld - nearWorld);
+
+    return out;
+}
+
+fragment float4 sky_fragment(SkyVertexOut in [[stage_in]],
+                             constant SkyUniforms &uniforms [[buffer(0)]]) {
+    float3 dir = normalize(in.viewDir);
+
+    // Horizon factor: 0 at horizon, 1 at zenith, negative below horizon
+    float horizon = dir.y;
+
+    // Sky gradient colors
+    float3 zenithColor = float3(0.25, 0.45, 0.85);      // Deep blue at top
+    float3 horizonColor = float3(0.7, 0.8, 0.95);       // Light blue-white at horizon
+    float3 groundColor = float3(0.35, 0.35, 0.38);      // Muted gray below horizon
+
+    // Blend sky gradient
+    float3 skyColor;
+    if (horizon > 0) {
+        // Above horizon: blend from horizon to zenith
+        float t = pow(horizon, 0.5);  // Bias toward horizon color
+        skyColor = mix(horizonColor, zenithColor, t);
+    } else {
+        // Below horizon: blend to ground
+        float t = saturate(-horizon * 2.0);
+        skyColor = mix(horizonColor, groundColor, t);
+    }
+
+    // Sun
+    float3 sunDir = normalize(uniforms.sunDirection);
+    float sunDot = dot(dir, sunDir);
+
+    // Sun disk (sharp bright center)
+    float sunDisk = smoothstep(0.9995, 0.9999, sunDot);
+    float3 sunColor = float3(1.0, 0.98, 0.9);
+
+    // Sun glow (soft halo around sun)
+    float sunGlow = pow(saturate(sunDot), 8.0) * 0.5;
+    float3 glowColor = float3(1.0, 0.9, 0.7);
+
+    // Sun haze near horizon
+    float hazeStrength = exp(-abs(horizon) * 3.0) * pow(saturate(sunDot), 2.0) * 0.4;
+    float3 hazeColor = float3(1.0, 0.85, 0.6);
+
+    // Combine
+    float3 finalColor = skyColor;
+    finalColor += glowColor * sunGlow;
+    finalColor += hazeColor * hazeStrength;
+    finalColor = mix(finalColor, sunColor, sunDisk);
+
+    // Subtle atmospheric haze at horizon
+    float horizonHaze = exp(-abs(horizon) * 5.0) * 0.15;
+    finalColor = mix(finalColor, float3(0.85, 0.88, 0.95), horizonHaze);
+
+    return float4(finalColor, 1.0);
+}
+
+// MARK: - Ground Plane Shader
+
+struct GroundVertexIn {
+    float2 position [[attribute(0)]];
+};
+
+struct GroundVertexOut {
+    float4 position [[position]];
+    float3 worldPos;
+    float distance;
+};
+
+struct GroundUniforms {
+    float4x4 viewProjection;
+    float3 cameraPosition;
+    float groundSize;
+    float time;
+    float fogDensity;
+    float pad;
+    float2 cityBoundsMin;
+    float2 cityBoundsMax;
+    float2 cityCenter;
+};
+
+vertex GroundVertexOut ground_vertex(GroundVertexIn in [[stage_in]],
+                                     constant GroundUniforms &uniforms [[buffer(1)]]) {
+    GroundVertexOut out;
+
+    // Scale the quad to cover a large area, centered at origin, below roads (which are at y = -0.6)
+    float3 worldPos = float3(
+        in.position.x * uniforms.groundSize,
+        -1.1,
+        in.position.y * uniforms.groundSize
+    );
+    out.worldPos = worldPos;
+    out.position = uniforms.viewProjection * float4(worldPos, 1.0);
+    out.distance = length(worldPos - uniforms.cameraPosition);
+
+    return out;
+}
+
+fragment float4 ground_fragment(GroundVertexOut in [[stage_in]],
+                                constant GroundUniforms &uniforms [[buffer(0)]]) {
+    float3 worldPos = in.worldPos;
+    float2 pos = worldPos.xz;
+
+    // Check if inside city bounds
+    float2 cityMin = uniforms.cityBoundsMin;
+    float2 cityMax = uniforms.cityBoundsMax;
+
+    // Calculate distance to city edge for smooth blending
+    float insideX = min(pos.x - cityMin.x, cityMax.x - pos.x);
+    float insideZ = min(pos.y - cityMin.y, cityMax.y - pos.y);
+    float insideDist = min(insideX, insideZ);
+    float transitionWidth = 8.0;  // Width of grass-to-concrete transition
+    float cityFactor = saturate(insideDist / transitionWidth);
+
+    // Concrete colors for inside city
+    float3 concreteLight = float3(0.52, 0.50, 0.48);
+    float3 concreteDark = float3(0.42, 0.40, 0.38);
+
+    // Grassy green colors for outside city
+    float3 grassLight = float3(0.35, 0.45, 0.28);
+    float3 grassDark = float3(0.25, 0.35, 0.20);
+
+    // Organic noise pattern (multiple octaves)
+    float noise1 = fract(sin(dot(floor(pos / 6.0), float2(12.9898, 78.233))) * 43758.5453);
+    float noise2 = fract(sin(dot(floor(pos / 15.0), float2(39.346, 11.135))) * 43758.5453);
+    float noise3 = fract(sin(dot(floor(pos / 40.0), float2(73.156, 52.235))) * 43758.5453);
+    float combinedNoise = noise1 * 0.5 + noise2 * 0.3 + noise3 * 0.2;
+
+    // Mix light and dark for both materials
+    float3 concreteColor = mix(concreteDark, concreteLight, combinedNoise);
+    float3 grassColor = mix(grassDark, grassLight, combinedNoise);
+
+    // Subtle tint variation
+    float tintNoise = fract(sin(dot(floor(pos / 25.0), float2(45.17, 93.42))) * 43758.5453);
+    float3 warmTint = float3(1.03, 1.01, 0.97);
+    float3 coolTint = float3(0.97, 1.0, 1.03);
+    concreteColor *= mix(warmTint, coolTint, tintNoise);
+    grassColor *= mix(float3(1.05, 1.02, 0.95), float3(0.95, 1.0, 1.05), tintNoise);
+
+    // Blend between concrete (inside city) and grass (outside)
+    float3 baseColor = mix(grassColor, concreteColor, cityFactor);
+
+    // Distance-based fog - blend to sky horizon color (reduced for ground)
+    float3 fogColor = float3(0.75, 0.78, 0.83);
+    float groundFogDensity = uniforms.fogDensity * 0.3;  // Less fog on ground
+    float fogFactor = 1.0 - exp(-in.distance * groundFogDensity);
+    fogFactor = saturate(fogFactor);
+
+    float3 finalColor = mix(baseColor, fogColor, fogFactor);
+
     return float4(finalColor, 1.0);
 }

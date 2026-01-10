@@ -10,6 +10,40 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private let depthState: MTLDepthStencilState
     private let samplerState: MTLSamplerState
     private let cubeVertexBuffer: MTLBuffer
+
+    // Sky rendering
+    private let skyPipelineState: MTLRenderPipelineState
+    private let skyDepthState: MTLDepthStencilState
+    private let skyVertexBuffer: MTLBuffer
+
+    struct SkyUniforms {
+        var inverseViewProjection: simd_float4x4
+        var time: Float
+        var sunDirection: SIMD3<Float>
+    }
+
+    // Ground plane rendering
+    private let groundPipelineState: MTLRenderPipelineState
+
+    struct GroundUniforms {
+        var viewProjection: simd_float4x4
+        var cameraPosition: SIMD3<Float>
+        var groundSize: Float
+        var time: Float
+        var fogDensity: Float
+        var _pad: Float = 0
+        var cityBoundsMin: SIMD2<Float>
+        var cityBoundsMax: SIMD2<Float>
+        var cityCenter: SIMD2<Float>
+    }
+
+    // City bounds for ground shader (updated when blocks change)
+    private var cityBoundsMin: SIMD2<Float> = .zero
+    private var cityBoundsMax: SIMD2<Float> = .zero
+    private var cityCenter: SIMD2<Float> = .zero
+
+    // Fog settings
+    private let fogDensity: Float = 0.0005
     private var textureArray: MTLTexture?
     private var instanceBuffer: MTLBuffer?
     private var instanceCount: Int = 0
@@ -78,7 +112,10 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     struct Uniforms {
         var viewProjection: simd_float4x4
         var time: Float
-        var _pad: SIMD3<Float> = .zero
+        var fogDensity: Float
+        var _pad: SIMD2<Float> = .zero
+        var cameraPosition: SIMD3<Float>
+        var _pad2: Float = 0
     }
 
     private struct CarPath {
@@ -189,6 +226,59 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
         self.cubeVertexBuffer = cubeVertexBuffer
 
+        // Sky pipeline setup
+        let skyDescriptor = MTLRenderPipelineDescriptor()
+        skyDescriptor.vertexFunction = library.makeFunction(name: "sky_vertex")
+        skyDescriptor.fragmentFunction = library.makeFunction(name: "sky_fragment")
+        skyDescriptor.colorAttachments[0].pixelFormat = view.colorPixelFormat
+        skyDescriptor.depthAttachmentPixelFormat = view.depthStencilPixelFormat
+
+        let skyVertexDescriptor = MTLVertexDescriptor()
+        skyVertexDescriptor.attributes[0].format = .float2
+        skyVertexDescriptor.attributes[0].offset = 0
+        skyVertexDescriptor.attributes[0].bufferIndex = 0
+        skyVertexDescriptor.layouts[0].stride = MemoryLayout<SIMD2<Float>>.stride
+        skyDescriptor.vertexDescriptor = skyVertexDescriptor
+
+        do {
+            skyPipelineState = try device.makeRenderPipelineState(descriptor: skyDescriptor)
+        } catch {
+            return nil
+        }
+
+        // Sky depth state: always pass, no write (sky is always behind everything)
+        let skyDepthDescriptor = MTLDepthStencilDescriptor()
+        skyDepthDescriptor.depthCompareFunction = .always
+        skyDepthDescriptor.isDepthWriteEnabled = false
+        guard let skyDepthState = device.makeDepthStencilState(descriptor: skyDepthDescriptor) else {
+            return nil
+        }
+        self.skyDepthState = skyDepthState
+
+        // Fullscreen quad for sky (clip space coordinates)
+        let skyQuadVertices: [SIMD2<Float>] = [
+            SIMD2<Float>(-1, -1), SIMD2<Float>(1, -1), SIMD2<Float>(-1, 1),
+            SIMD2<Float>(-1, 1), SIMD2<Float>(1, -1), SIMD2<Float>(1, 1)
+        ]
+        guard let skyVertexBuffer = device.makeBuffer(bytes: skyQuadVertices, length: MemoryLayout<SIMD2<Float>>.stride * skyQuadVertices.count, options: []) else {
+            return nil
+        }
+        self.skyVertexBuffer = skyVertexBuffer
+
+        // Ground plane pipeline (uses same vertex descriptor as sky)
+        let groundDescriptor = MTLRenderPipelineDescriptor()
+        groundDescriptor.vertexFunction = library.makeFunction(name: "ground_vertex")
+        groundDescriptor.fragmentFunction = library.makeFunction(name: "ground_fragment")
+        groundDescriptor.colorAttachments[0].pixelFormat = view.colorPixelFormat
+        groundDescriptor.depthAttachmentPixelFormat = view.depthStencilPixelFormat
+        groundDescriptor.vertexDescriptor = skyVertexDescriptor  // Same 2D position layout
+
+        do {
+            groundPipelineState = try device.makeRenderPipelineState(descriptor: groundDescriptor)
+        } catch {
+            return nil
+        }
+
         super.init()
         loadTextures()
         view.device = device
@@ -279,6 +369,28 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
         let blocksChanged = blocks != self.blocks
         self.blocks = blocks
+
+        // Update city bounds for ground shader
+        if blocksChanged && !blocks.isEmpty {
+            var minX: Float = .greatestFiniteMagnitude
+            var maxX: Float = -.greatestFiniteMagnitude
+            var minZ: Float = .greatestFiniteMagnitude
+            var maxZ: Float = -.greatestFiniteMagnitude
+            for block in blocks {
+                let halfX = Float(block.footprint.x) / 2
+                let halfZ = Float(block.footprint.y) / 2
+                minX = min(minX, block.position.x - halfX)
+                maxX = max(maxX, block.position.x + halfX)
+                minZ = min(minZ, block.position.z - halfZ)
+                maxZ = max(maxZ, block.position.z + halfZ)
+            }
+            // Add some padding around the city
+            let padding: Float = 5.0
+            cityBoundsMin = SIMD2<Float>(minX - padding, minZ - padding)
+            cityBoundsMax = SIMD2<Float>(maxX + padding, maxZ + padding)
+            cityCenter = SIMD2<Float>((minX + maxX) / 2, (minZ + maxZ) / 2)
+        }
+
         let cameraYaw = camera.wedgeYaw  // Use fixed yaw for wedge rotation
         let inboundTargets = helicopterManager.getActiveConstructionTargetIDs()
         let beamTargets = beamManager.getActiveBeamTargetIDs()
@@ -1125,12 +1237,57 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             return
         }
         let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor)
+
+        // Render sky first
+        let viewMatrix = camera.viewMatrix()
+        let projectionMatrix = camera.projectionMatrix()
+        let viewProjection = projectionMatrix * viewMatrix
+        let inverseViewProjection = viewProjection.inverse
+
+        encoder?.setRenderPipelineState(skyPipelineState)
+        encoder?.setDepthStencilState(skyDepthState)
+        encoder?.setVertexBuffer(skyVertexBuffer, offset: 0, index: 0)
+
+        // Sun direction: slightly to the right and high in the sky
+        let sunAngle = Float(CACurrentMediaTime()) * 0.02  // Very slow rotation
+        var skyUniforms = SkyUniforms(
+            inverseViewProjection: inverseViewProjection,
+            time: Float(CACurrentMediaTime()),
+            sunDirection: normalize(SIMD3<Float>(sin(sunAngle) * 0.5, 0.6, cos(sunAngle) * 0.8))
+        )
+        encoder?.setVertexBytes(&skyUniforms, length: MemoryLayout<SkyUniforms>.stride, index: 1)
+        encoder?.setFragmentBytes(&skyUniforms, length: MemoryLayout<SkyUniforms>.stride, index: 0)
+        encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
+
+        // Render ground plane
+        let cameraPos = camera.eyePosition()
+        encoder?.setRenderPipelineState(groundPipelineState)
+        encoder?.setDepthStencilState(depthState)  // Use regular depth state for ground
+        encoder?.setVertexBuffer(skyVertexBuffer, offset: 0, index: 0)  // Reuse same quad
+
+        var groundUniforms = GroundUniforms(
+            viewProjection: viewProjection,
+            cameraPosition: cameraPos,
+            groundSize: 2000.0,  // Large ground plane
+            time: Float(CACurrentMediaTime()),
+            fogDensity: fogDensity,
+            cityBoundsMin: cityBoundsMin,
+            cityBoundsMax: cityBoundsMax,
+            cityCenter: cityCenter
+        )
+        encoder?.setVertexBytes(&groundUniforms, length: MemoryLayout<GroundUniforms>.stride, index: 1)
+        encoder?.setFragmentBytes(&groundUniforms, length: MemoryLayout<GroundUniforms>.stride, index: 0)
+        encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
+
+        // Switch to main scene rendering
         encoder?.setRenderPipelineState(pipelineState)
         encoder?.setDepthStencilState(depthState)
         encoder?.setVertexBuffer(cubeVertexBuffer, offset: 0, index: 0)
 
-        var uniforms = Uniforms(viewProjection: camera.projectionMatrix() * camera.viewMatrix(),
-                                time: Float(CACurrentMediaTime()))
+        var uniforms = Uniforms(viewProjection: viewProjection,
+                                time: Float(CACurrentMediaTime()),
+                                fogDensity: fogDensity,
+                                cameraPosition: cameraPos)
         encoder?.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 2)
         encoder?.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 2)
         
