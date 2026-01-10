@@ -355,9 +355,13 @@ struct MetalCityView: NSViewRepresentable {
                 return
             }
 
-            guard let block = renderer.pickBlock(at: backingPoint, in: view.drawableSize) else { return }
-            guard let url = appState?.url(for: block.nodeID) else { return }
-            appState?.select(url)
+            // If clicked on a building, select it; otherwise clear selection
+            if let block = renderer.pickBlock(at: backingPoint, in: view.drawableSize),
+               let url = appState?.url(for: block.nodeID) {
+                appState?.select(url)
+            } else {
+                appState?.clearSelection()
+            }
         }
 
         func handleDoubleClick(_ point: CGPoint, in view: MTKView) {
