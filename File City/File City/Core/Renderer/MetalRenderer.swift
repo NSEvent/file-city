@@ -680,29 +680,37 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     }
 
     private func updateCrashingPlanes(deltaTime: Float) {
-        let gravity: Float = -35.0  // Stronger gravity for dramatic fall
+        let gravity: Float = Constants.Movement.gravity  // Same as player: -30.0
         let groundLevel: Float = 0.0
 
         for i in (0..<crashingPlanes.count).reversed() {
-            // Apply strong gravity - plane is out of control but engines still running
-            crashingPlanes[i].velocity.y += gravity * deltaTime
+            let speed = simd_length(crashingPlanes[i].velocity)
 
-            // Add some forward thrust (engines still on, just uncontrolled)
-            let forwardDir = SIMD3<Float>(
-                sin(crashingPlanes[i].yaw),
-                0,
-                cos(crashingPlanes[i].yaw)
-            )
-            crashingPlanes[i].velocity += forwardDir * 8.0 * deltaTime
+            // Wing physics - lift based on speed and roll (reduced effectiveness, plane is damaged)
+            let liftCoefficient: Float = 0.15  // Half of normal plane lift
+            let roll = crashingPlanes[i].roll
+            let liftMagnitude = speed * liftCoefficient * cos(roll)
+            let lift = SIMD3<Float>(0, liftMagnitude, 0)
+
+            // Drag (opposes velocity)
+            let dragCoefficient: Float = 0.015
+            var drag = SIMD3<Float>.zero
+            if speed > 0.1 {
+                drag = -simd_normalize(crashingPlanes[i].velocity) * speed * speed * dragCoefficient
+            }
+
+            // Apply gravity + lift + drag (no thrust - engines dead)
+            let gravityForce = SIMD3<Float>(0, gravity, 0)
+            crashingPlanes[i].velocity += (gravityForce + lift + drag) * deltaTime
 
             // Update position
             crashingPlanes[i].position += crashingPlanes[i].velocity * deltaTime
 
-            // Nose down aggressively as it falls
-            crashingPlanes[i].pitch -= deltaTime * 1.2
+            // Nose down as it falls (pitch toward ground)
+            crashingPlanes[i].pitch -= deltaTime * 0.8
 
-            // Spiral out of control - roll increases faster
-            crashingPlanes[i].roll += deltaTime * 3.0
+            // Spiral out of control - roll increases
+            crashingPlanes[i].roll += deltaTime * 2.0
 
             // Check for ground collision
             if crashingPlanes[i].position.y <= groundLevel {
