@@ -120,6 +120,18 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         let planeIndex: Int
     }
 
+    // Crashing planes (abandoned after player exits)
+    private struct CrashingPlane {
+        var position: SIMD3<Float>
+        var velocity: SIMD3<Float>
+        var pitch: Float
+        var roll: Float
+        var yaw: Float
+        let scale: SIMD3<Float>
+        let planeIndex: Int
+    }
+    private var crashingPlanes: [CrashingPlane] = []
+
     init?(view: MTKView) {
         guard let device = MTLCreateSystemDefaultDevice(),
               let commandQueue = device.makeCommandQueue(),
@@ -667,6 +679,95 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
     }
 
+    private func updateCrashingPlanes(deltaTime: Float) {
+        let gravity: Float = -20.0
+        let groundLevel: Float = 0.0
+
+        for i in (0..<crashingPlanes.count).reversed() {
+            // Apply gravity (no thrust, no lift)
+            crashingPlanes[i].velocity.y += gravity * deltaTime
+
+            // Apply drag to slow horizontal movement slightly
+            let drag: Float = 0.98
+            crashingPlanes[i].velocity.x *= drag
+            crashingPlanes[i].velocity.z *= drag
+
+            // Update position
+            crashingPlanes[i].position += crashingPlanes[i].velocity * deltaTime
+
+            // Nose down as it falls (pitch toward ground)
+            crashingPlanes[i].pitch -= deltaTime * 0.5
+
+            // Slight spiral - roll increases
+            crashingPlanes[i].roll += deltaTime * 1.5
+
+            // Check for ground collision
+            if crashingPlanes[i].position.y <= groundLevel {
+                // Explode the plane
+                explodePlaneAt(
+                    position: crashingPlanes[i].position,
+                    velocity: crashingPlanes[i].velocity,
+                    yaw: crashingPlanes[i].yaw,
+                    scale: crashingPlanes[i].scale,
+                    planeIndex: crashingPlanes[i].planeIndex
+                )
+                crashingPlanes.remove(at: i)
+            }
+        }
+    }
+
+    /// Explode a plane at a specific position (for crashing planes)
+    private func explodePlaneAt(position: SIMD3<Float>, velocity: SIMD3<Float>, yaw: Float, scale: SIMD3<Float>, planeIndex: Int) {
+        let now = CACurrentMediaTime()
+
+        // Create debris pieces
+        var debris: [PlaneDebris] = []
+
+        // Body debris
+        let bodyPieces = 6
+        for _ in 0..<bodyPieces {
+            let randomDir = SIMD3<Float>(
+                Float.random(in: -1...1),
+                Float.random(in: 0.5...2.0),
+                Float.random(in: -1...1)
+            )
+            let explosionVelocity = simd_normalize(randomDir) * Float.random(in: 15...35) + velocity * 0.3
+            debris.append(PlaneDebris(
+                position: position + randomDir * 0.5,
+                velocity: explosionVelocity,
+                rotationY: yaw + Float.random(in: -0.5...0.5),
+                rotationVelocity: Float.random(in: -8...8),
+                scale: scale * Float.random(in: 0.2...0.5),
+                textureIndex: -1,
+                shapeID: 0,
+                life: 1.0
+            ))
+        }
+
+        // Wing debris
+        let wingPieces = 4
+        for _ in 0..<wingPieces {
+            let randomDir = SIMD3<Float>(
+                Float.random(in: -2...2),
+                Float.random(in: 0.3...1.5),
+                Float.random(in: -1...1)
+            )
+            let explosionVelocity = simd_normalize(randomDir) * Float.random(in: 20...40) + velocity * 0.2
+            debris.append(PlaneDebris(
+                position: position + randomDir,
+                velocity: explosionVelocity,
+                rotationY: yaw + Float.random(in: -1...1),
+                rotationVelocity: Float.random(in: -10...10),
+                scale: SIMD3<Float>(Float.random(in: 0.3...0.8), 0.1, Float.random(in: 0.5...1.5)),
+                textureIndex: -1,
+                shapeID: 0,
+                life: 1.0
+            ))
+        }
+
+        planeExplosions.append(PlaneExplosion(debris: debris, startTime: now, planeIndex: planeIndex))
+    }
+
     private func buildExplosionInstances() -> [VoxelInstance] {
         var instances: [VoxelInstance] = []
 
@@ -696,6 +797,153 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                     shapeID: debris.shapeID
                 ))
             }
+        }
+
+        return instances
+    }
+
+    private func buildCrashingPlaneInstances() -> [VoxelInstance] {
+        var instances: [VoxelInstance] = []
+        let now = CACurrentMediaTime()
+
+        for plane in crashingPlanes {
+            let position = plane.position
+            let pitch = plane.pitch
+            let roll = plane.roll
+            let yaw = plane.yaw
+            let scale = plane.scale
+
+            // Compute orientation vectors (same as piloted plane rendering)
+            let cosY = cos(yaw)
+            let sinY = sin(yaw)
+            let cosP = cos(pitch)
+            let sinP = sin(pitch)
+            let cosR = cos(roll)
+            let sinR = sin(roll)
+
+            let forward = SIMD3<Float>(cosP * sinY, sinP, cosP * cosY)
+            let flatRight = SIMD3<Float>(cosY, 0, -sinY)
+            let pitchedUp = SIMD3<Float>(-sinP * sinY, cosP, -sinP * cosY)
+            let rightVec = flatRight * cosR + pitchedUp * sinR
+            let upVec = -flatRight * sinR + pitchedUp * cosR
+
+            let flatDir = SIMD3<Float>(sin(yaw), 0, cos(yaw))
+            let rotationY = atan2(flatDir.z, flatDir.x)
+            let rotationX = roll
+            let rotationZ = pitch
+
+            // Flickering glow for distressed plane
+            let glow: Float = 0.4 + 0.3 * sin(Float(now) * 15.0)
+
+            let bodyOffset = forward * (scale.x * 0.1)
+
+            // Main body
+            instances.append(VoxelInstance(
+                position: position - bodyOffset,
+                _pad0: 0,
+                scale: scale,
+                _pad1: 0,
+                rotationY: rotationY,
+                rotationX: rotationX,
+                rotationZ: rotationZ,
+                _pad2: 0,
+                materialID: 0,
+                highlight: 0,
+                hover: glow,
+                textureIndex: -1,
+                shapeID: 6
+            ))
+
+            // Wings
+            instances.append(VoxelInstance(
+                position: position,
+                _pad0: 0,
+                scale: SIMD3<Float>(1.6, 0.12, scale.z * 2.8),
+                _pad1: 0,
+                rotationY: rotationY,
+                rotationX: rotationX,
+                rotationZ: rotationZ,
+                _pad2: 0,
+                materialID: 0,
+                highlight: 0,
+                hover: glow,
+                textureIndex: -1,
+                shapeID: 0
+            ))
+
+            // Thrusters with flames (on fire as it crashes)
+            let thrusterOffset = scale.z * 0.35
+            let thrusterBack = scale.x * 0.05
+
+            // Left thruster
+            instances.append(VoxelInstance(
+                position: position - forward * thrusterBack + rightVec * thrusterOffset - upVec * 0.12,
+                _pad0: 0,
+                scale: SIMD3<Float>(1.0, 0.35, 0.35),
+                _pad1: 0,
+                rotationY: rotationY,
+                rotationX: rotationX,
+                rotationZ: rotationZ,
+                _pad2: 0,
+                materialID: 0,
+                highlight: 0,
+                hover: glow,
+                textureIndex: -1,
+                shapeID: 5
+            ))
+
+            // Right thruster
+            instances.append(VoxelInstance(
+                position: position - forward * thrusterBack - rightVec * thrusterOffset - upVec * 0.12,
+                _pad0: 0,
+                scale: SIMD3<Float>(1.0, 0.35, 0.35),
+                _pad1: 0,
+                rotationY: rotationY,
+                rotationX: rotationX,
+                rotationZ: rotationZ,
+                _pad2: 0,
+                materialID: 0,
+                highlight: 0,
+                hover: glow,
+                textureIndex: -1,
+                shapeID: 5
+            ))
+
+            // Flames (always on for crashing plane)
+            let flameScale = SIMD3<Float>(1.2, 0.35, 0.35)
+            let flameBack = thrusterBack + scale.x * 0.18
+
+            instances.append(VoxelInstance(
+                position: position - forward * flameBack + rightVec * thrusterOffset - upVec * 0.1,
+                _pad0: 0,
+                scale: flameScale,
+                _pad1: 0,
+                rotationY: rotationY,
+                rotationX: rotationX,
+                rotationZ: rotationZ,
+                _pad2: 0,
+                materialID: 0,
+                highlight: 0,
+                hover: 0.9,  // Full flame intensity
+                textureIndex: -1,
+                shapeID: 7
+            ))
+
+            instances.append(VoxelInstance(
+                position: position - forward * flameBack - rightVec * thrusterOffset - upVec * 0.1,
+                _pad0: 0,
+                scale: flameScale,
+                _pad1: 0,
+                rotationY: rotationY,
+                rotationX: rotationX,
+                rotationZ: rotationZ,
+                _pad2: 0,
+                materialID: 0,
+                highlight: 0,
+                hover: 0.9,
+                textureIndex: -1,
+                shapeID: 7
+            ))
         }
 
         return instances
@@ -940,9 +1188,23 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 36, instanceCount: planeInstanceCount)
         }
 
-        // Update and render plane explosions
+        // Update and render crashing planes and explosions
         let deltaTime = Float(CACurrentMediaTime() - lastPlaneUpdateTime)
-        updateExplosions(deltaTime: max(0.001, min(deltaTime, 0.1)))
+        let clampedDeltaTime = max(0.001, min(deltaTime, 0.1))
+        updateCrashingPlanes(deltaTime: clampedDeltaTime)
+        updateExplosions(deltaTime: clampedDeltaTime)
+
+        // Render crashing planes
+        let crashingInstances = buildCrashingPlaneInstances()
+        if !crashingInstances.isEmpty {
+            let crashBuffer = device.makeBuffer(bytes: crashingInstances, length: MemoryLayout<VoxelInstance>.stride * crashingInstances.count, options: [])
+            if let buffer = crashBuffer {
+                encoder?.setVertexBuffer(buffer, offset: 0, index: 1)
+                encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 36, instanceCount: crashingInstances.count)
+            }
+        }
+
+        // Render explosion debris
         let explosionInstances = buildExplosionInstances()
         explosionDebrisCount = explosionInstances.count
         if explosionDebrisCount > 0 {
@@ -1009,9 +1271,10 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         planePaths.removeAll()
         planeOffsets.removeAll()
 
-        // Clear explosion state when paths are rebuilt
+        // Clear explosion and crashing plane state when paths are rebuilt
         planeExplosions.removeAll()
         explodedPlaneIndices.removeAll()
+        crashingPlanes.removeAll()
 
         buildSignpostInstances(blocks: blocks)
 
@@ -2126,6 +2389,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     }
 
     /// Get current yaw (heading) of a plane by index
+    /// Returns yaw in Camera's convention where forward = (sin(yaw), 0, cos(yaw))
     func planeYaw(index: Int) -> Float? {
         // If this plane is being piloted, return the piloted yaw
         if index == pilotedPlaneIndex, let state = pilotedPlaneFlightState {
@@ -2141,7 +2405,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         let position = positionAlongPath(path: path, distance: distance)
         let nextPosition = positionAlongPath(path: path, distance: fmod(distance + 1.0, path.totalLength))
         let direction = simd_normalize(nextPosition - position)
-        return atan2(direction.z, direction.x)
+        // Camera convention: forward = (sin(yaw), 0, cos(yaw))
+        // So yaw = atan2(direction.x, direction.z)
+        return atan2(direction.x, direction.z)
     }
 
     /// Start piloting a plane
@@ -2150,8 +2416,27 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         pilotedPlaneIndex = index
     }
 
-    /// Stop piloting and optionally respawn the plane on its path
+    /// Stop piloting - creates a crashing plane that falls and explodes
     func stopPilotingPlane() {
+        // Create a crashing plane from the current flight state
+        if let index = pilotedPlaneIndex,
+           let state = pilotedPlaneFlightState,
+           index < planePaths.count {
+            let path = planePaths[index]
+            let crashingPlane = CrashingPlane(
+                position: state.position,
+                velocity: state.velocity,
+                pitch: state.pitch,
+                roll: state.roll,
+                yaw: state.yaw,
+                scale: path.scale,
+                planeIndex: index
+            )
+            crashingPlanes.append(crashingPlane)
+            // Mark this plane index as exploded so it doesn't render on its path
+            explodedPlaneIndices.insert(index)
+        }
+
         pilotedPlaneIndex = nil
         pilotedPlaneFlightState = nil
     }
