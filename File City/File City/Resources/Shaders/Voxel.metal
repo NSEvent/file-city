@@ -944,6 +944,7 @@ struct GroundUniforms {
     float pad;
     float2 cityBoundsMin;
     float2 cityBoundsMax;
+    float2 cityCenter;
 };
 
 vertex GroundVertexOut ground_vertex(GroundVertexIn in [[stage_in]],
@@ -951,7 +952,11 @@ vertex GroundVertexOut ground_vertex(GroundVertexIn in [[stage_in]],
     GroundVertexOut out;
 
     // Scale the quad to cover a large area, centered at origin, below roads (which are at y = -0.6)
-    float3 worldPos = float3(in.position.x * uniforms.groundSize, -1.1, in.position.y * uniforms.groundSize);
+    float3 worldPos = float3(
+        in.position.x * uniforms.groundSize,
+        -1.1,
+        in.position.y * uniforms.groundSize
+    );
     out.worldPos = worldPos;
     out.position = uniforms.viewProjection * float4(worldPos, 1.0);
     out.distance = length(worldPos - uniforms.cameraPosition);
@@ -1003,9 +1008,10 @@ fragment float4 ground_fragment(GroundVertexOut in [[stage_in]],
     // Blend between concrete (inside city) and grass (outside)
     float3 baseColor = mix(grassColor, concreteColor, cityFactor);
 
-    // Distance-based fog - blend to sky horizon color
+    // Distance-based fog - blend to sky horizon color (reduced for ground)
     float3 fogColor = float3(0.75, 0.78, 0.83);
-    float fogFactor = 1.0 - exp(-in.distance * uniforms.fogDensity);
+    float groundFogDensity = uniforms.fogDensity * 0.3;  // Less fog on ground
+    float fogFactor = 1.0 - exp(-in.distance * groundFogDensity);
     fogFactor = saturate(fogFactor);
 
     float3 finalColor = mix(baseColor, fogColor, fogFactor);

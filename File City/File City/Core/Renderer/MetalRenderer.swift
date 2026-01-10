@@ -34,11 +34,13 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         var _pad: Float = 0
         var cityBoundsMin: SIMD2<Float>
         var cityBoundsMax: SIMD2<Float>
+        var cityCenter: SIMD2<Float>
     }
 
     // City bounds for ground shader (updated when blocks change)
     private var cityBoundsMin: SIMD2<Float> = .zero
     private var cityBoundsMax: SIMD2<Float> = .zero
+    private var cityCenter: SIMD2<Float> = .zero
 
     // Fog settings
     private let fogDensity: Float = 0.0005
@@ -374,6 +376,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             let padding: Float = 5.0
             cityBoundsMin = SIMD2<Float>(minX - padding, minZ - padding)
             cityBoundsMax = SIMD2<Float>(maxX + padding, maxZ + padding)
+            cityCenter = SIMD2<Float>((minX + maxX) / 2, (minZ + maxZ) / 2)
         }
 
         let cameraYaw = camera.wedgeYaw  // Use fixed yaw for wedge rotation
@@ -1040,11 +1043,12 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         var groundUniforms = GroundUniforms(
             viewProjection: viewProjection,
             cameraPosition: cameraPos,
-            groundSize: 500.0,  // Large ground plane
+            groundSize: 2000.0,  // Large ground plane
             time: Float(CACurrentMediaTime()),
             fogDensity: fogDensity,
             cityBoundsMin: cityBoundsMin,
-            cityBoundsMax: cityBoundsMax
+            cityBoundsMax: cityBoundsMax,
+            cityCenter: cityCenter
         )
         encoder?.setVertexBytes(&groundUniforms, length: MemoryLayout<GroundUniforms>.stride, index: 1)
         encoder?.setFragmentBytes(&groundUniforms, length: MemoryLayout<GroundUniforms>.stride, index: 0)
