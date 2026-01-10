@@ -49,6 +49,22 @@ final class Camera {
         case flyingPlane(index: Int)
     }
 
+    enum AerobaticManeuver: Equatable {
+        case none
+        case loopBellyOut    // Double-tap W - outside loop
+        case loopBellyIn     // Double-tap S - inside loop
+        case rollLeft        // Double-tap A - barrel roll left
+        case rollRight       // Double-tap D - barrel roll right
+
+        var duration: Float {
+            switch self {
+            case .none: return 0
+            case .loopBellyOut, .loopBellyIn: return 1.5  // Full loop takes 1.5 seconds
+            case .rollLeft, .rollRight: return 0.8         // Roll takes 0.8 seconds
+            }
+        }
+    }
+
     struct PlaneFlightState {
         var position: SIMD3<Float>
         var velocity: SIMD3<Float>
@@ -56,6 +72,12 @@ final class Camera {
         var roll: Float = 0           // Bank left/right (radians)
         var yaw: Float = 0            // Heading (radians)
         var isBoosting: Bool = false
+
+        // Aerobatic maneuver state
+        var activeManeuver: AerobaticManeuver = .none
+        var maneuverProgress: Float = 0       // 0.0 to 1.0
+        var maneuverStartPitch: Float = 0     // Store starting orientation
+        var maneuverStartRoll: Float = 0
 
         // Physics constants (delegated to Constants.PlanePhysics)
         static var baseThrust: Float { Constants.PlanePhysics.baseThrust }
@@ -542,14 +564,48 @@ final class Camera {
             state.pitch = max(0, state.pitch)  // Force nose up when low
         }
 
-        // 9. Roll auto-leveling when no input
-        if rollInput == 0 {
-            state.roll *= 0.98
-        }
+        // 9. Handle aerobatic maneuvers
+        if state.activeManeuver != .none {
+            let duration = state.activeManeuver.duration
+            state.maneuverProgress += dt / duration
 
-        // 10. Pitch tends toward level flight when no input
-        if pitchInput == 0 {
-            state.pitch *= 0.99
+            if state.maneuverProgress >= 1.0 {
+                // Maneuver complete - snap back to starting orientation
+                state.pitch = state.maneuverStartPitch
+                state.roll = state.maneuverStartRoll
+                state.activeManeuver = .none
+                state.maneuverProgress = 0
+            } else {
+                // Apply maneuver rotation based on progress
+                let progressAngle = state.maneuverProgress * 2 * .pi  // Full rotation
+
+                switch state.activeManeuver {
+                case .loopBellyOut:
+                    // Outside loop: pitch goes negative (nose down first, then all the way around)
+                    state.pitch = state.maneuverStartPitch - progressAngle
+                case .loopBellyIn:
+                    // Inside loop: pitch goes positive (nose up, then all the way around)
+                    state.pitch = state.maneuverStartPitch + progressAngle
+                case .rollLeft:
+                    // Barrel roll left (negative roll direction)
+                    state.roll = state.maneuverStartRoll - progressAngle
+                case .rollRight:
+                    // Barrel roll right (positive roll direction)
+                    state.roll = state.maneuverStartRoll + progressAngle
+                case .none:
+                    break
+                }
+            }
+        } else {
+            // 10. Roll auto-leveling when no input (only when not in maneuver)
+            if rollInput == 0 {
+                state.roll *= 0.98
+            }
+
+            // 11. Pitch tends toward level flight when no input (only when not in maneuver)
+            if pitchInput == 0 {
+                state.pitch *= 0.99
+            }
         }
 
         state.isBoosting = isBoosting
@@ -557,6 +613,19 @@ final class Camera {
 
         // Gradually return look offset to center
         cameraLookOffset *= 0.95
+    }
+
+    /// Start an aerobatic maneuver
+    func startAerobaticManeuver(_ maneuver: AerobaticManeuver) {
+        guard case .flyingPlane(_) = pilotingMode,
+              var state = planeFlightState,
+              state.activeManeuver == .none else { return }
+
+        state.activeManeuver = maneuver
+        state.maneuverProgress = 0
+        state.maneuverStartPitch = state.pitch
+        state.maneuverStartRoll = state.roll
+        planeFlightState = state
     }
 
     /// Adjust camera look offset while piloting (flight sim style mouse look)

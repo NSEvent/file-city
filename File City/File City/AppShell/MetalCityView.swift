@@ -88,6 +88,9 @@ struct MetalCityView: NSViewRepresentable {
         private var lastMovementTime: CFTimeInterval = CACurrentMediaTime()
         private var lastSpacePressTime: CFTimeInterval = 0
         private var lastWPressTime: CFTimeInterval = 0
+        private var lastSPressTime: CFTimeInterval = 0
+        private var lastAPressTime: CFTimeInterval = 0
+        private var lastDPressTime: CFTimeInterval = 0
         private let doubleTapInterval: CFTimeInterval = 0.3  // 300ms for double-tap
         private var hitTestFrameCounter: Int = 0
         private let hitTestInterval: Int = 4  // Run hit test every N frames
@@ -457,15 +460,59 @@ struct MetalCityView: NSViewRepresentable {
                 }
             }
 
-            // W: double-tap to sprint
+            // W: double-tap behavior depends on mode
             if keyCode == 13 { // W
                 let now = CACurrentMediaTime()
                 if now - lastWPressTime < doubleTapInterval {
-                    // Double-tap: start sprinting
-                    renderer?.camera.isSprinting = true
+                    if renderer?.camera.isPilotingPlane == true {
+                        // Double-tap W while piloting: loop belly out
+                        renderer?.camera.startAerobaticManeuver(.loopBellyOut)
+                    } else {
+                        // Double-tap W while walking: start sprinting
+                        renderer?.camera.isSprinting = true
+                    }
                     lastWPressTime = 0  // Reset to prevent triple-tap
                 } else {
                     lastWPressTime = now
+                }
+            }
+
+            // S: double-tap for loop belly in (only when piloting)
+            if keyCode == 1 { // S
+                let now = CACurrentMediaTime()
+                if now - lastSPressTime < doubleTapInterval {
+                    if renderer?.camera.isPilotingPlane == true {
+                        renderer?.camera.startAerobaticManeuver(.loopBellyIn)
+                    }
+                    lastSPressTime = 0
+                } else {
+                    lastSPressTime = now
+                }
+            }
+
+            // A: double-tap for left roll (only when piloting)
+            if keyCode == 0 { // A
+                let now = CACurrentMediaTime()
+                if now - lastAPressTime < doubleTapInterval {
+                    if renderer?.camera.isPilotingPlane == true {
+                        renderer?.camera.startAerobaticManeuver(.rollLeft)
+                    }
+                    lastAPressTime = 0
+                } else {
+                    lastAPressTime = now
+                }
+            }
+
+            // D: double-tap for right roll (only when piloting)
+            if keyCode == 2 { // D
+                let now = CACurrentMediaTime()
+                if now - lastDPressTime < doubleTapInterval {
+                    if renderer?.camera.isPilotingPlane == true {
+                        renderer?.camera.startAerobaticManeuver(.rollRight)
+                    }
+                    lastDPressTime = 0
+                } else {
+                    lastDPressTime = now
                 }
             }
 
