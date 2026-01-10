@@ -78,6 +78,9 @@ final class Camera {
         var maneuverProgress: Float = 0       // 0.0 to 1.0
         var maneuverStartPitch: Float = 0     // Store starting orientation
         var maneuverStartRoll: Float = 0
+        var maneuverStartYaw: Float = 0       // Store yaw for loops
+        var loopCenter: SIMD3<Float> = .zero  // Center of loop circle
+        var loopRadius: Float = 0             // Radius depends on speed
 
         // Physics constants (delegated to Constants.PlanePhysics)
         static var baseThrust: Float { Constants.PlanePhysics.baseThrust }
@@ -581,11 +584,38 @@ final class Camera {
 
                 switch state.activeManeuver {
                 case .loopBellyOut:
-                    // Outside loop: pitch goes negative (nose down first, then all the way around)
+                    // Outside loop: plane follows circular path, center above starting position
+                    // Pitch goes negative first (nose down), completing full circle
                     state.pitch = state.maneuverStartPitch - progressAngle
+
+                    // Calculate position on circle in the vertical plane aligned with yaw
+                    // Start at bottom of circle (angle = -π/2), go clockwise (decreasing angle)
+                    let circleAngle = -.pi / 2 - progressAngle
+                    let localY = state.loopRadius * sin(circleAngle)
+                    let localForward = state.loopRadius * cos(circleAngle)
+
+                    // Transform to world coordinates based on starting yaw
+                    let yaw = state.maneuverStartYaw
+                    state.position.x = state.loopCenter.x + localForward * sin(yaw)
+                    state.position.y = state.loopCenter.y + localY
+                    state.position.z = state.loopCenter.z + localForward * cos(yaw)
+
                 case .loopBellyIn:
-                    // Inside loop: pitch goes positive (nose up, then all the way around)
+                    // Inside loop: plane follows circular path, center below starting position
+                    // Pitch goes positive first (nose up), completing full circle
                     state.pitch = state.maneuverStartPitch + progressAngle
+
+                    // Start at top of circle (angle = π/2), go counter-clockwise (increasing angle)
+                    let circleAngle = .pi / 2 + progressAngle
+                    let localY = state.loopRadius * sin(circleAngle)
+                    let localForward = state.loopRadius * cos(circleAngle)
+
+                    // Transform to world coordinates based on starting yaw
+                    let yaw = state.maneuverStartYaw
+                    state.position.x = state.loopCenter.x + localForward * sin(yaw)
+                    state.position.y = state.loopCenter.y + localY
+                    state.position.z = state.loopCenter.z + localForward * cos(yaw)
+
                 case .rollLeft:
                     // Barrel roll left (negative roll direction)
                     state.roll = state.maneuverStartRoll - progressAngle
@@ -625,6 +655,24 @@ final class Camera {
         state.maneuverProgress = 0
         state.maneuverStartPitch = state.pitch
         state.maneuverStartRoll = state.roll
+        state.maneuverStartYaw = state.yaw
+
+        // For loops, calculate radius based on speed (faster = larger loop)
+        // Minimum radius of 20, scales with speed
+        if maneuver == .loopBellyOut || maneuver == .loopBellyIn {
+            let speed = state.speed
+            state.loopRadius = max(20.0, speed * 0.8)
+
+            // Calculate loop center based on maneuver type
+            if maneuver == .loopBellyOut {
+                // Outside loop: center is directly above the plane
+                state.loopCenter = state.position + SIMD3<Float>(0, state.loopRadius, 0)
+            } else {
+                // Inside loop: center is directly below the plane
+                state.loopCenter = state.position - SIMD3<Float>(0, state.loopRadius, 0)
+            }
+        }
+
         planeFlightState = state
     }
 
