@@ -31,8 +31,14 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         var groundSize: Float
         var time: Float
         var fogDensity: Float
-        var _pad: SIMD2<Float> = .zero
+        var _pad: Float = 0
+        var cityBoundsMin: SIMD2<Float>
+        var cityBoundsMax: SIMD2<Float>
     }
+
+    // City bounds for ground shader (updated when blocks change)
+    private var cityBoundsMin: SIMD2<Float> = .zero
+    private var cityBoundsMax: SIMD2<Float> = .zero
 
     // Fog settings
     private let fogDensity: Float = 0.0005
@@ -349,6 +355,27 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
         let blocksChanged = blocks != self.blocks
         self.blocks = blocks
+
+        // Update city bounds for ground shader
+        if blocksChanged && !blocks.isEmpty {
+            var minX: Float = .greatestFiniteMagnitude
+            var maxX: Float = -.greatestFiniteMagnitude
+            var minZ: Float = .greatestFiniteMagnitude
+            var maxZ: Float = -.greatestFiniteMagnitude
+            for block in blocks {
+                let halfX = Float(block.footprint.x) / 2
+                let halfZ = Float(block.footprint.y) / 2
+                minX = min(minX, block.position.x - halfX)
+                maxX = max(maxX, block.position.x + halfX)
+                minZ = min(minZ, block.position.z - halfZ)
+                maxZ = max(maxZ, block.position.z + halfZ)
+            }
+            // Add some padding around the city
+            let padding: Float = 5.0
+            cityBoundsMin = SIMD2<Float>(minX - padding, minZ - padding)
+            cityBoundsMax = SIMD2<Float>(maxX + padding, maxZ + padding)
+        }
+
         let cameraYaw = camera.wedgeYaw  // Use fixed yaw for wedge rotation
         let inboundTargets = helicopterManager.getActiveConstructionTargetIDs()
         let beamTargets = beamManager.getActiveBeamTargetIDs()
@@ -1015,7 +1042,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             cameraPosition: cameraPos,
             groundSize: 500.0,  // Large ground plane
             time: Float(CACurrentMediaTime()),
-            fogDensity: fogDensity
+            fogDensity: fogDensity,
+            cityBoundsMin: cityBoundsMin,
+            cityBoundsMax: cityBoundsMax
         )
         encoder?.setVertexBytes(&groundUniforms, length: MemoryLayout<GroundUniforms>.stride, index: 1)
         encoder?.setFragmentBytes(&groundUniforms, length: MemoryLayout<GroundUniforms>.stride, index: 0)

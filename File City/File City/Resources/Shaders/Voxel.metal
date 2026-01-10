@@ -941,7 +941,9 @@ struct GroundUniforms {
     float groundSize;
     float time;
     float fogDensity;
-    float2 pad;
+    float pad;
+    float2 cityBoundsMin;
+    float2 cityBoundsMax;
 };
 
 vertex GroundVertexOut ground_vertex(GroundVertexIn in [[stage_in]],
@@ -962,24 +964,44 @@ fragment float4 ground_fragment(GroundVertexOut in [[stage_in]],
     float3 worldPos = in.worldPos;
     float2 pos = worldPos.xz;
 
-    // Grassy green base colors
-    float3 grassLight = float3(0.35, 0.45, 0.28);   // Light grass green
-    float3 grassDark = float3(0.25, 0.35, 0.20);    // Darker grass green
+    // Check if inside city bounds
+    float2 cityMin = uniforms.cityBoundsMin;
+    float2 cityMax = uniforms.cityBoundsMax;
 
-    // Organic noise pattern (multiple octaves for natural grass look)
+    // Calculate distance to city edge for smooth blending
+    float insideX = min(pos.x - cityMin.x, cityMax.x - pos.x);
+    float insideZ = min(pos.y - cityMin.y, cityMax.y - pos.y);
+    float insideDist = min(insideX, insideZ);
+    float transitionWidth = 8.0;  // Width of grass-to-concrete transition
+    float cityFactor = saturate(insideDist / transitionWidth);
+
+    // Concrete colors for inside city
+    float3 concreteLight = float3(0.52, 0.50, 0.48);
+    float3 concreteDark = float3(0.42, 0.40, 0.38);
+
+    // Grassy green colors for outside city
+    float3 grassLight = float3(0.35, 0.45, 0.28);
+    float3 grassDark = float3(0.25, 0.35, 0.20);
+
+    // Organic noise pattern (multiple octaves)
     float noise1 = fract(sin(dot(floor(pos / 6.0), float2(12.9898, 78.233))) * 43758.5453);
     float noise2 = fract(sin(dot(floor(pos / 15.0), float2(39.346, 11.135))) * 43758.5453);
     float noise3 = fract(sin(dot(floor(pos / 40.0), float2(73.156, 52.235))) * 43758.5453);
     float combinedNoise = noise1 * 0.5 + noise2 * 0.3 + noise3 * 0.2;
 
-    // Mix between light and dark grass
-    float3 baseColor = mix(grassDark, grassLight, combinedNoise);
+    // Mix light and dark for both materials
+    float3 concreteColor = mix(concreteDark, concreteLight, combinedNoise);
+    float3 grassColor = mix(grassDark, grassLight, combinedNoise);
 
-    // Subtle yellow-green variation for natural grass look
+    // Subtle tint variation
     float tintNoise = fract(sin(dot(floor(pos / 25.0), float2(45.17, 93.42))) * 43758.5453);
-    float3 yellowTint = float3(1.05, 1.02, 0.95);   // Slightly yellow
-    float3 blueTint = float3(0.95, 1.0, 1.05);      // Slightly blue-green
-    baseColor *= mix(yellowTint, blueTint, tintNoise);
+    float3 warmTint = float3(1.03, 1.01, 0.97);
+    float3 coolTint = float3(0.97, 1.0, 1.03);
+    concreteColor *= mix(warmTint, coolTint, tintNoise);
+    grassColor *= mix(float3(1.05, 1.02, 0.95), float3(0.95, 1.0, 1.05), tintNoise);
+
+    // Blend between concrete (inside city) and grass (outside)
+    float3 baseColor = mix(grassColor, concreteColor, cityFactor);
 
     // Distance-based fog - blend to sky horizon color
     float3 fogColor = float3(0.75, 0.78, 0.83);
