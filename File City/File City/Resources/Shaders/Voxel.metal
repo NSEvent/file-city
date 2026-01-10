@@ -79,11 +79,25 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
             local.z *= bodyScaleZ;
         }
     } else if (instance.shapeID == 7) {
-        float t = saturate((local.x + 0.5));
+        // Jet flame with animated turbulence
+        float t = saturate((local.x + 0.5));  // 0 at back, 1 at front
         float shrink = 1.0 - t;
-        local.y *= (0.3 + 0.7 * shrink);
-        local.z *= (0.3 + 0.7 * shrink);
-        local.x *= 1.2;
+
+        // Base taper
+        float taper = 0.2 + 0.8 * shrink;
+
+        // Animated turbulence - more at the tip
+        float turbFreq = 25.0;
+        float turbAmp = 0.15 * t;  // More turbulence toward tip
+        float turbY = sin(local.x * turbFreq + uniforms.time * 40.0) * turbAmp;
+        float turbZ = cos(local.x * turbFreq * 1.3 + uniforms.time * 35.0) * turbAmp;
+
+        // Pulsing intensity
+        float pulse = 0.85 + 0.15 * sin(uniforms.time * 20.0);
+
+        local.y = local.y * taper * pulse + turbY;
+        local.z = local.z * taper * pulse + turbZ;
+        local.x *= 1.8;  // Longer flame
     } else if (instance.shapeID > 0 && local.y > 0.0) {
         if (instance.shapeID == 1) {
             // tapered Spire
@@ -558,9 +572,48 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
     }
 
     if (in.shapeID == 7) {
-        float flicker = 0.75 + 0.25 * sin((in.uv.x + in.uv.y) * 28.0);
+        // Epic jet flame with white-hot core -> blue -> orange -> red
         float heat = saturate(in.hover);
-        baseColor = float3(1.0, 0.45, 0.1) * (0.6 + 0.4 * flicker) * (0.6 + 0.8 * heat);
+
+        // Use UV to determine position along flame (x) and distance from center (y,z)
+        float alongFlame = in.uv.x;  // 0 = base, 1 = tip
+        float distFromCenter = abs(in.uv.y - 0.5) * 2.0;  // 0 = center, 1 = edge
+
+        // Animated flickering at multiple frequencies
+        float flicker1 = sin(alongFlame * 30.0 + uniforms.time * 45.0) * 0.5 + 0.5;
+        float flicker2 = sin(alongFlame * 18.0 - uniforms.time * 32.0) * 0.5 + 0.5;
+        float flicker3 = sin(distFromCenter * 12.0 + uniforms.time * 28.0) * 0.5 + 0.5;
+        float flicker = mix(flicker1, flicker2, 0.4) * (0.7 + 0.3 * flicker3);
+
+        // Color gradient: white core -> blue -> cyan -> orange -> red at edges
+        float3 whiteHot = float3(1.0, 1.0, 1.0);
+        float3 blueCore = float3(0.4, 0.7, 1.0);
+        float3 cyanMid = float3(0.2, 0.9, 1.0);
+        float3 orangeOuter = float3(1.0, 0.5, 0.1);
+        float3 redEdge = float3(1.0, 0.15, 0.05);
+
+        // Blend based on distance from center and position along flame
+        float coreBlend = smoothstep(0.5, 0.0, distFromCenter);
+        float midBlend = smoothstep(0.3, 0.6, distFromCenter) * smoothstep(0.8, 0.4, distFromCenter);
+        float edgeBlend = smoothstep(0.5, 0.9, distFromCenter);
+        float tipFade = smoothstep(0.3, 0.9, alongFlame);
+
+        // Core is white-hot transitioning to blue
+        float3 coreColor = mix(blueCore, whiteHot, coreBlend * (1.0 - tipFade * 0.5));
+        // Add cyan in the middle
+        coreColor = mix(coreColor, cyanMid, midBlend * 0.6);
+        // Outer transitions to orange/red
+        float3 outerColor = mix(orangeOuter, redEdge, edgeBlend + tipFade * 0.3);
+
+        // Final blend
+        float3 flameColor = mix(coreColor, outerColor, distFromCenter * 0.7 + tipFade * 0.3);
+
+        // Apply flickering and heat intensity
+        float intensity = (0.7 + 0.3 * flicker) * (0.5 + heat * 1.5);
+        baseColor = flameColor * intensity;
+
+        // Add bloom/glow effect
+        baseColor += whiteHot * coreBlend * (1.0 - tipFade) * 0.4 * heat;
     }
     
     // Sample texture if index is valid (>= 0)

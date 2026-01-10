@@ -1561,8 +1561,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 rotationY = atan2(flatDir.z, flatDir.x)
                 rotationX = roll     // Visual roll - bank left/right
                 rotationZ = pitch    // Visual pitch - nose up/down
-                glow = state.isBoosting ? (0.8 + 0.2 * sin(Float(now) * 25.0)) : 0.0
-                showFlames = state.isBoosting
+                let isDoingManeuver = state.activeManeuver != .none
+                glow = (state.isBoosting || isDoingManeuver) ? (0.8 + 0.2 * sin(Float(now) * 25.0)) : 0.0
+                showFlames = state.isBoosting || isDoingManeuver
             } else {
                 // Normal path-following plane
                 let isHovered = hoveredPlaneIndex == index
