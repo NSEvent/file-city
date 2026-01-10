@@ -584,13 +584,12 @@ final class Camera {
 
                 switch state.activeManeuver {
                 case .loopBellyOut:
-                    // Outside loop: plane follows circular path, center above starting position
-                    // Pitch goes negative first (nose down), completing full circle
+                    // Outside loop: center is BELOW plane, plane starts at TOP of circle
+                    // Pitch goes negative first (nose down), plane goes forward-and-down
                     state.pitch = state.maneuverStartPitch - progressAngle
 
-                    // Calculate position on circle in the vertical plane aligned with yaw
-                    // Start at bottom of circle (angle = -π/2), go clockwise (decreasing angle)
-                    let circleAngle = -.pi / 2 - progressAngle
+                    // Start at top of circle (angle = π/2), sweep forward-down-back-up
+                    let circleAngle = .pi / 2 - progressAngle
                     let localY = state.loopRadius * sin(circleAngle)
                     let localForward = state.loopRadius * cos(circleAngle)
 
@@ -601,12 +600,12 @@ final class Camera {
                     state.position.z = state.loopCenter.z + localForward * cos(yaw)
 
                 case .loopBellyIn:
-                    // Inside loop: plane follows circular path, center below starting position
-                    // Pitch goes positive first (nose up), completing full circle
+                    // Inside loop: center is ABOVE plane, plane starts at BOTTOM of circle
+                    // Pitch goes positive first (nose up), plane goes forward-and-up
                     state.pitch = state.maneuverStartPitch + progressAngle
 
-                    // Start at top of circle (angle = π/2), go counter-clockwise (increasing angle)
-                    let circleAngle = .pi / 2 + progressAngle
+                    // Start at bottom of circle (angle = -π/2), sweep forward-up-back-down
+                    let circleAngle = -.pi / 2 + progressAngle
                     let localY = state.loopRadius * sin(circleAngle)
                     let localForward = state.loopRadius * cos(circleAngle)
 
@@ -665,11 +664,11 @@ final class Camera {
 
             // Calculate loop center based on maneuver type
             if maneuver == .loopBellyOut {
-                // Outside loop: center is directly above the plane
-                state.loopCenter = state.position + SIMD3<Float>(0, state.loopRadius, 0)
-            } else {
-                // Inside loop: center is directly below the plane
+                // Outside loop: center is BELOW the plane (plane at top of circle)
                 state.loopCenter = state.position - SIMD3<Float>(0, state.loopRadius, 0)
+            } else {
+                // Inside loop: center is ABOVE the plane (plane at bottom of circle)
+                state.loopCenter = state.position + SIMD3<Float>(0, state.loopRadius, 0)
             }
         }
 
