@@ -680,26 +680,29 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     }
 
     private func updateCrashingPlanes(deltaTime: Float) {
-        let gravity: Float = -20.0
+        let gravity: Float = -35.0  // Stronger gravity for dramatic fall
         let groundLevel: Float = 0.0
 
         for i in (0..<crashingPlanes.count).reversed() {
-            // Apply gravity (no thrust, no lift)
+            // Apply strong gravity - plane is out of control but engines still running
             crashingPlanes[i].velocity.y += gravity * deltaTime
 
-            // Apply drag to slow horizontal movement slightly
-            let drag: Float = 0.98
-            crashingPlanes[i].velocity.x *= drag
-            crashingPlanes[i].velocity.z *= drag
+            // Add some forward thrust (engines still on, just uncontrolled)
+            let forwardDir = SIMD3<Float>(
+                sin(crashingPlanes[i].yaw),
+                0,
+                cos(crashingPlanes[i].yaw)
+            )
+            crashingPlanes[i].velocity += forwardDir * 8.0 * deltaTime
 
             // Update position
             crashingPlanes[i].position += crashingPlanes[i].velocity * deltaTime
 
-            // Nose down as it falls (pitch toward ground)
-            crashingPlanes[i].pitch -= deltaTime * 0.5
+            // Nose down aggressively as it falls
+            crashingPlanes[i].pitch -= deltaTime * 1.2
 
-            // Slight spiral - roll increases
-            crashingPlanes[i].roll += deltaTime * 1.5
+            // Spiral out of control - roll increases faster
+            crashingPlanes[i].roll += deltaTime * 3.0
 
             // Check for ground collision
             if crashingPlanes[i].position.y <= groundLevel {
@@ -909,41 +912,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 shapeID: 5
             ))
 
-            // Flames (always on for crashing plane)
-            let flameScale = SIMD3<Float>(1.2, 0.35, 0.35)
-            let flameBack = thrusterBack + scale.x * 0.18
-
-            instances.append(VoxelInstance(
-                position: position - forward * flameBack + rightVec * thrusterOffset - upVec * 0.1,
-                _pad0: 0,
-                scale: flameScale,
-                _pad1: 0,
-                rotationY: rotationY,
-                rotationX: rotationX,
-                rotationZ: rotationZ,
-                _pad2: 0,
-                materialID: 0,
-                highlight: 0,
-                hover: 0.9,  // Full flame intensity
-                textureIndex: -1,
-                shapeID: 7
-            ))
-
-            instances.append(VoxelInstance(
-                position: position - forward * flameBack - rightVec * thrusterOffset - upVec * 0.1,
-                _pad0: 0,
-                scale: flameScale,
-                _pad1: 0,
-                rotationY: rotationY,
-                rotationX: rotationX,
-                rotationZ: rotationZ,
-                _pad2: 0,
-                materialID: 0,
-                highlight: 0,
-                hover: 0.9,
-                textureIndex: -1,
-                shapeID: 7
-            ))
+            // No flames - engines cut out when pilot ejects
         }
 
         return instances
