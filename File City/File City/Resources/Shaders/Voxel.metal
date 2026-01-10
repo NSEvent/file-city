@@ -951,10 +951,10 @@ vertex GroundVertexOut ground_vertex(GroundVertexIn in [[stage_in]],
                                      constant GroundUniforms &uniforms [[buffer(1)]]) {
     GroundVertexOut out;
 
-    // Scale the quad to cover a large area, centered at origin, below roads (which are at y = -0.6)
+    // Scale the quad to cover a large area, centered at origin, below roads (which bottom at y = -1.1)
     float3 worldPos = float3(
         in.position.x * uniforms.groundSize,
-        -1.1,
+        -1.2,  // Lower than road bottoms to prevent Z-fighting
         in.position.y * uniforms.groundSize
     );
     out.worldPos = worldPos;

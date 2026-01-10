@@ -147,8 +147,8 @@ enum Constants {
         /// Fixed yaw angle for isometric view (radians, ~45 degrees)
         static let isometricYaw: Float = 0.7853982
 
-        /// Near clipping plane
-        static let nearPlane: Float = 0.01
+        /// Near clipping plane (larger value = better depth precision)
+        static let nearPlane: Float = 1.0
 
         /// Far clipping plane
         static let farPlane: Float = 2000

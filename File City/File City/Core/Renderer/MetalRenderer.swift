@@ -324,20 +324,25 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
         
         guard !sourceTextures.isEmpty, let first = sourceTextures.first else { return }
-        
+
+        // Calculate mipmap levels
+        let maxDim = max(first.width, first.height)
+        let mipmapLevels = Int(log2(Double(maxDim))) + 1
+
         let descriptor = MTLTextureDescriptor()
         descriptor.textureType = .type2DArray
         descriptor.pixelFormat = first.pixelFormat
         descriptor.width = first.width
         descriptor.height = first.height
         descriptor.arrayLength = sourceTextures.count
-        descriptor.usage = .shaderRead
-        
+        descriptor.mipmapLevelCount = mipmapLevels
+        descriptor.usage = [.shaderRead, .shaderWrite]  // shaderWrite for mipmap generation
+
         guard let arrayTex = device.makeTexture(descriptor: descriptor) else { return }
-        
+
         guard let commandBuffer = commandQueue.makeCommandBuffer(),
               let blitEncoder = commandBuffer.makeBlitCommandEncoder() else { return }
-              
+
         for (i, tex) in sourceTextures.enumerated() {
             blitEncoder.copy(from: tex, sourceSlice: 0, sourceLevel: 0,
                              sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
@@ -345,10 +350,13 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                              to: arrayTex, destinationSlice: i, destinationLevel: 0,
                              destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0))
         }
-        
+
+        // Generate mipmaps for the entire texture array
+        blitEncoder.generateMipmaps(for: arrayTex)
+
         blitEncoder.endEncoding()
         commandBuffer.commit()
-        
+
         self.textureArray = arrayTex
     }
 
@@ -1449,10 +1457,11 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
 
         // Vertical roads (running along Z axis) - normal UV (materialID 0)
+        // Slightly higher than horizontal roads to prevent Z-fighting at intersections
         for xIndex in 0..<(xs.count - 1) {
             let roadX = xs[xIndex] + stepX * 0.5
             let instance = VoxelInstance(
-                position: SIMD3<Float>(roadX, -0.6, centerZ),
+                position: SIMD3<Float>(roadX, -0.59, centerZ),
                 scale: SIMD3<Float>(Float(roadWidth), 1.0, spanZ),
                 rotationY: 0,
                 rotationX: 0,

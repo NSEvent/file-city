@@ -17,9 +17,9 @@ final class TextureGenerator {
             pixelFormat: .rgba8Unorm,
             width: width,
             height: height,
-            mipmapped: false
+            mipmapped: true
         )
-        descriptor.usage = .shaderRead
+        descriptor.usage = [.shaderRead, .shaderWrite]  // shaderWrite needed for mipmap generation
         
         guard let texture = device.makeTexture(descriptor: descriptor) else { return nil }
         
