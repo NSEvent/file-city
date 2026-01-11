@@ -14,3 +14,28 @@
        - **Front Face:** `globalU = uOffset + (1.0 - in.uv.x) * uWidth`. (Standard L->R)
        - **Back Face:** `globalU = (1.0 - (uOffset + uWidth)) + (1.0 - in.uv.x) * uWidth`.
     3. **Why?** On the back face, the segments appear in reverse order (End->Start). You must "move" the texture window to the opposite side of the atlas (`1.0 - (Start + Width)`) to maintain the visual word progression (Start of word on the left).
+
+- **Async Updates Causing Graphics Flashing:**
+  - **Problem:** When async operations (git status, LOC counting, file watching) trigger texture/instance rebuilds, clearing data before building new data causes objects to flash/disappear momentarily.
+  - **Example:** `rebuildLOCFlagTextures` was clearing `locFlagTextureArray` and `locFlagIndexByNodeID` before building new textures. If a render occurred during rebuild, flags disappeared.
+  - **Solution (Atomic Swap Pattern):**
+    1. Build all new data into **temporary local variables** first
+    2. Only clear/swap the instance variables **after** new data is fully ready
+    3. Swap both the index map and texture array together to maintain consistency
+  - **Code Pattern:**
+    ```swift
+    // BAD - causes flashing:
+    textureArray = nil
+    indexMap.removeAll()
+    // ... build new data ...
+    textureArray = newArray
+
+    // GOOD - atomic swap:
+    var newIndexMap: [UUID: Int] = [:]
+    var newTextures: [MTLTexture] = []
+    // ... build into temporaries ...
+    // Swap atomically at the end:
+    indexMap = newIndexMap
+    textureArray = newArrayTexture
+    ```
+  - **Applies to:** Texture arrays, instance buffers, any data used during render that gets rebuilt from async updates.

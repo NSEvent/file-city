@@ -671,18 +671,23 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
         guard needsRebuild else { return }
 
-        locFlagTextureArray = nil
-        locFlagIndexByNodeID.removeAll()
-
+        // Build new textures into temporary variables first to avoid flashing
+        // (Don't clear existing data until new data is ready)
+        var newIndexByNodeID: [UUID: Int] = [:]
         var textures: [MTLTexture] = []
         for block in blocks {
             guard let loc = locByNodeID[block.nodeID], loc > 0 else { continue }
             guard let tex = TextureGenerator.generateLOCFlag(device: device, loc: loc) else { continue }
-            locFlagIndexByNodeID[block.nodeID] = textures.count
+            newIndexByNodeID[block.nodeID] = textures.count
             textures.append(tex)
         }
 
-        guard !textures.isEmpty, let first = textures.first else { return }
+        guard !textures.isEmpty, let first = textures.first else {
+            // No textures to show - clear atomically
+            locFlagTextureArray = nil
+            locFlagIndexByNodeID.removeAll()
+            return
+        }
 
         let descriptor = MTLTextureDescriptor()
         descriptor.textureType = .type2DArray
@@ -707,6 +712,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         blitEncoder.endEncoding()
         commandBuffer.commit()
 
+        // Atomic swap - update both at once to prevent flashing
+        locFlagIndexByNodeID = newIndexByNodeID
         locFlagTextureArray = arrayTex
     }
 
