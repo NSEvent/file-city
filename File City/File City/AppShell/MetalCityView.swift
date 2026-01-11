@@ -517,9 +517,8 @@ struct MetalCityView: NSViewRepresentable {
             claudeItem.target = self
             menu.addItem(claudeItem)
 
-            // Show the menu
-            let windowPoint = view.convert(point, to: nil)
-            menu.popUp(positioning: nil, at: windowPoint, in: view)
+            // Show the menu at click location (point is already in view coordinates)
+            menu.popUp(positioning: nil, at: point, in: view)
         }
 
         private func showSatelliteContextMenu(sessionID: UUID, at point: CGPoint, in view: MTKView) {
@@ -539,9 +538,8 @@ struct MetalCityView: NSViewRepresentable {
             terminateItem.target = self
             menu.addItem(terminateItem)
 
-            // Show the menu
-            let windowPoint = view.convert(point, to: nil)
-            menu.popUp(positioning: nil, at: windowPoint, in: view)
+            // Show the menu at click location (point is already in view coordinates)
+            menu.popUp(positioning: nil, at: point, in: view)
         }
 
         @objc private func revealInFinder(_ sender: NSMenuItem) {
