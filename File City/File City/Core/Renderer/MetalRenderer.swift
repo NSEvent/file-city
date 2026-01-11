@@ -2926,6 +2926,34 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         satelliteManager.getSatelliteTarget(sessionID: sessionID)?.position
     }
 
+    /// Get satellite target (position and radius) for a specific sessionID
+    func getSatelliteTarget(sessionID: UUID) -> (position: SIMD3<Float>, radius: Float)? {
+        return satelliteManager.getSatelliteTarget(sessionID: sessionID)
+    }
+
+    /// Get all active satellites with their positions and radii (for collision detection)
+    func getSatellitePositions() -> [(position: SIMD3<Float>, radius: Float, sessionID: UUID)] {
+        var positions: [(SIMD3<Float>, Float, UUID)] = []
+
+        // Query all active satellites
+        let hitBoxes = satelliteManager.getSatelliteHitBoxes()
+
+        // Group by sessionID to avoid duplicates (each satellite has 5 hitboxes)
+        var seenSessions = Set<UUID>()
+
+        for box in hitBoxes {
+            if !seenSessions.contains(box.sessionID) {
+                seenSessions.insert(box.sessionID)
+
+                if let (pos, radius) = satelliteManager.getSatelliteTarget(sessionID: box.sessionID) {
+                    positions.append((pos, radius, box.sessionID))
+                }
+            }
+        }
+
+        return positions
+    }
+
     /// Get current position of a car by index (for grapple attachment following)
     func carPosition(index: Int) -> SIMD3<Float>? {
         guard index >= 0, index < carPaths.count else { return nil }

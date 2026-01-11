@@ -883,6 +883,23 @@ struct MetalCityView: NSViewRepresentable {
                 }
             }
 
+            // Handle standing on satellite (move with it, not grappled)
+            if renderer.camera.standingOnSatellite != nil, !renderer.camera.isAttached {
+                let sessionID = renderer.camera.standingOnSatellite!
+
+                if let (satPos, _) = renderer.getSatelliteTarget(sessionID: sessionID) {
+                    let satTop = satPos.y + 1.0  // Standing surface height
+                    renderer.camera.position = SIMD3<Float>(
+                        satPos.x,
+                        satTop + renderer.camera.playerHeight * 0.5,
+                        satPos.z
+                    )
+                } else {
+                    // Satellite disappeared, stop standing
+                    renderer.camera.standingOnSatellite = nil
+                }
+            }
+
             // Calculate movement direction from pressed keys
             var forwardAmount: Float = 0
             var rightAmount: Float = 0
@@ -904,7 +921,8 @@ struct MetalCityView: NSViewRepresentable {
 
             // Always apply movement/physics (gravity needs to run even without input)
             let blocks = appState?.blocks
-            renderer.camera.move(forward: forwardAmount, right: rightAmount, up: upAmount, deltaTime: deltaTime, blocks: blocks)
+            let satellites = renderer.getSatellitePositions()
+            renderer.camera.move(forward: forwardAmount, right: rightAmount, up: upAmount, deltaTime: deltaTime, blocks: blocks, satellites: satellites)
 
             // Center-screen hit testing for crosshair targeting (throttled to reduce lag)
             hitTestFrameCounter += 1

@@ -43,6 +43,7 @@ final class Camera {
     }
     var grappleAttachment: GrappleAttachment = .none
     var isShiftHeld: Bool = false
+    var standingOnSatellite: UUID? = nil  // SessionID of satellite player is standing on
 
     // MARK: - Plane Piloting
     enum PilotingMode {
@@ -196,7 +197,7 @@ final class Camera {
     }
 
     /// Move camera based on input direction, with optional collision detection
-    func move(forward forwardAmount: Float, right rightAmount: Float, up upAmount: Float, deltaTime: Float, blocks: [CityBlock]? = nil) {
+    func move(forward forwardAmount: Float, right rightAmount: Float, up upAmount: Float, deltaTime: Float, blocks: [CityBlock]? = nil, satellites: [(position: SIMD3<Float>, radius: Float, sessionID: UUID)]? = nil) {
         guard isFirstPerson else { return }
 
         // Calculate intended horizontal movement
@@ -329,6 +330,36 @@ final class Camera {
             newPosition.z += horizontalDelta.z
         }
 
+        // Check satellite collisions
+        if let satellites = satellites {
+            let playerFeetY = newPosition.y - playerHeight * 0.5
+            let prevFeetY = position.y - playerHeight * 0.5
+
+            for satellite in satellites {
+                let satPos = satellite.position
+                let satRadius = satellite.radius
+                let sessionID = satellite.sessionID
+                let satTop = satPos.y + 1.0  // Assume ~1 unit height for standing surface
+
+                // Check if player is horizontally near satellite (circular check)
+                let dx = newPosition.x - satPos.x
+                let dz = newPosition.z - satPos.z
+                let distanceXZ = sqrt(dx * dx + dz * dz)
+
+                // Player is above satellite's footprint
+                if distanceXZ <= satRadius {
+                    // Landing on satellite: feet below top, were above
+                    if playerFeetY < satTop && prevFeetY >= satTop - 0.1 {
+                        newPosition.y = satTop + playerHeight * 0.5
+                        if !isFlying {
+                            verticalVelocity = 0
+                            standingOnSatellite = sessionID  // Track which satellite
+                        }
+                    }
+                }
+            }
+        }
+
         position = newPosition
     }
 
@@ -338,6 +369,7 @@ final class Camera {
         // Only jump if velocity is ~0 (meaning we're on a surface - ground or rooftop)
         if abs(verticalVelocity) < 0.1 {
             verticalVelocity = jumpVelocity
+            standingOnSatellite = nil  // Detach from satellite when jumping
         }
     }
 
