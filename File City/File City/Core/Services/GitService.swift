@@ -322,7 +322,7 @@ extension GitService {
     ]
 
     /// Maximum directory depth for LOC counting (to avoid slow scans)
-    private static let maxRecurseDepth = 2
+    private static let maxRecurseDepth = 5
 
     /// Maximum number of files to count (for performance)
     private static let maxFilesToCount = 100
