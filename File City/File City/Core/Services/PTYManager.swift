@@ -257,8 +257,8 @@ final class PTYManager: ObservableObject {
             return true
         }
 
-        // Return last 5 meaningful lines
-        return Array(meaningfulLines.suffix(5))
+        // Return last 12 meaningful lines for hover preview
+        return Array(meaningfulLines.suffix(12))
     }
 
     /// Detect Claude's state from terminal contents

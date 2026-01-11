@@ -23,6 +23,7 @@ final class AppState: ObservableObject {
     @Published var hoveredBeaconURL: URL?
     @Published var hoveredClaudeSession: ClaudeSession?
     @Published var hoveredClaudeOutputLines: [String]?
+    private var hoveredClaudeSessionID: UUID?
     @Published var activityInfoLines: [String]?
     @Published private(set) var activityVersion: UInt = 0
     @Published var isFirstPerson: Bool = false
@@ -232,6 +233,7 @@ final class AppState: ObservableObject {
     }
 
     func setHoveredClaudeSession(_ sessionID: UUID?) {
+        hoveredClaudeSessionID = sessionID
         if let sessionID {
             hoveredClaudeSession = claudeSessions.first { $0.id == sessionID }
             hoveredClaudeOutputLines = ptyManager.sessions[sessionID]?.lastOutputLines
@@ -239,6 +241,13 @@ final class AppState: ObservableObject {
             hoveredClaudeSession = nil
             hoveredClaudeOutputLines = nil
         }
+    }
+
+    /// Refresh hovered session output (called periodically when hovering)
+    private func refreshHoveredClaudeOutput() {
+        guard let sessionID = hoveredClaudeSessionID else { return }
+        hoveredClaudeSession = claudeSessions.first { $0.id == sessionID }
+        hoveredClaudeOutputLines = ptyManager.sessions[sessionID]?.lastOutputLines
     }
 
     func claudeSessionOutputLines(for sessionID: UUID) -> [String]? {
@@ -258,6 +267,10 @@ final class AppState: ObservableObject {
             claudeSessions[index].state = ptySession.state
             claudeSessions[index].ptyPath = ptySession.ptyPath
         }
+
+        // Refresh hover output if we're hovering over this or any session
+        // (PTY manager polls all sessions, so refresh on any update)
+        refreshHoveredClaudeOutput()
 
         // Notify observers
         NSLog("[AppState] Sending claudeSessionStateChanged")

@@ -124,18 +124,22 @@ private struct InfoOverlayView: View {
                     .lineLimit(1)
                     .truncationMode(.head)
 
-                // Last output lines (when idle)
-                if session.state == .idle, let outputLines = appState.hoveredClaudeOutputLines, !outputLines.isEmpty {
+                // Last output lines (live updating)
+                if let outputLines = appState.hoveredClaudeOutputLines, !outputLines.isEmpty {
                     Divider()
-                    VStack(alignment: .leading, spacing: 2) {
-                        ForEach(outputLines.suffix(3), id: \.self) { line in
-                            Text(stripANSI(line))
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(Array(outputLines.enumerated()), id: \.offset) { _, line in
+                                Text(stripANSI(line))
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                            }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    .frame(maxHeight: 200)
                 }
 
                 // Click hint
