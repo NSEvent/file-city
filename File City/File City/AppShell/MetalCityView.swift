@@ -149,6 +149,14 @@ struct MetalCityView: NSViewRepresentable {
                     self?.renderer?.clearHelicopters()
                 }
                 .store(in: &cancellables)
+
+            // Observe LOC changes to update flags
+            appState.$locByPath
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    self?.updateFromAppState()
+                }
+                .store(in: &cancellables)
         }
 
         private func handleFileWrite(nodeID: UUID) {

@@ -44,7 +44,21 @@ final class AppState: ObservableObject {
     private var gitStatusTask: Task<Void, Never>?
     private var gitLOCTask: Task<Void, Never>?
     private var gitCleanByPath: [String: Bool] = [:]
-    @Published var locByNodeID: [UUID: Int] = [:]
+    /// LOC data keyed by path (not UUID) to survive rescans that regenerate node IDs
+    @Published var locByPath: [String: Int] = [:]
+
+    /// Computed property to convert path-based LOC to nodeID-based for rendering
+    /// This allows LOC data to persist across FSEvents rescans that regenerate UUIDs
+    var locByNodeID: [UUID: Int] {
+        var result: [UUID: Int] = [:]
+        for (path, loc) in locByPath {
+            let url = URL(fileURLWithPath: path)
+            if let node = nodeByURL[url] {
+                result[node.id] = loc
+            }
+        }
+        return result
+    }
     private var historicalTreeCache: [String: FileNode] = [:]
     private var lastLoadedCommitID: String?
     private var timeTravelLoadTask: Task<Void, Never>?
@@ -156,7 +170,7 @@ final class AppState: ObservableObject {
                 hoveredNodeID = nil
                 hoveredBeaconNodeID = nil
                 hoveredBeaconURL = nil
-                locByNodeID = [:]
+                locByPath = [:]
             }
         }
     }
@@ -367,11 +381,12 @@ final class AppState: ObservableObject {
         let gitRepoNode = findContainingGitRepo(for: node)
         guard let repoNode = gitRepoNode else { return }
 
-        // Count LOC in background
+        // Count LOC in background - store by path to survive rescans
+        let repoPath = repoNode.url.path
         Task.detached(priority: .utility) {
             let loc = GitService.countLinesOfCode(at: repoNode.url)
             await MainActor.run {
-                self.locByNodeID[repoNode.id] = loc
+                self.locByPath[repoPath] = loc
             }
         }
     }

@@ -16,26 +16,59 @@
     3. **Why?** On the back face, the segments appear in reverse order (End->Start). You must "move" the texture window to the opposite side of the atlas (`1.0 - (Start + Width)`) to maintain the visual word progression (Start of word on the left).
 
 - **Async Updates Causing Graphics Flashing:**
-  - **Problem:** When async operations (git status, LOC counting, file watching) trigger texture/instance rebuilds, clearing data before building new data causes objects to flash/disappear momentarily.
-  - **Example:** `rebuildLOCFlagTextures` was clearing `locFlagTextureArray` and `locFlagIndexByNodeID` before building new textures. If a render occurred during rebuild, flags disappeared.
-  - **Solution (Atomic Swap Pattern):**
-    1. Build all new data into **temporary local variables** first
-    2. Only clear/swap the instance variables **after** new data is fully ready
-    3. Swap both the index map and texture array together to maintain consistency
-  - **Code Pattern:**
-    ```swift
-    // BAD - causes flashing:
-    textureArray = nil
-    indexMap.removeAll()
-    // ... build new data ...
-    textureArray = newArray
+  - **Root Cause #1 - UUID Regeneration on Rescan:**
+    - **Problem:** `FSEventsWatcher` triggers `rescanSubject` which rebuilds all `FileNode` objects with **NEW UUIDs**. Any data stored by UUID (e.g., `locByNodeID: [UUID: Int]`) becomes orphaned because the old UUIDs no longer exist.
+    - **Example:** LOC flags were stored in `locByNodeID`. After an FSEvents rescan, all FileNodes got new UUIDs, so the LOC data was never found and flags disappeared.
+    - **Solution (Path-based Keying):**
+      - Store data by **file path** instead of UUID: `locByPath: [String: Int]`
+      - Use a **computed property** to convert to UUID-based for rendering:
+        ```swift
+        var locByNodeID: [UUID: Int] {
+            var result: [UUID: Int] = [:]
+            for (path, loc) in locByPath {
+                let url = URL(fileURLWithPath: path)
+                if let node = nodeByURL[url] { result[node.id] = loc }
+            }
+            return result
+        }
+        ```
+      - This pattern is already used by `gitCleanByPath` for the same reason.
+    - **Applies to:** Any data that must persist across directory rescans (git status, LOC counts, custom annotations, etc.)
 
-    // GOOD - atomic swap:
-    var newIndexMap: [UUID: Int] = [:]
-    var newTextures: [MTLTexture] = []
-    // ... build into temporaries ...
-    // Swap atomically at the end:
-    indexMap = newIndexMap
-    textureArray = newArrayTexture
-    ```
-  - **Applies to:** Texture arrays, instance buffers, any data used during render that gets rebuilt from async updates.
+  - **Root Cause #2 - Missing Combine Subscription:**
+    - **Problem:** When a new `@Published` property is added to AppState (like `locByPath`), the Coordinator in MetalCityView must subscribe to it for re-renders to occur. Without a subscription, the data updates but the renderer never gets notified.
+    - **Symptom:** Object appears/disappears but comes back when hovering or interacting (because those actions trigger other subscribed updates).
+    - **Solution:** Add subscription in `Coordinator.startObserving()`:
+      ```swift
+      appState.$locByPath
+          .receive(on: DispatchQueue.main)
+          .sink { [weak self] _ in
+              self?.updateFromAppState()
+          }
+          .store(in: &cancellables)
+      ```
+    - **Applies to:** Any new `@Published` property that affects rendering.
+
+  - **Root Cause #3 - Clearing Data Before Rebuild:**
+    - **Problem:** When async operations trigger texture/instance rebuilds, clearing data before building new data causes objects to flash/disappear momentarily if a render occurs mid-rebuild.
+    - **Solution (Atomic Swap Pattern):**
+      1. Build all new data into **temporary local variables** first
+      2. Only clear/swap the instance variables **after** new data is fully ready
+      3. Swap both the index map and texture array together to maintain consistency
+    - **Code Pattern:**
+      ```swift
+      // BAD - causes flashing:
+      textureArray = nil
+      indexMap.removeAll()
+      // ... build new data ...
+      textureArray = newArray
+
+      // GOOD - atomic swap:
+      var newIndexMap: [UUID: Int] = [:]
+      var newTextures: [MTLTexture] = []
+      // ... build into temporaries ...
+      // Swap atomically at the end:
+      indexMap = newIndexMap
+      textureArray = newArrayTexture
+      ```
+    - **Applies to:** Texture arrays, instance buffers, any data used during render that gets rebuilt from async updates.
