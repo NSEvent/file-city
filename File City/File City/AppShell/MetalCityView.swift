@@ -883,21 +883,10 @@ struct MetalCityView: NSViewRepresentable {
                 }
             }
 
-            // Handle standing on satellite (move with it, not grappled)
-            if renderer.camera.standingOnSatellite != nil, !renderer.camera.isAttached {
-                let sessionID = renderer.camera.standingOnSatellite!
-
-                if let (satPos, satRadius) = renderer.getSatelliteTarget(sessionID: sessionID) {
-                    // Only update position if player is on the surface (not jumping/falling)
-                    if abs(renderer.camera.verticalVelocity) < 0.5 {
-                        let satTop = satPos.y + satRadius * 0.1  // Standing surface height
-                        renderer.camera.position = SIMD3<Float>(
-                            satPos.x,
-                            satTop + renderer.camera.playerHeight * 0.5,
-                            satPos.z
-                        )
-                    }
-                } else {
+            // Check if standing on satellite still exists (for cleanup)
+            if renderer.camera.standingOnSatellite != nil {
+                // Verify the satellite still exists
+                if renderer.getSatelliteTarget(sessionID: renderer.camera.standingOnSatellite!) == nil {
                     // Satellite disappeared, stop standing
                     renderer.camera.standingOnSatellite = nil
                 }
