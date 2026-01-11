@@ -612,32 +612,27 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
     // LOC Flag (shapeID 19)
     if (in.shapeID == 19) {
         if (in.textureIndex >= 0) {
-            // Sample from LOC flag texture array
-            // UV mapping: front and back faces show the texture
             float3 N = normalize(in.normal);
-
-            // Determine which face we're on
             float3 absN = abs(N);
-            float2 uv;
 
-            if (absN.z > absN.x && absN.z > absN.y) {
-                // Front/back face - main flag surface
-                // Flip U so that U=0 is at the pole (left edge) and U=1 is at the tip
+            // Only render front/back faces, discard edges
+            if (absN.z <= absN.x || absN.z <= absN.y) {
+                discard_fragment();
+            }
+
+            // UV mapping - ensure triangle base (U=0) is at pole for both faces
+            float2 uv;
+            if (N.z > 0) {
+                // Front face: flip U so base is at pole (left edge)
                 uv = float2(1.0 - in.uv.x, in.uv.y);
-                // Flip again for back face so text reads correctly from both sides
-                if (N.z < 0) {
-                    uv.x = 1.0 - uv.x;
-                }
             } else {
-                // Side/top/bottom edges - use solid color
-                float3 flagColor = float3(1.0, 0.6, 0.1);  // Orange
-                flagColor = applyFog(flagColor, in.worldPos, uniforms.cameraPosition, uniforms.fogDensity);
-                return float4(flagColor, 1.0);
+                // Back face: don't flip U - pole is now on right when viewed from behind
+                uv = in.uv;
             }
 
             float4 texColor = locFlags.sample(textureSampler, uv, uint(in.textureIndex));
 
-            // Discard transparent pixels
+            // Discard transparent pixels (outside triangle)
             if (texColor.a < 0.1) {
                 discard_fragment();
             }

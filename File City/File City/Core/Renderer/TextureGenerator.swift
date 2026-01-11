@@ -1433,11 +1433,6 @@ final class TextureGenerator {
         NSColor(red: 1.0, green: 0.6, blue: 0.1, alpha: 1.0).setFill()
         flagPath.fill()
 
-        // Dark border
-        NSColor(red: 0.3, green: 0.2, blue: 0.0, alpha: 1.0).setStroke()
-        flagPath.lineWidth = 2
-        flagPath.stroke()
-
         // Draw LOC text
         let locText = GitService.formatLOC(loc)
         var fontSize: CGFloat = 48
