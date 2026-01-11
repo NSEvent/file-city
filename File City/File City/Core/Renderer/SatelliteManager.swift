@@ -76,11 +76,77 @@ final class SatelliteManager {
         }
     }
 
-    func getSatelliteHitTargets() -> [(position: SIMD3<Float>, radius: Float, sessionID: UUID)] {
-        satellites.filter { !$0.isExiting }.map { sat in
+    struct SatelliteHitBox {
+        let center: SIMD3<Float>
+        let halfExtents: SIMD3<Float>  // Half-size in local space
+        let rotationY: Float
+        let sessionID: UUID
+    }
+
+    /// Returns oriented bounding boxes for all satellite parts for exact ray testing
+    func getSatelliteHitBoxes() -> [SatelliteHitBox] {
+        var hitBoxes: [SatelliteHitBox] = []
+        let now = CACurrentMediaTime()
+
+        for sat in satellites where !sat.isExiting {
             let pos = satellitePosition(sat)
-            return (pos, Float(4.0), sat.sessionID)
+            let fadeScale = sat.fadeProgress
+            let stateScale: Float = sat.state == .generating ? (1.5 + 0.3 * sin(Float(now) * 6.0)) : 1.0
+            let sz = sizeMultiplier * stateScale
+            let bodyRotation = sat.orbitAngle + Float.pi / 2
+
+            // Main body
+            let bodyScale = SIMD3<Float>(2.0, 1.5, 2.5) * sz * fadeScale
+            hitBoxes.append(SatelliteHitBox(
+                center: pos,
+                halfExtents: bodyScale * 0.5,
+                rotationY: bodyRotation,
+                sessionID: sat.sessionID
+            ))
+
+            // Solar panels
+            let panelOffset: Float = 4.0 * sz
+            let s = sin(bodyRotation)
+            let c = cos(bodyRotation)
+            let rightVec = SIMD3<Float>(c, 0, s)
+            let panelScale = SIMD3<Float>(3.5, 0.1, 2.0) * sz * fadeScale
+
+            // Right panel
+            hitBoxes.append(SatelliteHitBox(
+                center: pos + rightVec * panelOffset,
+                halfExtents: panelScale * 0.5,
+                rotationY: bodyRotation,
+                sessionID: sat.sessionID
+            ))
+
+            // Left panel
+            hitBoxes.append(SatelliteHitBox(
+                center: pos - rightVec * panelOffset,
+                halfExtents: panelScale * 0.5,
+                rotationY: bodyRotation,
+                sessionID: sat.sessionID
+            ))
+
+            // Antenna dish
+            let antennaScale = SIMD3<Float>(0.8, 0.3, 0.8) * sz * fadeScale
+            hitBoxes.append(SatelliteHitBox(
+                center: pos + SIMD3<Float>(0, 1.8 * sz * fadeScale, 0),
+                halfExtents: antennaScale * 0.5,
+                rotationY: bodyRotation + Float(now * 0.5),
+                sessionID: sat.sessionID
+            ))
+
+            // Beacon
+            let beaconScale = SIMD3<Float>(0.4, 0.4, 0.4) * sz * fadeScale
+            hitBoxes.append(SatelliteHitBox(
+                center: pos + SIMD3<Float>(0, -1.2 * sz * fadeScale, 0),
+                halfExtents: beaconScale * 0.5,
+                rotationY: 0,
+                sessionID: sat.sessionID
+            ))
         }
+
+        return hitBoxes
     }
 
     func clear() {

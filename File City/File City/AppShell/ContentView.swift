@@ -102,7 +102,55 @@ private struct InfoOverlayView: View {
     @EnvironmentObject var appState: AppState
 
     var body: some View {
-        if let info = infoLines() {
+        if let session = appState.hoveredClaudeSession {
+            // Claude session hover info
+            VStack(alignment: .leading, spacing: 6) {
+                // Header with state indicator
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(stateColor(for: session.state))
+                        .frame(width: 8, height: 8)
+                    Text("Claude Code")
+                        .font(.callout.weight(.semibold))
+                    Text("• \(stateText(for: session.state))")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+
+                // Working directory
+                Text(session.workingDirectory.path)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+
+                // Last output lines (when idle)
+                if session.state == .idle, let outputLines = appState.hoveredClaudeOutputLines, !outputLines.isEmpty {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(outputLines.suffix(3), id: \.self) { line in
+                            Text(stripANSI(line))
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+                    }
+                }
+
+                // Click hint
+                Text("Click to focus terminal")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            .frame(maxWidth: 300)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .padding(12)
+            .transition(.opacity)
+        } else if let info = infoLines() {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(info, id: \.self) { line in
                     Text(line)
@@ -128,6 +176,34 @@ private struct InfoOverlayView: View {
             return appState.infoLines(for: hoveredURL)
         }
         return nil
+    }
+
+    private func stateColor(for state: ClaudeSession.SessionState) -> Color {
+        switch state {
+        case .launching: return .orange
+        case .idle: return .blue
+        case .generating: return .red
+        case .exiting: return .gray
+        }
+    }
+
+    private func stateText(for state: ClaudeSession.SessionState) -> String {
+        switch state {
+        case .launching: return "Starting..."
+        case .idle: return "Ready"
+        case .generating: return "Working..."
+        case .exiting: return "Exiting"
+        }
+    }
+
+    /// Strip ANSI escape codes from terminal output
+    private func stripANSI(_ string: String) -> String {
+        // Remove ANSI escape sequences like \x1B[...m
+        string.replacingOccurrences(
+            of: "\\x1B\\[[0-9;]*[mK]|\\e\\[[0-9;]*[mK]",
+            with: "",
+            options: .regularExpression
+        )
     }
 }
 

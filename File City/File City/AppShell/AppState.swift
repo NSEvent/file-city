@@ -21,6 +21,8 @@ final class AppState: ObservableObject {
     @Published var hoveredGitStatus: [String]?
     @Published var hoveredBeaconNodeID: UUID?
     @Published var hoveredBeaconURL: URL?
+    @Published var hoveredClaudeSession: ClaudeSession?
+    @Published var hoveredClaudeOutputLines: [String]?
     @Published var activityInfoLines: [String]?
     @Published private(set) var activityVersion: UInt = 0
     @Published var isFirstPerson: Bool = false
@@ -227,6 +229,20 @@ final class AppState: ObservableObject {
 
     func terminateClaudeSession(_ sessionID: UUID) {
         ptyManager.terminateSession(id: sessionID)
+    }
+
+    func setHoveredClaudeSession(_ sessionID: UUID?) {
+        if let sessionID {
+            hoveredClaudeSession = claudeSessions.first { $0.id == sessionID }
+            hoveredClaudeOutputLines = ptyManager.sessions[sessionID]?.lastOutputLines
+        } else {
+            hoveredClaudeSession = nil
+            hoveredClaudeOutputLines = nil
+        }
+    }
+
+    func claudeSessionOutputLines(for sessionID: UUID) -> [String]? {
+        ptyManager.sessions[sessionID]?.lastOutputLines
     }
 
     private func handlePTYSessionStateChanged(_ sessionID: UUID) {

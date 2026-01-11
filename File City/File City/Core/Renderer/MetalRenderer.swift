@@ -1386,51 +1386,105 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         satelliteManager.clear()
     }
 
+    private var lastSatelliteDebugLog: CFTimeInterval = 0
+
     func pickSatellite(at point: CGPoint, in size: CGSize) -> UUID? {
         guard size.width > 1, size.height > 1 else { return nil }
 
-        let ndcX = Float(point.x / size.width) * 2.0 - 1.0
-        let ndcY = 1.0 - Float(point.y / size.height) * 2.0
+        // Must match pickBlockHit coordinate system
+        let ndcX = (2.0 * Float(point.x) / Float(size.width)) - 1.0
+        let ndcY = (2.0 * Float(point.y) / Float(size.height)) - 1.0
 
         let viewMatrix = camera.viewMatrix()
         let projectionMatrix = camera.projectionMatrix()
         let viewProjection = projectionMatrix * viewMatrix
-        let inverseVP = viewProjection.inverse
+        let inverseViewProjection = simd_inverse(viewProjection)
 
-        let nearPoint = inverseVP * SIMD4<Float>(ndcX, ndcY, -1, 1)
-        let farPoint = inverseVP * SIMD4<Float>(ndcX, ndcY, 1, 1)
+        let nearPoint = SIMD4<Float>(ndcX, ndcY, -1.0, 1.0)
+        let farPoint = SIMD4<Float>(ndcX, ndcY, 1.0, 1.0)
+        let worldNear = inverseViewProjection * nearPoint
+        let worldFar = inverseViewProjection * farPoint
 
-        let nearWorld = SIMD3<Float>(nearPoint.x, nearPoint.y, nearPoint.z) / nearPoint.w
-        let farWorld = SIMD3<Float>(farPoint.x, farPoint.y, farPoint.z) / farPoint.w
-        let rayDir = normalize(farWorld - nearWorld)
+        let nearWorld = SIMD3<Float>(worldNear.x / worldNear.w, worldNear.y / worldNear.w, worldNear.z / worldNear.w)
+        let farWorld = SIMD3<Float>(worldFar.x / worldFar.w, worldFar.y / worldFar.w, worldFar.z / worldFar.w)
+        let rayDir = simd_normalize(farWorld - nearWorld)
 
-        let targets = satelliteManager.getSatelliteHitTargets()
+        let hitBoxes = satelliteManager.getSatelliteHitBoxes()
+
+        // Debug logging (throttled to once per second)
+        let now = CACurrentMediaTime()
+        if now - lastSatelliteDebugLog > 1.0 && !hitBoxes.isEmpty {
+            lastSatelliteDebugLog = now
+            NSLog("[pickSatellite] Testing %d hit boxes", hitBoxes.count)
+            NSLog("[pickSatellite] Ray origin: (%.1f, %.1f, %.1f), dir: (%.2f, %.2f, %.2f)",
+                  nearWorld.x, nearWorld.y, nearWorld.z, rayDir.x, rayDir.y, rayDir.z)
+            if let firstBox = hitBoxes.first {
+                NSLog("[pickSatellite] First box center: (%.1f, %.1f, %.1f), halfExtents: (%.1f, %.1f, %.1f)",
+                      firstBox.center.x, firstBox.center.y, firstBox.center.z,
+                      firstBox.halfExtents.x, firstBox.halfExtents.y, firstBox.halfExtents.z)
+            }
+        }
+
         var closest: (sessionID: UUID, distance: Float)?
 
-        for target in targets {
-            if let dist = intersectSphere(origin: nearWorld, direction: rayDir, center: target.position, radius: target.radius) {
+        for box in hitBoxes {
+            if let dist = intersectOBB(origin: nearWorld, direction: rayDir, box: box) {
                 if closest == nil || dist < closest!.distance {
-                    closest = (target.sessionID, dist)
+                    closest = (box.sessionID, dist)
                 }
             }
+        }
+
+        if let result = closest {
+            NSLog("[MetalRenderer] pickSatellite HIT: sessionID=%@, distance=%.2f", result.sessionID.uuidString, result.distance)
         }
 
         return closest?.sessionID
     }
 
-    private func intersectSphere(origin: SIMD3<Float>, direction: SIMD3<Float>, center: SIMD3<Float>, radius: Float) -> Float? {
-        let oc = origin - center
-        let a = dot(direction, direction)
-        let b = 2.0 * dot(oc, direction)
-        let c = dot(oc, oc) - radius * radius
-        let discriminant = b * b - 4 * a * c
+    /// Ray-OBB (Oriented Bounding Box) intersection using slab method
+    /// Transforms ray into local space of the OBB, then does AABB test
+    private func intersectOBB(origin: SIMD3<Float>, direction: SIMD3<Float>, box: SatelliteManager.SatelliteHitBox) -> Float? {
+        // Rotate ray into box's local space (inverse rotation around Y)
+        let cosY = cos(-box.rotationY)
+        let sinY = sin(-box.rotationY)
 
-        if discriminant < 0 {
+        // Translate ray origin relative to box center
+        let relOrigin = origin - box.center
+
+        // Rotate origin and direction into local space
+        let localOrigin = SIMD3<Float>(
+            relOrigin.x * cosY - relOrigin.z * sinY,
+            relOrigin.y,
+            relOrigin.x * sinY + relOrigin.z * cosY
+        )
+        let localDir = SIMD3<Float>(
+            direction.x * cosY - direction.z * sinY,
+            direction.y,
+            direction.x * sinY + direction.z * cosY
+        )
+
+        // Now do standard AABB intersection (slab method)
+        let invDir = SIMD3<Float>(
+            localDir.x != 0 ? 1.0 / localDir.x : .infinity,
+            localDir.y != 0 ? 1.0 / localDir.y : .infinity,
+            localDir.z != 0 ? 1.0 / localDir.z : .infinity
+        )
+
+        let t1 = (-box.halfExtents - localOrigin) * invDir
+        let t2 = (box.halfExtents - localOrigin) * invDir
+
+        let tMin = max(max(min(t1.x, t2.x), min(t1.y, t2.y)), min(t1.z, t2.z))
+        let tMax = min(min(max(t1.x, t2.x), max(t1.y, t2.y)), max(t1.z, t2.z))
+
+        // If tMax < 0, ray intersects but box is behind
+        // If tMin > tMax, ray doesn't intersect
+        if tMax < 0 || tMin > tMax {
             return nil
         }
 
-        let t = (-b - sqrt(discriminant)) / (2.0 * a)
-        return t > 0 ? t : nil
+        // Return the nearest positive intersection
+        return tMin > 0 ? tMin : tMax > 0 ? tMax : nil
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {

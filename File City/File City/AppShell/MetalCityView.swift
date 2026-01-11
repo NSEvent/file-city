@@ -79,6 +79,7 @@ struct MetalCityView: NSViewRepresentable {
         weak var cityView: CityMTKView?
         private var hoveredNodeID: UUID?
         private(set) var hoveredBeaconNodeID: UUID?
+        private var hoveredSatelliteSessionID: UUID?
         private var cancellables = Set<AnyCancellable>()
         private var activityTimer: Timer?
         private var activityEndTime: CFTimeInterval = 0
@@ -308,6 +309,29 @@ struct MetalCityView: NSViewRepresentable {
             if renderer.camera.isFirstPerson && isMouseCaptured { return }
 
             let backingPoint = view.convertToBacking(point)
+
+            // Check for satellite hover first
+            if let sessionID = renderer.pickSatellite(at: backingPoint, in: view.drawableSize) {
+                NSLog("[MetalCityView] Satellite hover detected: %@", sessionID.uuidString)
+                if hoveredSatelliteSessionID != sessionID {
+                    hoveredSatelliteSessionID = sessionID
+                    appState?.setHoveredClaudeSession(sessionID)
+                    // Clear other hover states
+                    hoveredNodeID = nil
+                    hoveredBeaconNodeID = nil
+                    appState?.hoveredURL = nil
+                    appState?.hoveredNodeID = nil
+                    appState?.hoveredGitStatus = nil
+                    appState?.hoveredBeaconNodeID = nil
+                    appState?.hoveredBeaconURL = nil
+                    renderer.setHoveredPlane(index: nil)
+                }
+                return
+            } else if hoveredSatelliteSessionID != nil {
+                hoveredSatelliteSessionID = nil
+                appState?.setHoveredClaudeSession(nil)
+            }
+
             if let planeIndex = renderer.pickPlane(at: backingPoint, in: view.drawableSize) {
                 renderer.setHoveredPlane(index: planeIndex)
                 if hoveredNodeID != nil {
@@ -379,11 +403,13 @@ struct MetalCityView: NSViewRepresentable {
             renderer?.setHoveredPlane(index: nil)
             hoveredNodeID = nil
             hoveredBeaconNodeID = nil
+            hoveredSatelliteSessionID = nil
             appState?.hoveredURL = nil
             appState?.hoveredNodeID = nil
             appState?.hoveredGitStatus = nil
             appState?.hoveredBeaconNodeID = nil
             appState?.hoveredBeaconURL = nil
+            appState?.setHoveredClaudeSession(nil)
         }
 
         func handleKey(_ key: String) {
@@ -422,6 +448,7 @@ struct MetalCityView: NSViewRepresentable {
 
             // Check for satellite click first
             if let sessionID = renderer.pickSatellite(at: backingPoint, in: view.drawableSize) {
+                NSLog("[MetalCityView] Satellite click detected: %@", sessionID.uuidString)
                 appState?.focusClaudeSession(sessionID)
                 return
             }

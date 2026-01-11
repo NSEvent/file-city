@@ -11,6 +11,7 @@ final class PTYManager: ObservableObject {
         var ptyPath: String
         var lastOutputTime: Date
         var state: ClaudeSession.SessionState
+        var lastOutputLines: [String] = []  // Last few lines of terminal output
     }
 
     @Published private(set) var sessions: [UUID: Session] = [:]
@@ -221,6 +222,10 @@ final class PTYManager: ObservableObject {
             let contents = String(output.dropFirst("exists:".count))
             let newState = detectClaudeState(from: contents)
 
+            // Extract and store last output lines for hover display
+            let lastLines = extractLastOutputLines(from: contents)
+            sessions[sessionID]?.lastOutputLines = lastLines
+
             guard let currentState = sessions[sessionID]?.state,
                   currentState != .launching && currentState != .exiting else { return }
 
@@ -231,6 +236,29 @@ final class PTYManager: ObservableObject {
                 NSLog("[PTYManager] Signal sent for session %@", sessionID.uuidString)
             }
         }
+    }
+
+    /// Extract the last meaningful output lines from terminal contents
+    private func extractLastOutputLines(from contents: String) -> [String] {
+        let lines = contents.components(separatedBy: .newlines)
+
+        // Filter out empty lines, prompt lines, and control sequences
+        let meaningfulLines = lines.filter { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            // Skip empty lines
+            guard !trimmed.isEmpty else { return false }
+            // Skip prompt lines
+            if trimmed.hasPrefix("❯") { return false }
+            // Skip status/spinner lines
+            if trimmed.contains("(esc to interrupt") { return false }
+            if trimmed.contains("Running…") { return false }
+            // Skip ANSI escape sequences only lines
+            if trimmed.hasPrefix("\u{1B}[") && trimmed.count < 20 { return false }
+            return true
+        }
+
+        // Return last 5 meaningful lines
+        return Array(meaningfulLines.suffix(5))
     }
 
     /// Detect Claude's state from terminal contents
