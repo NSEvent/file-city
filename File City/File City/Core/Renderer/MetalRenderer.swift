@@ -43,8 +43,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private var cityBoundsMax: SIMD2<Float> = .zero
     private var cityCenter: SIMD2<Float> = .zero
 
-    // Fog settings
-    private let fogDensity: Float = 0.0005
+    // Fog settings (0 = disabled)
+    private let fogDensity: Float = 0.0
     private var textureArray: MTLTexture?
     private var instanceBuffer: MTLBuffer?
     private var instanceCount: Int = 0
