@@ -1401,6 +1401,102 @@ final class TextureGenerator {
 
         return texture
     }
+
+    // MARK: - LOC Flag Texture
+    /// Generates a texture for a LOC flag (256x128 pixels, triangular pennant shape)
+    static func generateLOCFlag(device: MTLDevice, loc: Int) -> MTLTexture? {
+        let width = 256
+        let height = 128
+
+        let image = NSImage(size: NSSize(width: width, height: height))
+        image.lockFocus()
+
+        // Clear background (transparent)
+        NSColor.clear.setFill()
+        NSRect(x: 0, y: 0, width: width, height: height).fill()
+
+        // Draw triangular pennant shape (flag flying to the right)
+        // Points: left edge full height, tapers to point on right
+        let flagPath = NSBezierPath()
+        let leftX: CGFloat = 0
+        let rightX: CGFloat = CGFloat(width) - 8
+        let topY: CGFloat = CGFloat(height) - 8
+        let bottomY: CGFloat = 8
+        let pointY: CGFloat = CGFloat(height) / 2
+
+        flagPath.move(to: NSPoint(x: leftX, y: topY))
+        flagPath.line(to: NSPoint(x: rightX, y: pointY))
+        flagPath.line(to: NSPoint(x: leftX, y: bottomY))
+        flagPath.close()
+
+        // Flag color - bright orange/yellow
+        NSColor(red: 1.0, green: 0.6, blue: 0.1, alpha: 1.0).setFill()
+        flagPath.fill()
+
+        // Dark border
+        NSColor(red: 0.3, green: 0.2, blue: 0.0, alpha: 1.0).setStroke()
+        flagPath.lineWidth = 2
+        flagPath.stroke()
+
+        // Draw LOC text
+        let locText = GitService.formatLOC(loc)
+        var fontSize: CGFloat = 48
+        var font = NSFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .bold)
+        var attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor(red: 0.15, green: 0.1, blue: 0.0, alpha: 1.0)
+        ]
+        var textSize = locText.size(withAttributes: attributes)
+
+        // Reduce font size until text fits in the flag area
+        let maxTextWidth = CGFloat(width) * 0.6
+        let maxTextHeight = CGFloat(height) * 0.6
+        while (textSize.width > maxTextWidth || textSize.height > maxTextHeight) && fontSize > 16 {
+            fontSize -= 4
+            font = NSFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .bold)
+            attributes[.font] = font
+            textSize = locText.size(withAttributes: attributes)
+        }
+
+        // Center text in the left 2/3 of the flag (where it's widest)
+        let textX = (CGFloat(width) * 0.45 - textSize.width) / 2
+        let textY = (CGFloat(height) - textSize.height) / 2
+        locText.draw(at: NSPoint(x: textX, y: textY), withAttributes: attributes)
+
+        image.unlockFocus()
+
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+
+        var pixelData = [UInt8](repeating: 0, count: width * height * 4)
+        let context = CGContext(
+            data: &pixelData,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )
+        context?.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm,
+            width: width,
+            height: height,
+            mipmapped: false
+        )
+        descriptor.usage = .shaderRead
+
+        guard let texture = device.makeTexture(descriptor: descriptor) else { return nil }
+        texture.replace(
+            region: MTLRegionMake2D(0, 0, width, height),
+            mipmapLevel: 0,
+            withBytes: pixelData,
+            bytesPerRow: width * 4
+        )
+
+        return texture
+    }
 }
 
 // Simple LCG (Linear Congruential Generator) for deterministic randomness

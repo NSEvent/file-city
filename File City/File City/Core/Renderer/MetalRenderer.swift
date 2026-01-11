@@ -2,6 +2,7 @@ import Metal
 import MetalKit
 import simd
 import CryptoKit
+import Combine
 
 final class MetalRenderer: NSObject, MTKViewDelegate {
     private let device: MTLDevice
@@ -73,6 +74,11 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private(set) var pilotedPlaneIndex: Int?
     var pilotedPlaneFlightState: Camera.PlaneFlightState?
     private let helicopterManager = HelicopterManager()
+
+    /// Expose package landing events for LOC counting
+    var packageLandedPublisher: AnyPublisher<UUID, Never> {
+        helicopterManager.packageLandedSubject.eraseToAnyPublisher()
+    }
     private let beamManager = BeamManager()
     private var helicopterInstanceBuffer: MTLBuffer?
     private var helicopterInstanceCount: Int = 0
@@ -100,6 +106,11 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private var lastActivityNow: CFTimeInterval = 0
     private var lastActivityDuration: CFTimeInterval = 0
     private var lastTargetedNodeIDs: Set<UUID> = []
+    private var lastLocByNodeID: [UUID: Int] = [:]
+
+    // LOC Flag textures
+    private var locFlagTextureArray: MTLTexture?
+    private var locFlagIndexByNodeID: [UUID: Int] = [:]
 
     let camera = Camera()
 
@@ -366,7 +377,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                          hoveredBeaconNodeID: UUID?,
                          activityByNodeID: [UUID: NodeActivityPulse],
                          activityNow: CFTimeInterval,
-                         activityDuration: CFTimeInterval) {
+                         activityDuration: CFTimeInterval,
+                         locByNodeID: [UUID: Int] = [:]) {
         // Cache state
         self.lastSelectedNodeIDs = selectedNodeIDs
         self.lastHoveredNodeID = hoveredNodeID
@@ -374,6 +386,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         self.lastActivityByNodeID = activityByNodeID
         self.lastActivityNow = activityNow
         self.lastActivityDuration = activityDuration
+        self.lastLocByNodeID = locByNodeID
 
         let blocksChanged = blocks != self.blocks
         self.blocks = blocks
@@ -444,7 +457,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 shapeID: block.shapeID
             )
         }
-        let gitTowerInstances = buildGitTowerInstances(blocks: blocks, selectedNodeIDs: selectedNodeIDs, hoveredBeaconNodeID: hoveredBeaconNodeID)
+        let gitTowerInstances = buildGitTowerInstances(blocks: blocks, selectedNodeIDs: selectedNodeIDs, hoveredBeaconNodeID: hoveredBeaconNodeID, locByNodeID: lastLocByNodeID)
         if !gitTowerInstances.isEmpty {
             instances.append(contentsOf: gitTowerInstances)
         }
@@ -471,7 +484,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
     // Note: rotationYForWedge moved to GeometryHelpers.swift
 
-    private func buildGitTowerInstances(blocks: [CityBlock], selectedNodeIDs: Set<UUID>, hoveredBeaconNodeID: UUID?) -> [VoxelInstance] {
+    private func buildGitTowerInstances(blocks: [CityBlock], selectedNodeIDs: Set<UUID>, hoveredBeaconNodeID: UUID?, locByNodeID: [UUID: Int]) -> [VoxelInstance] {
         var topBlocks: [UUID: CityBlock] = [:]
         var topHeights: [UUID: Float] = [:]
         gitBeaconBoxes.removeAll()
@@ -485,8 +498,11 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
         guard !topBlocks.isEmpty else { return [] }
 
+        // Rebuild LOC flag textures if LOC data changed
+        rebuildLOCFlagTextures(blocks: Array(topBlocks.values), locByNodeID: locByNodeID)
+
         var instances: [VoxelInstance] = []
-        instances.reserveCapacity(topBlocks.count * 4)
+        instances.reserveCapacity(topBlocks.count * 5)  // 4 tower parts + 1 flag
         for block in topBlocks.values {
             let isSelected = selectedNodeIDs.contains(block.nodeID)
             let beaconHighlight: Float = (block.nodeID == hoveredBeaconNodeID || isSelected) ? 1.0 : 0.0
@@ -591,6 +607,26 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 shapeID: block.isGitClean ? 9 : 8
             ))
 
+            // LOC Flag - positioned just below the beacon, flying to the side
+            if let flagTexIndex = locFlagIndexByNodeID[block.nodeID] {
+                let flagY = beaconY - beaconSize * 0.5 - towerSize * 0.3
+                let flagWidth = towerSize * 1.8
+                let flagHeight = towerSize * 0.9
+                // Flag extends to the right of the mast
+                let flagOffsetX = flagWidth * 0.5 + towerSize * 0.1
+                instances.append(VoxelInstance(
+                    position: SIMD3<Float>(towerBaseX + flagOffsetX, flagY, towerBaseZ),
+                    scale: SIMD3<Float>(flagWidth, flagHeight, 0.05),
+                    rotationY: 0,
+                    rotationX: 0,
+                    rotationZ: 0,
+                    materialID: 0,
+                    highlight: 0,
+                    textureIndex: Int32(flagTexIndex),
+                    shapeID: Constants.Shapes.locFlag
+                ))
+            }
+
             let nodeID = block.nodeID
             func addBeaconBox(x: Float, y: Float, z: Float, scale: SIMD3<Float>) {
                 let half = scale * 0.5 * beaconHitInflation
@@ -616,6 +652,63 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     }
 
     // Note: visualTopY moved to CityBlock.visualTopY computed property
+
+    private func rebuildLOCFlagTextures(blocks: [CityBlock], locByNodeID: [UUID: Int]) {
+        // Check if we need to rebuild - compare current LOC data with cached
+        let newNodeIDs = Set(blocks.filter { locByNodeID[$0.nodeID] != nil }.map { $0.nodeID })
+        let cachedNodeIDs = Set(locFlagIndexByNodeID.keys)
+
+        // Check if LOC values changed for any cached nodes
+        var needsRebuild = newNodeIDs != cachedNodeIDs
+        if !needsRebuild {
+            for nodeID in cachedNodeIDs {
+                if locByNodeID[nodeID] != lastLocByNodeID[nodeID] {
+                    needsRebuild = true
+                    break
+                }
+            }
+        }
+
+        guard needsRebuild else { return }
+
+        locFlagTextureArray = nil
+        locFlagIndexByNodeID.removeAll()
+
+        var textures: [MTLTexture] = []
+        for block in blocks {
+            guard let loc = locByNodeID[block.nodeID], loc > 0 else { continue }
+            guard let tex = TextureGenerator.generateLOCFlag(device: device, loc: loc) else { continue }
+            locFlagIndexByNodeID[block.nodeID] = textures.count
+            textures.append(tex)
+        }
+
+        guard !textures.isEmpty, let first = textures.first else { return }
+
+        let descriptor = MTLTextureDescriptor()
+        descriptor.textureType = .type2DArray
+        descriptor.pixelFormat = first.pixelFormat
+        descriptor.width = first.width
+        descriptor.height = first.height
+        descriptor.arrayLength = textures.count
+        descriptor.usage = .shaderRead
+
+        guard let arrayTex = device.makeTexture(descriptor: descriptor) else { return }
+        guard let commandBuffer = commandQueue.makeCommandBuffer(),
+              let blitEncoder = commandBuffer.makeBlitCommandEncoder() else { return }
+
+        for (i, tex) in textures.enumerated() {
+            blitEncoder.copy(from: tex, sourceSlice: 0, sourceLevel: 0,
+                             sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+                             sourceSize: MTLSize(width: tex.width, height: tex.height, depth: 1),
+                             to: arrayTex, destinationSlice: i, destinationLevel: 0,
+                             destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0))
+        }
+
+        blitEncoder.endEncoding()
+        commandBuffer.commit()
+
+        locFlagTextureArray = arrayTex
+    }
 
     func setBannerText(_ text: String) {
         guard text != bannerText else { return }
@@ -1310,6 +1403,10 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
 
         encoder?.setVertexBuffer(instanceBuffer, offset: 0, index: 1)
+        // Bind LOC flag texture array for Shape 19
+        if let locFlagTextureArray = locFlagTextureArray {
+            encoder?.setFragmentTexture(locFlagTextureArray, index: 2)
+        }
         if instanceCount > 0 {
             encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 36, instanceCount: instanceCount)
         }

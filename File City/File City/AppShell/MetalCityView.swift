@@ -22,6 +22,7 @@ struct MetalCityView: NSViewRepresentable {
         view.enableSetNeedsDisplay = false
         context.coordinator.renderer = MetalRenderer(view: view)
         view.delegate = context.coordinator.renderer
+        context.coordinator.subscribeToPackageLanding()
         context.coordinator.attachGestures(to: view)
         context.coordinator.cityView = view
         view.coordinator = context.coordinator
@@ -67,7 +68,8 @@ struct MetalCityView: NSViewRepresentable {
             hoveredBeaconNodeID: appState.hoveredBeaconNodeID,
             activityByNodeID: appState.activitySnapshot(now: activityNow),
             activityNow: activityNow,
-            activityDuration: appState.activityDuration
+            activityDuration: appState.activityDuration,
+            locByNodeID: appState.locByNodeID
         )
     }
 
@@ -163,6 +165,16 @@ struct MetalCityView: NSViewRepresentable {
             }
         }
 
+        func subscribeToPackageLanding() {
+            guard let renderer else { return }
+            renderer.packageLandedPublisher
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] nodeID in
+                    self?.appState?.countLOCForNode(nodeID)
+                }
+                .store(in: &cancellables)
+        }
+
         private func handleActivityChange() {
             guard let appState else { return }
             // Extend the timer end time
@@ -211,7 +223,8 @@ struct MetalCityView: NSViewRepresentable {
                 hoveredBeaconNodeID: appState.hoveredBeaconNodeID,
                 activityByNodeID: appState.activitySnapshot(now: activityNow),
                 activityNow: activityNow,
-                activityDuration: appState.activityDuration
+                activityDuration: appState.activityDuration,
+                locByNodeID: appState.locByNodeID
             )
         }
 

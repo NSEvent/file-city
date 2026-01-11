@@ -42,7 +42,9 @@ final class AppState: ObservableObject {
     let fileWriteSubject = PassthroughSubject<UUID, Never>()
     let fileReadSubject = PassthroughSubject<UUID, Never>()
     private var gitStatusTask: Task<Void, Never>?
+    private var gitLOCTask: Task<Void, Never>?
     private var gitCleanByPath: [String: Bool] = [:]
+    @Published var locByNodeID: [UUID: Int] = [:]
     private var historicalTreeCache: [String: FileNode] = [:]
     private var lastLoadedCommitID: String?
     private var timeTravelLoadTask: Task<Void, Never>?
@@ -154,6 +156,7 @@ final class AppState: ObservableObject {
                 hoveredNodeID = nil
                 hoveredBeaconNodeID = nil
                 hoveredBeaconURL = nil
+                locByNodeID = [:]
             }
         }
     }
@@ -354,6 +357,42 @@ final class AppState: ObservableObject {
             }
             return block.withGitClean(clean)
         }
+    }
+
+    /// Count LOC for a specific node's containing git repo (triggered by write events)
+    func countLOCForNode(_ nodeID: UUID) {
+        guard let node = nodeByID[nodeID] else { return }
+
+        // Find the git repo containing this node
+        let gitRepoNode = findContainingGitRepo(for: node)
+        guard let repoNode = gitRepoNode else { return }
+
+        // Count LOC in background
+        Task.detached(priority: .utility) {
+            let loc = GitService.countLinesOfCode(at: repoNode.url)
+            await MainActor.run {
+                self.locByNodeID[repoNode.id] = loc
+            }
+        }
+    }
+
+    /// Find the git repo that contains this node (could be the node itself or an ancestor)
+    private func findContainingGitRepo(for node: FileNode) -> FileNode? {
+        // Check if this node is a git repo
+        if node.isGitRepo {
+            return node
+        }
+
+        // Walk up the path to find parent git repo
+        var url = node.url.deletingLastPathComponent()
+        while url.path != "/" {
+            if let parentNode = nodeByURL[url], parentNode.isGitRepo {
+                return parentNode
+            }
+            url = url.deletingLastPathComponent()
+        }
+
+        return nil
     }
 
     // MARK: - Time Machine Methods

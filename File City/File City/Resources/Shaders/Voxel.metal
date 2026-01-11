@@ -300,6 +300,24 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
         local.y *= 0.15;  // Very thin
         local.x *= 0.95;  // Almost full width
         local.z *= 0.3;   // Shallow
+    } else if (instance.shapeID == 19) {
+        // LOC Flag - triangular pennant waving in wind
+        // Flag is oriented with pole at left edge (-X), flying toward +X
+        // Wave amplitude increases toward the tip (right side)
+
+        // Normalize X from -0.5..0.5 to 0..1 for wave intensity
+        float waveIntensity = (local.x + 0.5);  // 0 at pole, 1 at tip
+
+        // Main wave - propagates from pole to tip
+        float wave = sin(local.x * 4.0 + uniforms.time * 8.0);
+        local.z += wave * 0.15 * waveIntensity;
+
+        // Secondary flutter - faster, smaller amplitude
+        float flutter = sin(local.x * 8.0 + uniforms.time * 14.0 + local.y * 3.0);
+        local.z += flutter * 0.05 * waveIntensity;
+
+        // Slight vertical flutter
+        local.y += sin(local.x * 6.0 + uniforms.time * 10.0) * 0.03 * waveIntensity;
     }
 
     float3 scaled = local * instance.scale;
@@ -404,6 +422,7 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
                               constant Uniforms &uniforms [[buffer(2)]],
                               texture2d_array<float> textures [[texture(0)]],
                               texture2d_array<float> signLabels [[texture(1)]],
+                              texture2d_array<float> locFlags [[texture(2)]],
                               sampler textureSampler [[sampler(0)]]) {
     float shade = saturate(dot(normalize(in.normal), float3(0.4, 0.85, 0.2)));
     float3 palette[12] = {
@@ -588,6 +607,50 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
 
         lit = applyFog(lit, in.worldPos, uniforms.cameraPosition, uniforms.fogDensity);
         return float4(lit, 1.0);
+    }
+
+    // LOC Flag (shapeID 19)
+    if (in.shapeID == 19) {
+        if (in.textureIndex >= 0) {
+            // Sample from LOC flag texture array
+            // UV mapping: front and back faces show the texture
+            float3 N = normalize(in.normal);
+
+            // Determine which face we're on
+            float3 absN = abs(N);
+            float2 uv;
+
+            if (absN.z > absN.x && absN.z > absN.y) {
+                // Front/back face - main flag surface
+                // Flip U so that U=0 is at the pole (left edge) and U=1 is at the tip
+                uv = float2(1.0 - in.uv.x, in.uv.y);
+                // Flip again for back face so text reads correctly from both sides
+                if (N.z < 0) {
+                    uv.x = 1.0 - uv.x;
+                }
+            } else {
+                // Side/top/bottom edges - use solid color
+                float3 flagColor = float3(1.0, 0.6, 0.1);  // Orange
+                flagColor = applyFog(flagColor, in.worldPos, uniforms.cameraPosition, uniforms.fogDensity);
+                return float4(flagColor, 1.0);
+            }
+
+            float4 texColor = locFlags.sample(textureSampler, uv, uint(in.textureIndex));
+
+            // Discard transparent pixels
+            if (texColor.a < 0.1) {
+                discard_fragment();
+            }
+
+            float3 finalColor = texColor.rgb;
+
+            // Add slight shading
+            float shade = saturate(dot(N, float3(0.4, 0.85, 0.2)));
+            finalColor *= (0.7 + 0.3 * shade);
+
+            finalColor = applyFog(finalColor, in.worldPos, uniforms.cameraPosition, uniforms.fogDensity);
+            return float4(finalColor, texColor.a);
+        }
     }
 
     if (in.shapeID == 7) {

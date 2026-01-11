@@ -99,6 +99,9 @@ enum Constants {
 
         /// Car taillights
         static let taillights: Int32 = 18
+
+        /// LOC flag (pennant shape, waving)
+        static let locFlag: Int32 = 19
     }
 
     // MARK: - Textures

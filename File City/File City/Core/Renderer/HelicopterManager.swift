@@ -1,8 +1,11 @@
 import Foundation
 import simd
 import QuartzCore
+import Combine
 
 final class HelicopterManager {
+    /// Published when a package lands on a building (sends the target node ID)
+    let packageLandedSubject = PassthroughSubject<UUID, Never>()
     private struct Helicopter {
         let id = UUID()
         var position: SIMD3<Float>
@@ -26,6 +29,7 @@ final class HelicopterManager {
         var position: SIMD3<Float>
         var velocity: SIMD3<Float>
         let targetY: Float
+        let targetID: UUID
         let blockInfo: BlockInfo?
     }
 
@@ -159,6 +163,7 @@ final class HelicopterManager {
                         position: heli.position - SIMD3<Float>(0, 1.0, 0),
                         velocity: SIMD3<Float>(0, -5.0, 0),
                         targetY: heli.buildingTopY,
+                        targetID: heli.targetID,
                         blockInfo: heli.blockInfo
                     ))
                     recentDeliveries[heli.targetID] = now
@@ -217,8 +222,9 @@ final class HelicopterManager {
             pkg.position += pkg.velocity * dt
             
             if pkg.position.y <= pkg.targetY {
-                // Explode
+                // Explode and notify
                 explosions.append(Explosion(position: pkg.position, startTime: now, blockInfo: pkg.blockInfo))
+                packageLandedSubject.send(pkg.targetID)
                 packages.remove(at: i)
             } else {
                 packages[i] = pkg
