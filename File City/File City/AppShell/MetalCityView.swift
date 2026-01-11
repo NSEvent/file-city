@@ -480,23 +480,29 @@ struct MetalCityView: NSViewRepresentable {
             guard let renderer else { return }
             let backingPoint = view.convertToBacking(point)
 
-            // Check for satellite right-click (could show terminate option in future)
+            // Check for satellite right-click
             if let sessionID = renderer.pickSatellite(at: backingPoint, in: view.drawableSize) {
                 showSatelliteContextMenu(sessionID: sessionID, at: point, in: view)
                 return
             }
 
-            guard let block = renderer.pickBlock(at: backingPoint, in: view.drawableSize) else { return }
-            guard let url = appState?.url(for: block.nodeID) else { return }
+            // Check for block right-click
+            if let block = renderer.pickBlock(at: backingPoint, in: view.drawableSize),
+               let url = appState?.url(for: block.nodeID) {
+                var isDir: ObjCBool = false
+                let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
 
-            // Check if this is a directory
-            var isDir: ObjCBool = false
-            let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+                if exists && isDir.boolValue {
+                    showDirectoryContextMenu(url: url, at: point, in: view)
+                } else {
+                    appState?.reveal(url)
+                }
+                return
+            }
 
-            if exists && isDir.boolValue {
-                showDirectoryContextMenu(url: url, at: point, in: view)
-            } else {
-                appState?.reveal(url)
+            // Right-click on ground - show context menu for current root directory
+            if let rootURL = appState?.rootURL {
+                showDirectoryContextMenu(url: rootURL, at: point, in: view)
             }
         }
 
