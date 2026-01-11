@@ -39,6 +39,7 @@ final class Camera {
         case helicopter(index: Int)
         case beacon(nodeID: UUID)
         case car(index: Int)
+        case satellite(sessionID: UUID)
     }
     var grappleAttachment: GrappleAttachment = .none
     var isShiftHeld: Bool = false

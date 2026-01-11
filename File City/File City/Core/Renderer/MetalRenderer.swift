@@ -2779,6 +2779,18 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             }
         }
 
+        // Check satellites
+        let satelliteHitBoxes = satelliteManager.getSatelliteHitBoxes()
+        for box in satelliteHitBoxes {
+            // Use a sphere around the satellite center for grappling (simpler than OBB)
+            let radius = max(box.halfExtents.x, max(box.halfExtents.y, box.halfExtents.z)) * 2.0
+            if let hitDist = intersectSphere(ray: ray, center: box.center, radius: radius) {
+                if closestHit == nil || hitDist < closestHit!.distance {
+                    closestHit = (box.center, hitDist, .satellite(sessionID: box.sessionID))
+                }
+            }
+        }
+
         if let hit = closestHit {
             return (hit.position, hit.attachment)
         }
@@ -2859,6 +2871,10 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         let targets = helicopterManager.getHelicopterHitTargets()
         guard index >= 0, index < targets.count else { return nil }
         return targets[index].position
+    }
+
+    func satellitePosition(sessionID: UUID) -> SIMD3<Float>? {
+        satelliteManager.getSatelliteTarget(sessionID: sessionID)?.position
     }
 
     /// Get current position of a car by index (for grapple attachment following)

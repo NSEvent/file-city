@@ -149,6 +149,17 @@ final class SatelliteManager {
         return hitBoxes
     }
 
+    /// Get position and radius for a specific satellite (for grappling)
+    func getSatelliteTarget(sessionID: UUID) -> (position: SIMD3<Float>, radius: Float)? {
+        guard let sat = satellites.first(where: { $0.sessionID == sessionID && !$0.isExiting }) else {
+            return nil
+        }
+        let pos = satellitePosition(sat)
+        let stateScale: Float = sat.state == .generating ? 1.5 : 1.0
+        let radius: Float = 10.0 * sizeMultiplier * stateScale
+        return (pos, radius)
+    }
+
     func clear() {
         satellites.removeAll()
     }
