@@ -35,7 +35,24 @@
       - This pattern is already used by `gitCleanByPath` for the same reason.
     - **Applies to:** Any data that must persist across directory rescans (git status, LOC counts, custom annotations, etc.)
 
-  - **Root Cause #2 - Missing Combine Subscription:**
+  - **Root Cause #2 - Property Update Order:**
+    - **Problem:** When `blocks` is assigned, the `$blocks` Combine subscription fires immediately. If computed properties (like `locByNodeID`) depend on other properties (like `nodeByURL`), those must be updated BEFORE `blocks`.
+    - **Example:** In `scanRoot()`, `blocks` was assigned before `nodeByURL`. The `$blocks` subscription called `updateFromAppState()`, which computed `locByNodeID` using the OLD `nodeByURL`, returning an empty dictionary.
+    - **Solution:** Update dependency properties BEFORE the property that triggers subscriptions:
+      ```swift
+      // WRONG order - blocks triggers subscription before nodeByURL is ready
+      blocks = mapper.map(...)
+      nodeByID = buildNodeIDMap(...)
+      nodeByURL = buildNodeURLMap(...)
+
+      // CORRECT order - dependencies updated first
+      nodeByID = buildNodeIDMap(...)
+      nodeByURL = buildNodeURLMap(...)
+      blocks = mapper.map(...)
+      ```
+    - **Applies to:** Any code path that updates multiple related properties where one triggers Combine subscriptions.
+
+  - **Root Cause #3 - Missing Combine Subscription:**
     - **Problem:** When a new `@Published` property is added to AppState (like `locByPath`), the Coordinator in MetalCityView must subscribe to it for re-renders to occur. Without a subscription, the data updates but the renderer never gets notified.
     - **Symptom:** Object appears/disappears but comes back when hovering or interacting (because those actions trigger other subscribed updates).
     - **Solution:** Add subscription in `Coordinator.startObserving()`:
@@ -49,7 +66,7 @@
       ```
     - **Applies to:** Any new `@Published` property that affects rendering.
 
-  - **Root Cause #3 - Clearing Data Before Rebuild:**
+  - **Root Cause #4 - Clearing Data Before Rebuild:**
     - **Problem:** When async operations trigger texture/instance rebuilds, clearing data before building new data causes objects to flash/disappear momentarily if a render occurs mid-rebuild.
     - **Solution (Atomic Swap Pattern):**
       1. Build all new data into **temporary local variables** first

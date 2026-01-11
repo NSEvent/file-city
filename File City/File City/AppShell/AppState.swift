@@ -145,13 +145,15 @@ final class AppState: ObservableObject {
                 nodeCount = result.nodeCount
                 searchIndex.reset()
                 searchIndex.indexNode(result.root)
+                // Update node maps BEFORE blocks to ensure locByNodeID computed property
+                // has current data when $blocks subscription triggers updateFromAppState()
+                focusNodeIDByURL = buildFocusMap(root: result.root)
+                nodeByID = buildNodeIDMap(root: result.root)
+                nodeByURL = buildNodeURLMap(root: result.root)
                 blocks = mapper.map(root: result.root, rules: .default, pinStore: pinStore)
                 if autoFit {
                     pendingAutoFit = true
                 }
-                focusNodeIDByURL = buildFocusMap(root: result.root)
-                nodeByID = buildNodeIDMap(root: result.root)
-                nodeByURL = buildNodeURLMap(root: result.root)
                 selectedFocusNodeIDs = Set(selectedURLs.compactMap { focusNodeIDByURL[$0] })
                 hoveredURL = hoveredURL.flatMap { nodeByURL[$0] != nil ? $0 : nil }
                 hoveredNodeID = hoveredURL.flatMap { nodeByURL[$0]?.id }
@@ -195,10 +197,11 @@ final class AppState: ObservableObject {
                 nodeCount = result.nodeCount
                 searchIndex.reset()
                 searchIndex.indexNode(result.root)
-                blocks = mapper.map(root: result.root, rules: .default, pinStore: pinStore)
+                // Update node maps BEFORE blocks (same fix as scanRoot)
                 focusNodeIDByURL = buildFocusMap(root: result.root)
                 nodeByID = buildNodeIDMap(root: result.root)
                 nodeByURL = buildNodeURLMap(root: result.root)
+                blocks = mapper.map(root: result.root, rules: .default, pinStore: pinStore)
                 selectedFocusNodeIDs = Set(selectedURLs.compactMap { focusNodeIDByURL[$0] })
                 hoveredURL = hoveredURL.flatMap { nodeByURL[$0] != nil ? $0 : nil }
                 hoveredNodeID = hoveredURL.flatMap { nodeByURL[$0]?.id }
@@ -556,10 +559,11 @@ final class AppState: ObservableObject {
         nodeCount = countNodes(root)
         searchIndex.reset()
         searchIndex.indexNode(root)
-        blocks = mapper.map(root: root, rules: .default, pinStore: pinStore)
+        // Update node maps BEFORE blocks (same fix as scanRoot)
         focusNodeIDByURL = buildFocusMap(root: root)
         nodeByID = buildNodeIDMap(root: root)
         nodeByURL = buildNodeURLMap(root: root)
+        blocks = mapper.map(root: root, rules: .default, pinStore: pinStore)
         // Clear selection when changing history
         selectedURLs = []
         selectedFocusNodeIDs = []

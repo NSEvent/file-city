@@ -111,6 +111,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     // LOC Flag textures
     private var locFlagTextureArray: MTLTexture?
     private var locFlagIndexByNodeID: [UUID: Int] = [:]
+    private var locFlagTextureIndexByLOC: [Int: Int] = [:]  // LOC value -> texture array index
 
     let camera = Camera()
 
@@ -654,31 +655,36 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     // Note: visualTopY moved to CityBlock.visualTopY computed property
 
     private func rebuildLOCFlagTextures(blocks: [CityBlock], locByNodeID: [UUID: Int]) {
-        // Check if we need to rebuild - compare current LOC data with cached
-        let newNodeIDs = Set(blocks.filter { locByNodeID[$0.nodeID] != nil }.map { $0.nodeID })
-        let cachedNodeIDs = Set(locFlagIndexByNodeID.keys)
-
-        // Check if LOC values changed for any cached nodes
-        var needsRebuild = newNodeIDs != cachedNodeIDs
-        if !needsRebuild {
-            for nodeID in cachedNodeIDs {
-                if locByNodeID[nodeID] != lastLocByNodeID[nodeID] {
-                    needsRebuild = true
-                    break
-                }
+        // Collect all LOC values we need textures for
+        var locValuesNeeded: Set<Int> = []
+        for block in blocks {
+            if let loc = locByNodeID[block.nodeID], loc > 0 {
+                locValuesNeeded.insert(loc)
             }
         }
 
-        guard needsRebuild else { return }
+        // Check if we have all needed textures already (fast path for UUID changes without LOC changes)
+        let missingLOCValues = locValuesNeeded.subtracting(Set(locFlagTextureIndexByLOC.keys))
+        if missingLOCValues.isEmpty && locFlagTextureArray != nil {
+            // All textures exist - just update nodeID mapping for current UUIDs
+            var newIndexByNodeID: [UUID: Int] = [:]
+            for block in blocks {
+                guard let loc = locByNodeID[block.nodeID], loc > 0,
+                      let texIndex = locFlagTextureIndexByLOC[loc] else { continue }
+                newIndexByNodeID[block.nodeID] = texIndex
+            }
+            locFlagIndexByNodeID = newIndexByNodeID
+            return
+        }
 
-        // Build new textures into temporary variables first to avoid flashing
-        // (Don't clear existing data until new data is ready)
-        var newIndexByNodeID: [UUID: Int] = [:]
+        // Need to rebuild texture array - generate one texture per unique LOC value
+        var newTextureIndexByLOC: [Int: Int] = [:]
         var textures: [MTLTexture] = []
-        for block in blocks {
-            guard let loc = locByNodeID[block.nodeID], loc > 0 else { continue }
+
+        // Generate textures for unique LOC values
+        for loc in locValuesNeeded.sorted() {
             guard let tex = TextureGenerator.generateLOCFlag(device: device, loc: loc) else { continue }
-            newIndexByNodeID[block.nodeID] = textures.count
+            newTextureIndexByLOC[loc] = textures.count
             textures.append(tex)
         }
 
@@ -686,7 +692,16 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             // No textures to show - clear atomically
             locFlagTextureArray = nil
             locFlagIndexByNodeID.removeAll()
+            locFlagTextureIndexByLOC.removeAll()
             return
+        }
+
+        // Build nodeID mapping
+        var newIndexByNodeID: [UUID: Int] = [:]
+        for block in blocks {
+            guard let loc = locByNodeID[block.nodeID], loc > 0,
+                  let texIndex = newTextureIndexByLOC[loc] else { continue }
+            newIndexByNodeID[block.nodeID] = texIndex
         }
 
         let descriptor = MTLTextureDescriptor()
@@ -712,7 +727,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         blitEncoder.endEncoding()
         commandBuffer.commit()
 
-        // Atomic swap - update both at once to prevent flashing
+        // Atomic swap - update all at once to prevent flashing
+        locFlagTextureIndexByLOC = newTextureIndexByLOC
         locFlagIndexByNodeID = newIndexByNodeID
         locFlagTextureArray = arrayTex
     }
