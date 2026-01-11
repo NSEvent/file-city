@@ -1361,7 +1361,56 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         // Use the original block's nodeID for activity flashing
         beamManager.spawn(at: target, targetID: block.nodeID)
     }
-    
+
+    func spawnElectricityBeam(from sessionID: UUID, to block: CityBlock) {
+        // Get satellite position
+        guard let (satellitePos, _) = satelliteManager.getSatelliteTarget(sessionID: sessionID) else { return }
+
+        // Find the top-most block at this location for the building
+        var topBlock = block
+        var maxVisualTop = block.visualTopY
+
+        for other in blocks {
+            if abs(other.position.x - block.position.x) < 0.1 && abs(other.position.z - block.position.z) < 0.1 {
+                let top = other.visualTopY
+                if top > maxVisualTop {
+                    maxVisualTop = top
+                    topBlock = other
+                }
+            }
+        }
+
+        // Calculate building position at the top
+        let footprintX = Float(topBlock.footprint.x)
+        let footprintZ = Float(topBlock.footprint.y)
+        let baseX = topBlock.position.x
+        let baseZ = topBlock.position.z
+        let rotationY = rotationYForWedge(block: topBlock, cameraYaw: camera.wedgeYaw)
+
+        var beaconOffsetX: Float = 0
+        var beaconOffsetZ: Float = 0
+
+        if topBlock.shapeID == 3 {
+            beaconOffsetX = footprintX * 0.45
+        } else if topBlock.shapeID == 4 {
+            beaconOffsetZ = footprintZ * 0.45
+        }
+
+        if topBlock.shapeID == 3 || topBlock.shapeID == 4 {
+            let c = cos(rotationY)
+            let s = sin(rotationY)
+            let rotatedX = beaconOffsetX * c - beaconOffsetZ * s
+            let rotatedZ = beaconOffsetX * s + beaconOffsetZ * c
+            beaconOffsetX = rotatedX
+            beaconOffsetZ = rotatedZ
+        }
+
+        let buildingPos = SIMD3<Float>(baseX + beaconOffsetX, maxVisualTop, baseZ + beaconOffsetZ)
+
+        // Spawn electricity beam from satellite to building
+        beamManager.spawnElectricity(from: satellitePos, to: buildingPos)
+    }
+
     func clearHelicopters() {
         helicopterManager.clear()
         beamManager.clear()

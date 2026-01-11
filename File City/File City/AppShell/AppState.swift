@@ -848,6 +848,13 @@ final class AppState: ObservableObject {
         return snapshot
     }
 
+    /// Get the activity associated with a specific nodeID
+    func activityForNodeID(_ nodeID: UUID) -> NodeActivityPulse? {
+        // Find the URL for this nodeID
+        guard let url = nodeByID[nodeID]?.url else { return nil }
+        return activityByURL[url]
+    }
+
     func triggerTestActivity(kind: ActivityKind) {
         let now = activityNow()
         let targetNodeID = hoveredNodeID ?? hoveredBeaconNodeID ?? selectedFocusNodeIDs.first
@@ -857,7 +864,8 @@ final class AppState: ObservableObject {
             kind: kind,
             startedAt: now,
             processName: "Test",
-            url: url
+            url: url,
+            initiatingSessionID: nil
         )
         if kind == .write {
             if let nodeID = resolveActivityNodeID(url: url) {
@@ -933,11 +941,15 @@ final class AppState: ObservableObject {
         // Ignore internal git operations
         if isGitInternalPath(url) { return }
 
+        // Determine if this activity was initiated by a Claude session
+        let initiatingSessionID = findClaudeSessionForActivity(url: url, processName: processName)
+
         activityByURL[url] = NodeActivityPulse(
             kind: kind,
             startedAt: now,
             processName: processName,
-            url: url
+            url: url,
+            initiatingSessionID: initiatingSessionID
         )
 
         // Send activity notifications
@@ -967,6 +979,31 @@ final class AppState: ObservableObject {
     private func isGitInternalPath(_ url: URL) -> Bool {
         let path = url.path
         return path.contains("/.git/") || path.hasSuffix("/.git")
+    }
+
+    /// Find the Claude session that initiated an activity
+    private func findClaudeSessionForActivity(url: URL, processName: String) -> UUID? {
+        let filePath = url.path
+
+        // Find the session whose working directory contains this URL
+        // We match based on file path, finding the most specific (longest) match
+        var bestMatch: (session: ClaudeSession, pathLength: Int)?
+
+        for session in claudeSessions where !session.id.uuidString.isEmpty {
+            let sessionPath = session.workingDirectory.path
+
+            // Check if this file is within this session's directory
+            if filePath.hasPrefix(sessionPath) {
+                let pathLength = sessionPath.count
+
+                // Keep track of the longest (most specific) match
+                if bestMatch == nil || pathLength > bestMatch!.pathLength {
+                    bestMatch = (session, pathLength)
+                }
+            }
+        }
+
+        return bestMatch?.session.id
     }
 
     private func resolveActivityNodeID(url: URL) -> UUID? {

@@ -12,6 +12,7 @@ final class SatelliteManager {
         var orbitAngle: Float
         var orbitSpeed: Float
         var orbitRadius: Float
+        var orbitEccentricity: Float
         var orbitHeight: Float
         var state: ClaudeSession.SessionState
         var stateStartTime: CFTimeInterval
@@ -27,7 +28,7 @@ final class SatelliteManager {
     // Visual constants
     private let baseOrbitRadiusMultiplier: Float = 1.3
     private let orbitHeightRange: ClosedRange<Float> = 120.0...160.0
-    private let baseOrbitSpeed: Float = 0.12
+    private let baseOrbitSpeed: Float = 0.06
     private let sizeMultiplier: Float = 3.0
 
     func setCityBounds(center: SIMD3<Float>, radius: Float) {
@@ -40,6 +41,7 @@ final class SatelliteManager {
         let orbitRadius = cityRadius * baseOrbitRadiusMultiplier + Float.random(in: -10...10)
         let height = Float.random(in: orbitHeightRange)
         let speedVariation = Float.random(in: 0.8...1.2)
+        let eccentricity = Float.random(in: 0.3...0.75)
 
         let satellite = Satellite(
             id: UUID(),
@@ -47,6 +49,7 @@ final class SatelliteManager {
             orbitAngle: angle,
             orbitSpeed: baseOrbitSpeed * speedVariation,
             orbitRadius: orbitRadius,
+            orbitEccentricity: eccentricity,
             orbitHeight: height,
             state: .launching,
             stateStartTime: CACurrentMediaTime(),
@@ -291,8 +294,12 @@ final class SatelliteManager {
     }
 
     private func satellitePosition(_ sat: Satellite) -> SIMD3<Float> {
-        let x = cityCenter.x + cos(sat.orbitAngle) * sat.orbitRadius
-        let z = cityCenter.z + sin(sat.orbitAngle) * sat.orbitRadius
+        let semiMajorAxis = sat.orbitRadius
+        let e = sat.orbitEccentricity
+        let semiMinorAxis = semiMajorAxis * sqrt(1.0 - e * e)
+
+        let x = cityCenter.x + cos(sat.orbitAngle) * semiMajorAxis
+        let z = cityCenter.z + sin(sat.orbitAngle) * semiMinorAxis
         return SIMD3<Float>(x, sat.orbitHeight, z)
     }
 

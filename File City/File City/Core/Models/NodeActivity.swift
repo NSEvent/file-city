@@ -10,4 +10,5 @@ struct NodeActivityPulse {
     let startedAt: CFTimeInterval
     let processName: String
     let url: URL
+    let initiatingSessionID: UUID?
 }

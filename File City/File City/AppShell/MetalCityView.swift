@@ -214,6 +214,11 @@ struct MetalCityView: NSViewRepresentable {
             guard let appState, let renderer else { return }
             if let block = appState.blocks.first(where: { $0.nodeID == nodeID }) {
                 renderer.spawnHelicopter(at: block)
+
+                // Check if this write was initiated by a Claude session
+                if let activity = appState.activityForNodeID(nodeID), let sessionID = activity.initiatingSessionID {
+                    renderer.spawnElectricityBeam(from: sessionID, to: block)
+                }
             }
         }
 
@@ -221,6 +226,11 @@ struct MetalCityView: NSViewRepresentable {
             guard let appState, let renderer else { return }
             if let block = appState.blocks.first(where: { $0.nodeID == nodeID }) {
                 renderer.spawnBeam(at: block)
+
+                // Check if this read was initiated by a Claude session
+                if let activity = appState.activityForNodeID(nodeID), let sessionID = activity.initiatingSessionID {
+                    renderer.spawnElectricityBeam(from: sessionID, to: block)
+                }
             }
         }
 
