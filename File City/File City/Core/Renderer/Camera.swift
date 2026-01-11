@@ -339,7 +339,8 @@ final class Camera {
                 let satPos = satellite.position
                 let satRadius = satellite.radius
                 let sessionID = satellite.sessionID
-                let satTop = satPos.y + 1.0  // Assume ~1 unit height for standing surface
+                // Calculate standing surface at top of satellite (using radius as a size metric)
+                let satTop = satPos.y + satRadius * 0.1
 
                 // Check if player is horizontally near satellite (circular check)
                 let dx = newPosition.x - satPos.x
