@@ -673,7 +673,11 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                       let texIndex = locFlagTextureIndexByLOC[loc] else { continue }
                 newIndexByNodeID[block.nodeID] = texIndex
             }
-            locFlagIndexByNodeID = newIndexByNodeID
+            // Only update mapping if we found matches - avoids clearing when blocks/locByNodeID are out of sync
+            // (can happen when $locByPath fires during a rescan that changes UUIDs)
+            if !newIndexByNodeID.isEmpty || locFlagIndexByNodeID.isEmpty {
+                locFlagIndexByNodeID = newIndexByNodeID
+            }
             return
         }
 
@@ -689,10 +693,12 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
 
         guard !textures.isEmpty, let first = textures.first else {
-            // No textures to show - clear atomically
-            locFlagTextureArray = nil
-            locFlagIndexByNodeID.removeAll()
-            locFlagTextureIndexByLOC.removeAll()
+            // No textures generated - only clear if we genuinely have no LOC data
+            // (Don't clear if this is just a blocks/locByNodeID sync issue)
+            if locFlagTextureIndexByLOC.isEmpty {
+                locFlagTextureArray = nil
+                locFlagIndexByNodeID.removeAll()
+            }
             return
         }
 
@@ -728,8 +734,11 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         commandBuffer.commit()
 
         // Atomic swap - update all at once to prevent flashing
+        // Only update nodeID mapping if we found matches (avoid clearing during sync issues)
         locFlagTextureIndexByLOC = newTextureIndexByLOC
-        locFlagIndexByNodeID = newIndexByNodeID
+        if !newIndexByNodeID.isEmpty || locFlagIndexByNodeID.isEmpty {
+            locFlagIndexByNodeID = newIndexByNodeID
+        }
         locFlagTextureArray = arrayTex
     }
 
