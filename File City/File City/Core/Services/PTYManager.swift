@@ -70,21 +70,18 @@ final class PTYManager: ObservableObject {
             // Start monitoring for state changes
             startIdleTimer(sessionID: sessionID)
 
-            // Transition to idle after a short delay (Claude startup time)
+            // After startup delay, allow content-based state detection to take over
             Task { @MainActor in
-                print("[PTYManager] Waiting 3s before transitioning to idle for session \(sessionID)")
                 try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds for Claude to start
                 if sessions[sessionID]?.state == .launching {
+                    // Transition from launching - content detection will now manage state
                     sessions[sessionID]?.state = .idle
-                    print("[PTYManager] Transitioned session \(sessionID) to idle, sending state change")
                     sessionStateChanged.send(sessionID)
-                } else {
-                    print("[PTYManager] Session \(sessionID) state was not launching, skipping transition")
                 }
             }
 
         } catch {
-            print("[PTYManager] Failed to spawn Claude: \(error)")
+            NSLog("[PTYManager] Failed to spawn Claude: %@", error.localizedDescription)
         }
 
         return sessionID
@@ -177,14 +174,17 @@ final class PTYManager: ObservableObject {
             return
         }
 
-        // Check if the iTerm session still exists
+        NSLog("[PTYManager] checkSessionActivity for %@, ptyPath: %@", sessionID.uuidString, session.ptyPath)
+
+        // Check if the iTerm session exists and get its contents to detect Claude state
         let checkScript = """
         tell application "iTerm2"
             repeat with w in windows
                 repeat with t in tabs of w
                     repeat with s in sessions of t
                         if tty of s is "\(session.ptyPath)" then
-                            return "exists"
+                            set sessionContents to contents of s
+                            return "exists:" & sessionContents
                         end if
                     end repeat
                 end repeat
@@ -193,22 +193,79 @@ final class PTYManager: ObservableObject {
         end tell
         """
 
-        Task.detached { [weak self] in
+        // Run AppleScript in background, then update state on main actor
+        let scriptToRun = checkScript
+        Task.detached {
             let task = Process()
             let pipe = Pipe()
             task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-            task.arguments = ["-e", checkScript]
+            task.arguments = ["-e", scriptToRun]
             task.standardOutput = pipe
+            task.standardError = FileHandle.nullDevice
             try? task.run()
             task.waitUntilExit()
 
             let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            if output.contains("gone") {
-                await MainActor.run { [weak self] in
-                    self?.handleSessionExit(sessionID: sessionID)
-                }
+
+            // Process result on main actor
+            await MainActor.run {
+                self.processSessionCheckResult(sessionID: sessionID, output: output)
             }
         }
+    }
+
+    private func processSessionCheckResult(sessionID: UUID, output: String) {
+        if output.contains("gone") {
+            handleSessionExit(sessionID: sessionID)
+        } else if output.hasPrefix("exists:") {
+            let contents = String(output.dropFirst("exists:".count))
+            let newState = detectClaudeState(from: contents)
+
+            guard let currentState = sessions[sessionID]?.state,
+                  currentState != .launching && currentState != .exiting else { return }
+
+            if currentState != newState {
+                NSLog("[PTYManager] State change: %d -> %d, sending signal", currentState.rawValue, newState.rawValue)
+                sessions[sessionID]?.state = newState
+                sessionStateChanged.send(sessionID)
+                NSLog("[PTYManager] Signal sent for session %@", sessionID.uuidString)
+            }
+        }
+    }
+
+    /// Detect Claude's state from terminal contents
+    private func detectClaudeState(from contents: String) -> ClaudeSession.SessionState {
+        // Get the last portion of the terminal content
+        let recentContent = String(contents.suffix(2000))
+
+        // First, check if Claude is waiting for input (prompt at end)
+        // The prompt line looks like: ❯ followed by optional input
+        // Check the last few lines for the prompt
+        let lines = recentContent.components(separatedBy: .newlines)
+        let lastLines = lines.suffix(10).joined(separator: "\n")
+
+        // If the very end shows the prompt, Claude is idle
+        // The prompt appears as "❯" possibly followed by user input
+        if lastLines.contains("❯") && !lastLines.contains("(esc to interrupt") {
+            return .idle
+        }
+
+        // Check for active work indicators in recent content
+        // "(esc to interrupt" appears in the status line during activity
+        if lastLines.contains("(esc to interrupt") || lastLines.contains("Running…") {
+            return .generating
+        }
+
+        // Check for tool execution patterns (these show as ⏺ ToolName(...))
+        let toolPatterns = ["⏺ Read(", "⏺ Edit(", "⏺ Write(", "⏺ Bash(", "⏺ Grep(", "⏺ Glob(", "⏺ Task("]
+        for pattern in toolPatterns {
+            if lastLines.contains(pattern) && lastLines.contains("Running") {
+                return .generating
+            }
+        }
+
+        // Default to idle
+        return .idle
     }
 
     private func handleSessionExit(sessionID: UUID) {

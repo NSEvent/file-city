@@ -684,13 +684,16 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
         float glowIntensity = in.highlight;
         float3 glowColor;
 
-        // Color based on intensity (dim=warm, medium=blue, bright=cyan)
-        if (glowIntensity < 0.35) {
+        // Color based on materialID (set by SatelliteManager based on state)
+        // materialID 9 = launching (orange), 4 = idle (blue), 2 = generating (red)
+        if (in.materialID == 9) {
             glowColor = float3(0.85, 0.4, 0.2);   // Launching: warm orange
-        } else if (glowIntensity < 0.55) {
-            glowColor = float3(0.3, 0.65, 1.0);  // Idle: cool blue
+        } else if (in.materialID == 4) {
+            glowColor = float3(0.3, 0.65, 1.0);   // Idle: cool blue
+        } else if (in.materialID == 2) {
+            glowColor = float3(1.0, 0.2, 0.15);   // Generating: bright red
         } else {
-            glowColor = float3(0.2, 1.0, 0.85);  // Generating: bright cyan
+            glowColor = float3(0.7, 0.7, 0.7);    // Default: gray
         }
 
         // Pulsing emission

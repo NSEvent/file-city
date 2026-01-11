@@ -57,12 +57,12 @@ final class SatelliteManager {
     }
 
     func updateState(sessionID: UUID, state: ClaudeSession.SessionState) {
-        NSLog("[SatelliteManager] updateState called for %@ with state %d", sessionID.uuidString, state.rawValue)
+        NSLog("[SatelliteManager] updateState called: sessionID=%@, state=%d", sessionID.uuidString, state.rawValue)
         guard let index = satellites.firstIndex(where: { $0.sessionID == sessionID }) else {
-            NSLog("[SatelliteManager] No satellite found for sessionID %@", sessionID.uuidString)
+            NSLog("[SatelliteManager] No satellite found for session %@", sessionID.uuidString)
             return
         }
-        NSLog("[SatelliteManager] Updating satellite at index %d from %d to %d", index, satellites[index].state.rawValue, state.rawValue)
+        NSLog("[SatelliteManager] Updating satellite %d from state %d to %d", index, satellites[index].state.rawValue, state.rawValue)
         satellites[index].state = state
         satellites[index].stateStartTime = CACurrentMediaTime()
         if state == .exiting {
@@ -133,8 +133,11 @@ final class SatelliteManager {
             // Body rotation - face direction of travel
             let bodyRotation = sat.orbitAngle + Float.pi / 2
 
+            // Make generating state more dramatic - satellite grows and pulses
+            let stateScale: Float = sat.state == .generating ? (1.5 + 0.3 * sin(Float(now) * 6.0)) : 1.0
+
             // Main satellite body - color based on state
-            let sz = sizeMultiplier
+            let sz = sizeMultiplier * stateScale
             instances.append(VoxelInstance(
                 position: pos,
                 scale: SIMD3<Float>(2.0, 1.5, 2.5) * sz * fadeScale,
@@ -243,9 +246,9 @@ final class SatelliteManager {
         case .idle:
             return 4 // Blue
         case .generating:
-            return 6 // Cyan/green
+            return 2 // Red - very visible when working
         case .exiting:
-            return 2 // Red
+            return 9 // Orange for exiting
         }
     }
 }

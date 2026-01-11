@@ -230,26 +230,22 @@ final class AppState: ObservableObject {
     }
 
     private func handlePTYSessionStateChanged(_ sessionID: UUID) {
-        NSLog("[AppState] handlePTYSessionStateChanged for %@", sessionID.uuidString)
+        NSLog("[AppState] handlePTYSessionStateChanged: %@", sessionID.uuidString)
         guard let ptySession = ptyManager.sessions[sessionID] else {
-            NSLog("[AppState] No PTY session found for %@", sessionID.uuidString)
+            NSLog("[AppState] No PTY session found")
             return
         }
 
-        NSLog("[AppState] PTY session state: %d", ptySession.state.rawValue)
-
         // Update our local session state
         if let index = claudeSessions.firstIndex(where: { $0.id == sessionID }) {
+            NSLog("[AppState] Updating claudeSession %d to state %d", index, ptySession.state.rawValue)
             claudeSessions[index].state = ptySession.state
             claudeSessions[index].ptyPath = ptySession.ptyPath
-            NSLog("[AppState] Updated claudeSession at index %d to state %d", index, ptySession.state.rawValue)
-        } else {
-            NSLog("[AppState] No claudeSession found for %@", sessionID.uuidString)
         }
 
         // Notify observers
+        NSLog("[AppState] Sending claudeSessionStateChanged")
         claudeSessionStateChanged.send(sessionID)
-        NSLog("[AppState] Sent claudeSessionStateChanged for %@", sessionID.uuidString)
     }
 
     private func handlePTYSessionExited(_ sessionID: UUID) {

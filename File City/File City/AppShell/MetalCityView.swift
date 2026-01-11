@@ -11,7 +11,6 @@ struct MetalCityView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> MTKView {
-        NSLog("[MetalCityView] makeNSView called")
         let view = CityMTKView()
         // Subscribe to appState changes via Coordinator
         context.coordinator.startObserving(appState: appState)
@@ -103,7 +102,6 @@ struct MetalCityView: NSViewRepresentable {
         }
 
         func startObserving(appState: AppState) {
-            NSLog("[MetalCityView.Coordinator] startObserving called")
             self.appState = appState
             // Subscribe to blocks changes and trigger updates
             appState.$blocks
@@ -168,20 +166,16 @@ struct MetalCityView: NSViewRepresentable {
                 }
                 .store(in: &cancellables)
 
-            NSLog("[MetalCityView.Coordinator] Setting up claudeSessionStateChanged subscription")
             appState.claudeSessionStateChanged
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] sessionID in
-                    NSLog("[MetalCityView] Received claudeSessionStateChanged for %@", sessionID.uuidString)
-                    guard let appState = self?.appState else {
-                        NSLog("[MetalCityView] appState is nil")
+                    NSLog("[MetalCityView] Received claudeSessionStateChanged: %@", sessionID.uuidString)
+                    guard let appState = self?.appState,
+                          let session = appState.claudeSessions.first(where: { $0.id == sessionID }) else {
+                        NSLog("[MetalCityView] Could not find session")
                         return
                     }
-                    guard let session = appState.claudeSessions.first(where: { $0.id == sessionID }) else {
-                        NSLog("[MetalCityView] No session found for %@", sessionID.uuidString)
-                        return
-                    }
-                    NSLog("[MetalCityView] Updating satellite state to %d", session.state.rawValue)
+                    NSLog("[MetalCityView] Calling updateSatelliteState with state %d", session.state.rawValue)
                     self?.renderer?.updateSatelliteState(sessionID: sessionID, state: session.state)
                 }
                 .store(in: &cancellables)
