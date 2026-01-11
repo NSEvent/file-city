@@ -5,23 +5,199 @@ import Combine
 final class PTYManager: ObservableObject {
     struct Session {
         let id: UUID
-        let process: Process
-        let pipe: Pipe
+        let process: Process?  // Optional for reconnected sessions
+        let pipe: Pipe?        // Optional for reconnected sessions
         let workingDirectory: URL
         var ptyPath: String
         var lastOutputTime: Date
         var state: ClaudeSession.SessionState
         var lastOutputLines: [String] = []  // Last few lines of terminal output
+        var isReconnected: Bool = false     // True if reconnected to existing session
     }
 
     @Published private(set) var sessions: [UUID: Session] = [:]
 
     let sessionStateChanged = PassthroughSubject<UUID, Never>()
     let sessionExited = PassthroughSubject<UUID, Never>()
+    let sessionDiscovered = PassthroughSubject<UUID, Never>()  // For reconnected sessions
 
     private var idleTimers: [UUID: Timer] = [:]
 
     private let idleThreshold: TimeInterval = 2.0
+
+    /// Discover and reconnect to existing Claude sessions in iTerm2
+    func discoverExistingSessions() {
+        NSLog("[PTYManager] Discovering existing Claude sessions...")
+
+        // Query iTerm2 for all sessions - check contents for claude patterns
+        let script = #"""
+tell application "iTerm2"
+    set results to ""
+    repeat with w in windows
+        repeat with t in tabs of w
+            repeat with s in sessions of t
+                try
+                    set ttyPath to tty of s
+                    set fullContents to contents of s
+                    if fullContents contains "claude" then
+                        set results to results & ttyPath & "|||" & fullContents & "###"
+                    end if
+                end try
+            end repeat
+        end repeat
+    end repeat
+    return results
+end tell
+"""#
+
+        // Run discovery in background to avoid blocking MainActor
+        let scriptToRun = script
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            NSLog("[PTYManager] Starting AppleScript discovery task...")
+            let task = Process()
+            let outputPipe = Pipe()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            task.arguments = ["-e", scriptToRun]
+            task.standardOutput = outputPipe
+            task.standardError = FileHandle.nullDevice
+
+            // Read output asynchronously to avoid pipe buffer deadlock
+            var outputData = Data()
+            outputPipe.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                if !data.isEmpty {
+                    outputData.append(data)
+                }
+            }
+
+            do {
+                try task.run()
+            } catch {
+                NSLog("[PTYManager] AppleScript launch failed: %@", error.localizedDescription)
+                outputPipe.fileHandleForReading.readabilityHandler = nil
+                return
+            }
+
+            task.waitUntilExit()
+            outputPipe.fileHandleForReading.readabilityHandler = nil
+
+            // Read any remaining data
+            let remainingData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            outputData.append(remainingData)
+
+            let output = String(data: outputData, encoding: .utf8) ?? ""
+            NSLog("[PTYManager] AppleScript completed with status: %d, output: %d chars",
+                  task.terminationStatus, output.count)
+
+            DispatchQueue.main.async {
+                self?.processDiscoveredSessions(output: output)
+            }
+        }
+    }
+
+    private func processDiscoveredSessions(output: String) {
+        NSLog("[PTYManager] Raw discovery output length: %d", output.count)
+        let sessionBlocks = output.components(separatedBy: "###").filter { !$0.isEmpty }
+        NSLog("[PTYManager] Found %d potential Claude sessions", sessionBlocks.count)
+
+        if sessionBlocks.isEmpty && !output.isEmpty {
+            NSLog("[PTYManager] Output was: %@", String(output.prefix(500)))
+        }
+
+        for block in sessionBlocks {
+            let parts = block.components(separatedBy: "|||")
+            guard parts.count >= 2 else {
+                NSLog("[PTYManager] Block has insufficient parts: %d", parts.count)
+                continue
+            }
+
+            let ttyPath = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+            let contents = parts[1]
+
+            NSLog("[PTYManager] Checking session at %@, contents length: %d", ttyPath, contents.count)
+
+            // Verify this is actually a Claude session by looking for specific patterns
+            let isClaudeSession = contents.contains("--dangerously-skip-permissions") ||
+                                  contents.contains("claude>") ||
+                                  (contents.contains("claude") && contents.contains("❯"))
+
+            guard isClaudeSession else {
+                NSLog("[PTYManager] Session at %@ doesn't appear to be Claude", ttyPath)
+                continue
+            }
+
+            // Skip if we already have this session
+            if sessions.values.contains(where: { $0.ptyPath == ttyPath }) {
+                NSLog("[PTYManager] Already tracking session at %@", ttyPath)
+                continue
+            }
+
+            // Try to extract working directory from terminal contents
+            // Look for patterns like "cd '/path/to/dir'" or directory in prompt
+            let workingDirectory = extractWorkingDirectory(from: contents)
+
+            guard let directory = workingDirectory else {
+                NSLog("[PTYManager] Could not determine working directory for session at %@", ttyPath)
+                NSLog("[PTYManager] Contents preview: %@", String(contents.prefix(300)))
+                continue
+            }
+
+            NSLog("[PTYManager] Reconnecting to Claude session at %@ in %@", ttyPath, directory.path)
+
+            let sessionID = UUID()
+            let session = Session(
+                id: sessionID,
+                process: nil,
+                pipe: nil,
+                workingDirectory: directory,
+                ptyPath: ttyPath,
+                lastOutputTime: Date(),
+                state: .idle,  // Assume idle until we detect otherwise
+                lastOutputLines: [],
+                isReconnected: true
+            )
+            sessions[sessionID] = session
+
+            // Start monitoring
+            startIdleTimer(sessionID: sessionID)
+
+            // Notify about discovered session
+            sessionDiscovered.send(sessionID)
+        }
+    }
+
+    private func extractWorkingDirectory(from contents: String) -> URL? {
+        // Look for "cd '/path'" pattern from our spawn command
+        if let range = contents.range(of: "cd '([^']+)'", options: .regularExpression) {
+            let match = String(contents[range])
+            let path = match.replacingOccurrences(of: "cd '", with: "").replacingOccurrences(of: "'", with: "")
+            return URL(fileURLWithPath: path)
+        }
+
+        // Look for directory path after prompt (common pattern: ~/path or /path)
+        let lines = contents.components(separatedBy: .newlines)
+        for line in lines.reversed() {
+            // Look for absolute paths
+            if let range = line.range(of: "(/[^\\s]+)", options: .regularExpression) {
+                let path = String(line[range])
+                var isDir: ObjCBool = false
+                if FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue {
+                    return URL(fileURLWithPath: path)
+                }
+            }
+            // Look for ~ paths
+            if let range = line.range(of: "(~/[^\\s]*)", options: .regularExpression) {
+                let tilePath = String(line[range])
+                let path = (tilePath as NSString).expandingTildeInPath
+                var isDir: ObjCBool = false
+                if FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue {
+                    return URL(fileURLWithPath: path)
+                }
+            }
+        }
+
+        return nil
+    }
 
     func spawnClaude(at directory: URL) -> UUID {
         let sessionID = UUID()

@@ -15,10 +15,11 @@ struct ClaudeSession: Identifiable, Equatable {
         case exiting = 3     // Process terminating
     }
 
-    init(id: UUID = UUID(), workingDirectory: URL, spawnTime: Date = Date(), state: SessionState = .launching) {
+    init(id: UUID = UUID(), workingDirectory: URL, spawnTime: Date = Date(), state: SessionState = .launching, ptyPath: String? = nil) {
         self.id = id
         self.workingDirectory = workingDirectory
         self.spawnTime = spawnTime
         self.state = state
+        self.ptyPath = ptyPath
     }
 }

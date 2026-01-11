@@ -120,6 +120,16 @@ final class AppState: ObservableObject {
             }
             .store(in: &cancellables)
 
+        ptyManager.sessionDiscovered
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] sessionID in
+                self?.handlePTYSessionDiscovered(sessionID)
+            }
+            .store(in: &cancellables)
+
+        // Discover existing Claude sessions on startup
+        ptyManager.discoverExistingSessions()
+
         NotificationCenter.default.addObserver(
             forName: .fileCityOpenURL,
             object: nil,
@@ -291,6 +301,28 @@ final class AppState: ObservableObject {
             try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s
             claudeSessions.removeAll { $0.id == sessionID }
         }
+    }
+
+    private func handlePTYSessionDiscovered(_ sessionID: UUID) {
+        NSLog("[AppState] handlePTYSessionDiscovered: %@", sessionID.uuidString)
+        guard let ptySession = ptyManager.sessions[sessionID] else {
+            NSLog("[AppState] No PTY session found for discovered session")
+            return
+        }
+
+        // Create a ClaudeSession for this discovered session
+        let session = ClaudeSession(
+            id: sessionID,
+            workingDirectory: ptySession.workingDirectory,
+            spawnTime: Date(),  // We don't know the actual spawn time
+            state: ptySession.state,
+            ptyPath: ptySession.ptyPath
+        )
+        claudeSessions.append(session)
+
+        // Notify observers (this will create the satellite)
+        claudeSessionStateChanged.send(sessionID)
+        NSLog("[AppState] Discovered Claude session added: %@", ptySession.workingDirectory.path)
     }
 
     func togglePin(_ url: URL) {
