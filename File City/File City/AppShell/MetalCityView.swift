@@ -11,6 +11,7 @@ struct MetalCityView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> MTKView {
+        NSLog("[MetalCityView] makeNSView called")
         let view = CityMTKView()
         // Subscribe to appState changes via Coordinator
         context.coordinator.startObserving(appState: appState)
@@ -102,6 +103,7 @@ struct MetalCityView: NSViewRepresentable {
         }
 
         func startObserving(appState: AppState) {
+            NSLog("[MetalCityView.Coordinator] startObserving called")
             self.appState = appState
             // Subscribe to blocks changes and trigger updates
             appState.$blocks
@@ -157,6 +159,60 @@ struct MetalCityView: NSViewRepresentable {
                     self?.updateFromAppState()
                 }
                 .store(in: &cancellables)
+
+            // Subscribe to Claude session changes
+            appState.$claudeSessions
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] sessions in
+                    self?.syncSatellites(with: sessions)
+                }
+                .store(in: &cancellables)
+
+            NSLog("[MetalCityView.Coordinator] Setting up claudeSessionStateChanged subscription")
+            appState.claudeSessionStateChanged
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] sessionID in
+                    NSLog("[MetalCityView] Received claudeSessionStateChanged for %@", sessionID.uuidString)
+                    guard let appState = self?.appState else {
+                        NSLog("[MetalCityView] appState is nil")
+                        return
+                    }
+                    guard let session = appState.claudeSessions.first(where: { $0.id == sessionID }) else {
+                        NSLog("[MetalCityView] No session found for %@", sessionID.uuidString)
+                        return
+                    }
+                    NSLog("[MetalCityView] Updating satellite state to %d", session.state.rawValue)
+                    self?.renderer?.updateSatelliteState(sessionID: sessionID, state: session.state)
+                }
+                .store(in: &cancellables)
+
+            appState.claudeSessionExited
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] sessionID in
+                    self?.renderer?.removeSatellite(sessionID: sessionID)
+                }
+                .store(in: &cancellables)
+        }
+
+        private var syncedSessionIDs: Set<UUID> = []
+
+        private func syncSatellites(with sessions: [ClaudeSession]) {
+            guard let renderer else { return }
+            // Spawn satellites for new sessions
+            for session in sessions {
+                if !syncedSessionIDs.contains(session.id) {
+                    renderer.spawnSatellite(sessionID: session.id)
+                    syncedSessionIDs.insert(session.id)
+                }
+            }
+            // Remove satellites for sessions that no longer exist
+            let currentIDs = Set(sessions.map { $0.id })
+            for sessionID in syncedSessionIDs {
+                if !currentIDs.contains(sessionID) {
+                    renderer.removeSatellite(sessionID: sessionID)
+                }
+            }
+            syncedSessionIDs = currentIDs
         }
 
         private func handleFileWrite(nodeID: UUID) {
@@ -370,7 +426,13 @@ struct MetalCityView: NSViewRepresentable {
 
             let backingPoint = view.convertToBacking(point)
 
-            // Check for plane click first
+            // Check for satellite click first
+            if let sessionID = renderer.pickSatellite(at: backingPoint, in: view.drawableSize) {
+                appState?.focusClaudeSession(sessionID)
+                return
+            }
+
+            // Check for plane click
             if let planeIndex = renderer.pickPlane(at: backingPoint, in: view.drawableSize) {
                 renderer.explodePlane(index: planeIndex)
                 return
@@ -396,9 +458,89 @@ struct MetalCityView: NSViewRepresentable {
         func handleRightClick(_ point: CGPoint, in view: MTKView) {
             guard let renderer else { return }
             let backingPoint = view.convertToBacking(point)
+
+            // Check for satellite right-click (could show terminate option in future)
+            if let sessionID = renderer.pickSatellite(at: backingPoint, in: view.drawableSize) {
+                showSatelliteContextMenu(sessionID: sessionID, at: point, in: view)
+                return
+            }
+
             guard let block = renderer.pickBlock(at: backingPoint, in: view.drawableSize) else { return }
             guard let url = appState?.url(for: block.nodeID) else { return }
+
+            // Check if this is a directory
+            var isDir: ObjCBool = false
+            let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+
+            if exists && isDir.boolValue {
+                showDirectoryContextMenu(url: url, at: point, in: view)
+            } else {
+                appState?.reveal(url)
+            }
+        }
+
+        private func showDirectoryContextMenu(url: URL, at point: CGPoint, in view: MTKView) {
+            let menu = NSMenu()
+
+            // Reveal in Finder
+            let revealItem = NSMenuItem(title: "Reveal in Finder", action: #selector(revealInFinder(_:)), keyEquivalent: "")
+            revealItem.representedObject = url
+            revealItem.target = self
+            menu.addItem(revealItem)
+
+            menu.addItem(NSMenuItem.separator())
+
+            // Launch Claude here
+            let claudeItem = NSMenuItem(title: "Launch Claude here", action: #selector(launchClaudeHere(_:)), keyEquivalent: "")
+            claudeItem.representedObject = url
+            claudeItem.target = self
+            menu.addItem(claudeItem)
+
+            // Show the menu
+            let windowPoint = view.convert(point, to: nil)
+            menu.popUp(positioning: nil, at: windowPoint, in: view)
+        }
+
+        private func showSatelliteContextMenu(sessionID: UUID, at point: CGPoint, in view: MTKView) {
+            let menu = NSMenu()
+
+            // Focus terminal
+            let focusItem = NSMenuItem(title: "Focus Terminal", action: #selector(focusSatelliteTerminal(_:)), keyEquivalent: "")
+            focusItem.representedObject = sessionID
+            focusItem.target = self
+            menu.addItem(focusItem)
+
+            menu.addItem(NSMenuItem.separator())
+
+            // Terminate session
+            let terminateItem = NSMenuItem(title: "Terminate Session", action: #selector(terminateSatelliteSession(_:)), keyEquivalent: "")
+            terminateItem.representedObject = sessionID
+            terminateItem.target = self
+            menu.addItem(terminateItem)
+
+            // Show the menu
+            let windowPoint = view.convert(point, to: nil)
+            menu.popUp(positioning: nil, at: windowPoint, in: view)
+        }
+
+        @objc private func revealInFinder(_ sender: NSMenuItem) {
+            guard let url = sender.representedObject as? URL else { return }
             appState?.reveal(url)
+        }
+
+        @objc private func launchClaudeHere(_ sender: NSMenuItem) {
+            guard let url = sender.representedObject as? URL else { return }
+            appState?.launchClaude(at: url)
+        }
+
+        @objc private func focusSatelliteTerminal(_ sender: NSMenuItem) {
+            guard let sessionID = sender.representedObject as? UUID else { return }
+            appState?.focusClaudeSession(sessionID)
+        }
+
+        @objc private func terminateSatelliteSession(_ sender: NSMenuItem) {
+            guard let sessionID = sender.representedObject as? UUID else { return }
+            appState?.terminateClaudeSession(sessionID)
         }
 
         // MARK: - First-Person Mode Controls

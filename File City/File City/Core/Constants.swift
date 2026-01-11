@@ -102,6 +102,9 @@ enum Constants {
 
         /// LOC flag (pennant shape, waving)
         static let locFlag: Int32 = 19
+
+        /// Orbital satellite (chamfered cube)
+        static let satellite: Int32 = 20
     }
 
     // MARK: - Textures

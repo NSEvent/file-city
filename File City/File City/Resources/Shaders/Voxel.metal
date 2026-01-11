@@ -318,6 +318,20 @@ vertex VertexOut vertex_main(VertexIn in [[stage_in]],
 
         // Slight vertical flutter
         local.y += sin(local.x * 6.0 + uniforms.time * 10.0) * 0.03 * waveIntensity;
+    } else if (instance.shapeID == 20) {
+        // Orbital Satellite - chamfered cube with rounded edges
+        float3 absLocal = abs(local);
+        float cornerDist = absLocal.x + absLocal.y + absLocal.z;
+
+        // Chamfer the corners
+        if (cornerDist > 1.2) {
+            float scale = 1.2 / cornerDist;
+            local *= scale;
+        }
+
+        // Slight spherical bulge for a more rounded appearance
+        float bulge = 1.0 + 0.06 * (1.0 - length(local) * 1.5);
+        local *= bulge;
     }
 
     float3 scaled = local * instance.scale;
@@ -646,6 +660,50 @@ fragment float4 fragment_main_v2(VertexOut in [[stage_in]],
             finalColor = applyFog(finalColor, in.worldPos, uniforms.cameraPosition, uniforms.fogDensity);
             return float4(finalColor, texColor.a);
         }
+    }
+
+    // Orbital Satellite (shapeID 20)
+    if (in.shapeID == 20) {
+        float3 N = normalize(in.normal);
+        float3 L = normalize(float3(0.4, 0.85, 0.2));
+
+        // Base metallic color
+        float3 metalBase = float3(0.72, 0.74, 0.78);
+
+        // Diffuse lighting
+        float NdotL = saturate(dot(N, L));
+        float3 lit = metalBase * (0.35 + 0.65 * NdotL);
+
+        // Specular highlight
+        float3 V = normalize(uniforms.cameraPosition - in.worldPos);
+        float3 H = normalize(L + V);
+        float spec = pow(saturate(dot(N, H)), 64.0) * 0.6;
+        lit += float3(1.0, 1.0, 1.0) * spec;
+
+        // Glow based on highlight (state-dependent)
+        float glowIntensity = in.highlight;
+        float3 glowColor;
+
+        // Color based on intensity (dim=warm, medium=blue, bright=cyan)
+        if (glowIntensity < 0.35) {
+            glowColor = float3(0.85, 0.4, 0.2);   // Launching: warm orange
+        } else if (glowIntensity < 0.55) {
+            glowColor = float3(0.3, 0.65, 1.0);  // Idle: cool blue
+        } else {
+            glowColor = float3(0.2, 1.0, 0.85);  // Generating: bright cyan
+        }
+
+        // Pulsing emission
+        float pulse = 0.7 + 0.3 * sin(uniforms.time * 6.0);
+        float emission = glowIntensity * 0.55 * pulse;
+        lit += glowColor * emission;
+
+        // Rim glow
+        float rim = pow(1.0 - saturate(dot(N, V)), 3.0);
+        lit += glowColor * rim * glowIntensity * 0.35;
+
+        lit = applyFog(lit, in.worldPos, uniforms.cameraPosition, uniforms.fogDensity);
+        return float4(lit, 1.0);
     }
 
     if (in.shapeID == 7) {

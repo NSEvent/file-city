@@ -80,10 +80,13 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         helicopterManager.packageLandedSubject.eraseToAnyPublisher()
     }
     private let beamManager = BeamManager()
+    private let satelliteManager = SatelliteManager()
     private var helicopterInstanceBuffer: MTLBuffer?
     private var helicopterInstanceCount: Int = 0
     private var beamInstanceBuffer: MTLBuffer?
     private var beamInstanceCount: Int = 0
+    private var satelliteInstanceBuffer: MTLBuffer?
+    private var satelliteInstanceCount: Int = 0
     private var gitBeaconBoxes: [BeaconPicker.Box] = []
     private let beaconHitInflation: Float = 1.0
     private var blocks: [CityBlock] = []
@@ -411,6 +414,13 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             cityBoundsMin = SIMD2<Float>(minX - padding, minZ - padding)
             cityBoundsMax = SIMD2<Float>(maxX + padding, maxZ + padding)
             cityCenter = SIMD2<Float>((minX + maxX) / 2, (minZ + maxZ) / 2)
+
+            // Update satellite orbit center
+            let radius = max(maxX - minX, maxZ - minZ) / 2
+            satelliteManager.setCityBounds(
+                center: SIMD3<Float>(cityCenter.x, 0, cityCenter.y),
+                radius: radius
+            )
         }
 
         let cameraYaw = camera.wedgeYaw  // Use fixed yaw for wedge rotation
@@ -1358,6 +1368,71 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         rebuildInstancesUsingCache()
     }
 
+    // MARK: - Satellite Management
+
+    func spawnSatellite(sessionID: UUID) {
+        satelliteManager.spawn(sessionID: sessionID)
+    }
+
+    func updateSatelliteState(sessionID: UUID, state: ClaudeSession.SessionState) {
+        satelliteManager.updateState(sessionID: sessionID, state: state)
+    }
+
+    func removeSatellite(sessionID: UUID) {
+        satelliteManager.remove(sessionID: sessionID)
+    }
+
+    func clearSatellites() {
+        satelliteManager.clear()
+    }
+
+    func pickSatellite(at point: CGPoint, in size: CGSize) -> UUID? {
+        guard size.width > 1, size.height > 1 else { return nil }
+
+        let ndcX = Float(point.x / size.width) * 2.0 - 1.0
+        let ndcY = 1.0 - Float(point.y / size.height) * 2.0
+
+        let viewMatrix = camera.viewMatrix()
+        let projectionMatrix = camera.projectionMatrix()
+        let viewProjection = projectionMatrix * viewMatrix
+        let inverseVP = viewProjection.inverse
+
+        let nearPoint = inverseVP * SIMD4<Float>(ndcX, ndcY, -1, 1)
+        let farPoint = inverseVP * SIMD4<Float>(ndcX, ndcY, 1, 1)
+
+        let nearWorld = SIMD3<Float>(nearPoint.x, nearPoint.y, nearPoint.z) / nearPoint.w
+        let farWorld = SIMD3<Float>(farPoint.x, farPoint.y, farPoint.z) / farPoint.w
+        let rayDir = normalize(farWorld - nearWorld)
+
+        let targets = satelliteManager.getSatelliteHitTargets()
+        var closest: (sessionID: UUID, distance: Float)?
+
+        for target in targets {
+            if let dist = intersectSphere(origin: nearWorld, direction: rayDir, center: target.position, radius: target.radius) {
+                if closest == nil || dist < closest!.distance {
+                    closest = (target.sessionID, dist)
+                }
+            }
+        }
+
+        return closest?.sessionID
+    }
+
+    private func intersectSphere(origin: SIMD3<Float>, direction: SIMD3<Float>, center: SIMD3<Float>, radius: Float) -> Float? {
+        let oc = origin - center
+        let a = dot(direction, direction)
+        let b = 2.0 * dot(oc, direction)
+        let c = dot(oc, oc) - radius * radius
+        let discriminant = b * b - 4 * a * c
+
+        if discriminant < 0 {
+            return nil
+        }
+
+        let t = (-b - sqrt(discriminant)) / (2.0 * a)
+        return t > 0 ? t : nil
+    }
+
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         camera.aspect = Float(size.width / max(size.height, 1))
     }
@@ -1515,6 +1590,18 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
             if let buffer = beamInstanceBuffer {
                 encoder?.setVertexBuffer(buffer, offset: 0, index: 1)
                 encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 36, instanceCount: beamInstanceCount)
+            }
+        }
+
+        // Render satellites
+        satelliteManager.update()
+        let satelliteInstances = satelliteManager.buildInstances()
+        satelliteInstanceCount = satelliteInstances.count
+        if satelliteInstanceCount > 0 {
+            satelliteInstanceBuffer = device.makeBuffer(bytes: satelliteInstances, length: MemoryLayout<VoxelInstance>.stride * satelliteInstanceCount, options: [])
+            if let buffer = satelliteInstanceBuffer {
+                encoder?.setVertexBuffer(buffer, offset: 0, index: 1)
+                encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 36, instanceCount: satelliteInstanceCount)
             }
         }
 

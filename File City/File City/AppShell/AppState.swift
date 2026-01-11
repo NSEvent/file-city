@@ -73,6 +73,12 @@ final class AppState: ObservableObject {
     private var ignoreActivityUntil: CFTimeInterval = 0
     let activityDuration: CFTimeInterval = 1.4
     private var cancellables: Set<AnyCancellable> = []
+
+    // MARK: - Claude Session Management
+    @Published var claudeSessions: [ClaudeSession] = []
+    let claudeSessionStateChanged = PassthroughSubject<UUID, Never>()
+    let claudeSessionExited = PassthroughSubject<UUID, Never>()
+    private let ptyManager = PTYManager()
     private let sizeFormatter = ByteCountFormatter()
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -93,6 +99,21 @@ final class AppState: ObservableObject {
             .debounce(for: .milliseconds(250), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.scanRoot()
+            }
+            .store(in: &cancellables)
+
+        // Subscribe to PTY manager events
+        ptyManager.sessionStateChanged
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] sessionID in
+                self?.handlePTYSessionStateChanged(sessionID)
+            }
+            .store(in: &cancellables)
+
+        ptyManager.sessionExited
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] sessionID in
+                self?.handlePTYSessionExited(sessionID)
             }
             .store(in: &cancellables)
 
@@ -185,6 +206,66 @@ final class AppState: ObservableObject {
     func reveal(_ url: URL) {
         focus(url)
         FileActions().revealInFinder(url)
+    }
+
+    // MARK: - Claude Session Management
+
+    func launchClaude(at directory: URL) {
+        let sessionID = ptyManager.spawnClaude(at: directory)
+        let session = ClaudeSession(
+            id: sessionID,
+            workingDirectory: directory,
+            spawnTime: Date(),
+            state: .launching
+        )
+        claudeSessions.append(session)
+    }
+
+    func focusClaudeSession(_ sessionID: UUID) {
+        ptyManager.focusTerminal(sessionID: sessionID)
+    }
+
+    func terminateClaudeSession(_ sessionID: UUID) {
+        ptyManager.terminateSession(id: sessionID)
+    }
+
+    private func handlePTYSessionStateChanged(_ sessionID: UUID) {
+        NSLog("[AppState] handlePTYSessionStateChanged for %@", sessionID.uuidString)
+        guard let ptySession = ptyManager.sessions[sessionID] else {
+            NSLog("[AppState] No PTY session found for %@", sessionID.uuidString)
+            return
+        }
+
+        NSLog("[AppState] PTY session state: %d", ptySession.state.rawValue)
+
+        // Update our local session state
+        if let index = claudeSessions.firstIndex(where: { $0.id == sessionID }) {
+            claudeSessions[index].state = ptySession.state
+            claudeSessions[index].ptyPath = ptySession.ptyPath
+            NSLog("[AppState] Updated claudeSession at index %d to state %d", index, ptySession.state.rawValue)
+        } else {
+            NSLog("[AppState] No claudeSession found for %@", sessionID.uuidString)
+        }
+
+        // Notify observers
+        claudeSessionStateChanged.send(sessionID)
+        NSLog("[AppState] Sent claudeSessionStateChanged for %@", sessionID.uuidString)
+    }
+
+    private func handlePTYSessionExited(_ sessionID: UUID) {
+        // Update state to exiting
+        if let index = claudeSessions.firstIndex(where: { $0.id == sessionID }) {
+            claudeSessions[index].state = .exiting
+        }
+
+        // Notify observers
+        claudeSessionExited.send(sessionID)
+
+        // Remove session after delay
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s
+            claudeSessions.removeAll { $0.id == sessionID }
+        }
     }
 
     func togglePin(_ url: URL) {
