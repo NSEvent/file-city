@@ -22,8 +22,13 @@ final class PTYManager: ObservableObject {
     let sessionDiscovered = PassthroughSubject<UUID, Never>()  // For reconnected sessions
 
     private var idleTimers: [UUID: Timer] = [:]
+    private var activityCheckTimer: Timer?  // Single timer for all session checks
 
     private let idleThreshold: TimeInterval = 2.0
+
+    /// Serial queue for AppleScript operations to avoid overwhelming iTerm2
+    private let appleScriptQueue = DispatchQueue(label: "com.filecity.applescript", qos: .userInitiated)
+    private var isCheckingActivity = false  // Prevent overlapping activity checks
 
     /// Discover and reconnect to existing Claude sessions in iTerm2
     func discoverExistingSessions() {
@@ -307,7 +312,10 @@ end tell
     }
 
     func focusTerminal(sessionID: UUID) {
-        guard let session = sessions[sessionID] else { return }
+        guard let session = sessions[sessionID] else {
+            NSLog("[PTYManager] focusTerminal: session not found")
+            return
+        }
 
         let script = """
         tell application "iTerm2"
@@ -318,75 +326,135 @@ end tell
                         if tty of s is "\(session.ptyPath)" then
                             tell w to select
                             tell t to select
-                            return
+                            return "found"
                         end if
                     end repeat
                 end repeat
             end repeat
+            return "not_found"
         end tell
         """
 
-        Task.detached {
+        let scriptToRun = script
+
+        // Use high-priority queue for focus operations (user-initiated action)
+        DispatchQueue.global(qos: .userInteractive).async {
             let task = Process()
             task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-            task.arguments = ["-e", script]
+            task.arguments = ["-e", scriptToRun]
+            task.standardOutput = FileHandle.nullDevice
+            task.standardError = FileHandle.nullDevice
             try? task.run()
             task.waitUntilExit()
         }
     }
 
     private func startIdleTimer(sessionID: UUID) {
-        let timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.checkSessionActivity(sessionID: sessionID)
+        // Just track that this session needs monitoring
+        idleTimers[sessionID] = nil  // Placeholder
+
+        // Start the global activity check timer if not already running
+        if activityCheckTimer == nil {
+            activityCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.checkAllSessionsActivity()
+                }
             }
         }
-        idleTimers[sessionID] = timer
     }
 
-    private func checkSessionActivity(sessionID: UUID) {
-        guard let session = sessions[sessionID] else {
-            idleTimers[sessionID]?.invalidate()
-            idleTimers.removeValue(forKey: sessionID)
-            return
-        }
+    /// Check all sessions in a single batched AppleScript call
+    private func checkAllSessionsActivity() {
+        guard !sessions.isEmpty else { return }
+        guard !isCheckingActivity else { return }
 
-        NSLog("[PTYManager] checkSessionActivity for %@, ptyPath: %@", sessionID.uuidString, session.ptyPath)
+        isCheckingActivity = true
 
-        // Check if the iTerm session exists and get its contents to detect Claude state
-        let checkScript = """
+        // Build list of ptyPaths to check
+        let sessionPaths = sessions.map { ($0.key, $0.value.ptyPath) }
+
+        // Build a batched AppleScript that checks all sessions at once
+        let pathList = sessionPaths.map { "\"\($0.1)\"" }.joined(separator: ", ")
+        let script = """
         tell application "iTerm2"
+            set targetPaths to {\(pathList)}
+            set results to ""
             repeat with w in windows
                 repeat with t in tabs of w
                     repeat with s in sessions of t
-                        if tty of s is "\(session.ptyPath)" then
-                            set sessionContents to contents of s
-                            return "exists:" & sessionContents
-                        end if
+                        try
+                            set ttyPath to tty of s
+                            if targetPaths contains ttyPath then
+                                set fullContents to contents of s
+                                if (count of fullContents) > 3000 then
+                                    set sessionContents to text -3000 thru -1 of fullContents
+                                else
+                                    set sessionContents to fullContents
+                                end if
+                                set results to results & ttyPath & "|||" & sessionContents & "###"
+                            end if
+                        end try
                     end repeat
                 end repeat
             end repeat
-            return "gone"
+            return results
         end tell
         """
 
-        // Run AppleScript in background, then update state on main actor
-        let scriptToRun = checkScript
-        Task.detached {
+        let scriptToRun = script
+        let pathMap = Dictionary(uniqueKeysWithValues: sessionPaths.map { ($0.1, $0.0) })
+
+        appleScriptQueue.async { [weak self] in
             let task = Process()
             let pipe = Pipe()
             task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
             task.arguments = ["-e", scriptToRun]
             task.standardOutput = pipe
             task.standardError = FileHandle.nullDevice
-            try? task.run()
-            task.waitUntilExit()
+
+            do {
+                try task.run()
+                task.waitUntilExit()
+            } catch {
+                NSLog("[PTYManager] Activity check failed: %@", error.localizedDescription)
+                DispatchQueue.main.async { self?.isCheckingActivity = false }
+                return
+            }
 
             let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
 
-            // Process result on main actor
-            await MainActor.run {
-                self.processSessionCheckResult(sessionID: sessionID, output: output)
+            DispatchQueue.main.async {
+                self?.processBatchedActivityResults(output: output, pathMap: pathMap)
+                self?.isCheckingActivity = false
+            }
+        }
+    }
+
+    /// Process batched activity check results
+    private func processBatchedActivityResults(output: String, pathMap: [String: UUID]) {
+        // Parse results: "ptyPath|||contents###ptyPath|||contents###..."
+        let blocks = output.components(separatedBy: "###").filter { !$0.isEmpty }
+
+        // Track which sessions we found
+        var foundPaths = Set<String>()
+
+        for block in blocks {
+            let parts = block.components(separatedBy: "|||")
+            guard parts.count >= 2 else { continue }
+
+            let ptyPath = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+            let contents = parts[1]
+            foundPaths.insert(ptyPath)
+
+            guard let sessionID = pathMap[ptyPath] else { continue }
+
+            processSessionCheckResult(sessionID: sessionID, output: "exists:" + contents)
+        }
+
+        // Mark sessions not found as gone
+        for (ptyPath, sessionID) in pathMap {
+            if !foundPaths.contains(ptyPath) {
+                handleSessionExit(sessionID: sessionID)
             }
         }
     }
