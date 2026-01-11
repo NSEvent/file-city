@@ -26,7 +26,7 @@ final class SatelliteManager {
 
     // Visual constants
     private let baseOrbitRadiusMultiplier: Float = 1.3
-    private let orbitHeightRange: ClosedRange<Float> = 80.0...120.0
+    private let orbitHeightRange: ClosedRange<Float> = 120.0...160.0
     private let baseOrbitSpeed: Float = 0.12
     private let sizeMultiplier: Float = 3.0
 
