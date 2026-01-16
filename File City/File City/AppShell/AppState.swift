@@ -79,9 +79,17 @@ final class AppState: ObservableObject {
 
     // MARK: - Claude Session Management
     @Published var claudeSessions: [ClaudeSession] = []
+    @Published var selectedClaudeSession: ClaudeSession?
+    @Published var claudePanelInputText: String = ""
+    @Published var isClaudePanelVisible: Bool = false
     let claudeSessionStateChanged = PassthroughSubject<UUID, Never>()
     let claudeSessionExited = PassthroughSubject<UUID, Never>()
     private let ptyManager = PTYManager()
+
+    // Rate limiting for file activity animations
+    private var lastAnimationSpawnTime: CFTimeInterval = 0
+    private let animationSpawnInterval: CFTimeInterval = 0.05  // Max 20 animations per second
+
     private let sizeFormatter = ByteCountFormatter()
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -124,6 +132,13 @@ final class AppState: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] sessionID in
                 self?.handlePTYSessionDiscovered(sessionID)
+            }
+            .store(in: &cancellables)
+
+        ptyManager.sessionOutputUpdated
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] sessionID in
+                self?.handlePTYOutputUpdated(sessionID)
             }
             .store(in: &cancellables)
 
@@ -264,6 +279,41 @@ final class AppState: ObservableObject {
         ptyManager.sessions[sessionID]?.lastOutputLines
     }
 
+    func selectClaudeSession(_ sessionID: UUID) {
+        // Deselect previous session
+        if let previousSession = selectedClaudeSession,
+           let index = claudeSessions.firstIndex(where: { $0.id == previousSession.id }) {
+            claudeSessions[index].isSelected = false
+            ptyManager.setHighFrequencyPolling(for: previousSession.id, enabled: false)
+        }
+
+        // Select new session
+        if let index = claudeSessions.firstIndex(where: { $0.id == sessionID }) {
+            claudeSessions[index].isSelected = true
+            selectedClaudeSession = claudeSessions[index]
+            isClaudePanelVisible = true
+            ptyManager.setHighFrequencyPolling(for: sessionID, enabled: true)
+        }
+    }
+
+    func deselectClaudeSession() {
+        if let session = selectedClaudeSession,
+           let index = claudeSessions.firstIndex(where: { $0.id == session.id }) {
+            claudeSessions[index].isSelected = false
+            ptyManager.setHighFrequencyPolling(for: session.id, enabled: false)
+        }
+
+        selectedClaudeSession = nil
+        isClaudePanelVisible = false
+        claudePanelInputText = ""
+    }
+
+    func sendClaudeInput(sessionID: UUID, text: String) {
+        guard !text.isEmpty else { return }
+        ptyManager.sendInput(sessionID: sessionID, text: text)
+        claudePanelInputText = ""
+    }
+
     private func handlePTYSessionStateChanged(_ sessionID: UUID) {
         NSLog("[AppState] handlePTYSessionStateChanged: %@", sessionID.uuidString)
         guard let ptySession = ptyManager.sessions[sessionID] else {
@@ -288,6 +338,11 @@ final class AppState: ObservableObject {
     }
 
     private func handlePTYSessionExited(_ sessionID: UUID) {
+        // Close panel if this is the selected session
+        if selectedClaudeSession?.id == sessionID {
+            deselectClaudeSession()
+        }
+
         // Update state to exiting
         if let index = claudeSessions.firstIndex(where: { $0.id == sessionID }) {
             claudeSessions[index].state = .exiting
@@ -300,6 +355,20 @@ final class AppState: ObservableObject {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s
             claudeSessions.removeAll { $0.id == sessionID }
+        }
+    }
+
+    private func handlePTYOutputUpdated(_ sessionID: UUID) {
+        guard let ptySession = ptyManager.sessions[sessionID] else { return }
+        guard let index = claudeSessions.firstIndex(where: { $0.id == sessionID }) else { return }
+
+        // Sync output history from PTY to AppState
+        claudeSessions[index].outputHistory = ptySession.outputHistory
+        claudeSessions[index].lastKnownSnapshot = ptySession.lastKnownSnapshot
+
+        // Update selected session if it matches
+        if selectedClaudeSession?.id == sessionID {
+            selectedClaudeSession = claudeSessions[index]
         }
     }
 
@@ -855,6 +924,16 @@ final class AppState: ObservableObject {
         return activityByURL[url]
     }
 
+    /// Check if we should throttle this animation to prevent hangs from bulk file operations
+    func shouldThrottleAnimation() -> Bool {
+        let now = CACurrentMediaTime()
+        if now - lastAnimationSpawnTime >= animationSpawnInterval {
+            lastAnimationSpawnTime = now
+            return false  // Don't throttle, allow animation
+        }
+        return true  // Throttle this animation
+    }
+
     func triggerTestActivity(kind: ActivityKind) {
         let now = activityNow()
         let targetNodeID = hoveredNodeID ?? hoveredBeaconNodeID ?? selectedFocusNodeIDs.first
@@ -952,12 +1031,15 @@ final class AppState: ObservableObject {
             initiatingSessionID: initiatingSessionID
         )
 
-        // Send activity notifications
+        // Send activity notifications (throttled to prevent hangs during bulk operations)
         if let nodeID = resolveActivityNodeID(url: url) {
-            if kind == .write {
-                fileWriteSubject.send(nodeID)
-            } else if kind == .read {
-                fileReadSubject.send(nodeID)
+            // Only spawn animations at a controlled rate
+            if !shouldThrottleAnimation() {
+                if kind == .write {
+                    fileWriteSubject.send(nodeID)
+                } else if kind == .read {
+                    fileReadSubject.send(nodeID)
+                }
             }
         }
 

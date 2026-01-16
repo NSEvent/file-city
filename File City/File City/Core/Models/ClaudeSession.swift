@@ -7,6 +7,9 @@ struct ClaudeSession: Identifiable, Equatable {
     let spawnTime: Date
     var state: SessionState
     var ptyPath: String?
+    var isSelected: Bool = false
+    var outputHistory: [String] = []
+    var lastKnownSnapshot: String = ""
 
     enum SessionState: Int32, Equatable {
         case launching = 0   // Just spawned, waiting for first output
@@ -21,5 +24,8 @@ struct ClaudeSession: Identifiable, Equatable {
         self.spawnTime = spawnTime
         self.state = state
         self.ptyPath = ptyPath
+        self.isSelected = false
+        self.outputHistory = []
+        self.lastKnownSnapshot = ""
     }
 }

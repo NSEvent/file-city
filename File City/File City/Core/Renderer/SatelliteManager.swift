@@ -18,6 +18,7 @@ final class SatelliteManager {
         var stateStartTime: CFTimeInterval
         var fadeProgress: Float
         var isExiting: Bool
+        var isSelected: Bool = false
     }
 
     private var satellites: [Satellite] = []
@@ -76,6 +77,12 @@ final class SatelliteManager {
     func remove(sessionID: UUID) {
         if let index = satellites.firstIndex(where: { $0.sessionID == sessionID }) {
             satellites[index].isExiting = true
+        }
+    }
+
+    func setSelected(sessionID: UUID, selected: Bool) {
+        if let index = satellites.firstIndex(where: { $0.sessionID == sessionID }) {
+            satellites[index].isSelected = selected
         }
     }
 
@@ -206,9 +213,14 @@ final class SatelliteManager {
 
         for sat in satellites {
             let pos = satellitePosition(sat)
-            let glowIntensity = calculateGlow(state: sat.state, stateStartTime: sat.stateStartTime, now: now)
+            var glowIntensity = calculateGlow(state: sat.state, stateStartTime: sat.stateStartTime, now: now)
             let fadeScale = sat.fadeProgress
             let stateMaterial = glowMaterialID(for: sat.state)
+
+            // Add extra glow if selected
+            if sat.isSelected {
+                glowIntensity = min(1.0, glowIntensity + 0.4)
+            }
 
             // Body rotation - face direction of travel
             let bodyRotation = sat.orbitAngle + Float.pi / 2

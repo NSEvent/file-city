@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import AppKit
 
 @MainActor
 final class PTYManager: ObservableObject {
@@ -13,6 +14,8 @@ final class PTYManager: ObservableObject {
         var state: ClaudeSession.SessionState
         var lastOutputLines: [String] = []  // Last few lines of terminal output
         var isReconnected: Bool = false     // True if reconnected to existing session
+        var outputHistory: [String] = []    // Full output history for selected session
+        var lastKnownSnapshot: String = ""  // For diff-based detection
     }
 
     @Published private(set) var sessions: [UUID: Session] = [:]
@@ -20,11 +23,16 @@ final class PTYManager: ObservableObject {
     let sessionStateChanged = PassthroughSubject<UUID, Never>()
     let sessionExited = PassthroughSubject<UUID, Never>()
     let sessionDiscovered = PassthroughSubject<UUID, Never>()  // For reconnected sessions
+    let sessionOutputUpdated = PassthroughSubject<UUID, Never>()  // When output changes for selected session
 
     private var idleTimers: [UUID: Timer] = [:]
+    private var pendingIdleTransitions: [UUID: Timer] = [:]  // Grace period before transitioning to idle
     private var activityCheckTimer: Timer?  // Single timer for all session checks
+    private var foregroundPollTimer: Timer?  // High-frequency polling for selected session
+    private var selectedSessionID: UUID?     // Currently selected session for output capture
 
     private let idleThreshold: TimeInterval = 2.0
+    private let generatingToIdleGracePeriod: TimeInterval = 3.0  // Wait 3 seconds before committing to idle
 
     /// Serial queue for AppleScript operations to avoid overwhelming iTerm2
     private let appleScriptQueue = DispatchQueue(label: "com.filecity.applescript", qos: .userInitiated)
@@ -217,7 +225,6 @@ end tell
 
         let script = """
         tell application "iTerm2"
-            activate
             set newWindow to (create window with default profile)
             tell current session of newWindow
                 write text "cd '\(directory.path)' && claude --dangerously-skip-permissions"
@@ -275,6 +282,9 @@ end tell
         // Stop monitoring
         idleTimers[id]?.invalidate()
         idleTimers.removeValue(forKey: id)
+
+        pendingIdleTransitions[id]?.invalidate()
+        pendingIdleTransitions.removeValue(forKey: id)
 
         // Send interrupt to the terminal session
         let script = """
@@ -349,6 +359,122 @@ end tell
         }
     }
 
+    func sendInput(sessionID: UUID, text: String) {
+        guard let session = sessions[sessionID] else {
+            NSLog("[PTYManager] sendInput: session not found for ID %@", sessionID.uuidString)
+            return
+        }
+
+        NSLog("[PTYManager] sendInput: Sending '%@' to session %@ at ptyPath %@", text, sessionID.uuidString, session.ptyPath)
+
+        // Use AppleScript to send text and explicit Return key press
+        let escapedText = text.replacingOccurrences(of: "\"", with: "\\\"")
+        let script = """
+        tell application "iTerm2"
+            repeat with w in windows
+                repeat with t in tabs of w
+                    repeat with s in sessions of t
+                        if tty of s is "\(session.ptyPath)" then
+                            tell s
+                                write text "\(escapedText)"
+                            end tell
+                            return "sent"
+                        end if
+                    end repeat
+                end repeat
+            end repeat
+            return "not_found"
+        end tell
+        """
+
+        // Execute asynchronously on AppleScript queue
+        appleScriptQueue.async {
+            // First, get the File City window ID before we change focus
+            let getWindowScript = """
+            tell application "System Events"
+                set fileCityProcess to first application process whose bundle identifier is "com.kevintang.filecity"
+                set fileCityWindowID to id of first window of fileCityProcess
+                return fileCityWindowID
+            end tell
+            """
+
+            var fileCityWindowID = ""
+            let getWindowTask = Process()
+            let getWindowPipe = Pipe()
+            getWindowTask.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            getWindowTask.arguments = ["-e", getWindowScript]
+            getWindowTask.standardOutput = getWindowPipe
+            getWindowTask.standardError = FileHandle.nullDevice
+
+            do {
+                try getWindowTask.run()
+                getWindowTask.waitUntilExit()
+                let windowData = getWindowPipe.fileHandleForReading.readDataToEndOfFile()
+                fileCityWindowID = String(data: windowData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                NSLog("[PTYManager] Captured File City window ID: %@", fileCityWindowID)
+            } catch {
+                NSLog("[PTYManager] Failed to get File City window ID: %@", error.localizedDescription)
+            }
+
+            // Now write the text
+            let task = Process()
+            let outputPipe = Pipe()
+            let errorPipe = Pipe()
+
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            task.arguments = ["-e", script]
+            task.standardOutput = outputPipe
+            task.standardError = errorPipe
+
+            do {
+                try task.run()
+                task.waitUntilExit()
+
+                let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                let output = String(data: outputData, encoding: .utf8) ?? ""
+
+                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                let errorMsg = String(data: errorData, encoding: .utf8) ?? ""
+
+                if task.terminationStatus == 0 && output.contains("sent") {
+                    NSLog("[PTYManager] sendInput text succeeded for session %@", sessionID.uuidString)
+
+                    // Now send the Return key press via AppleScript
+                    let returnKeyScript = """
+                    tell application "iTerm" to activate
+                    delay 0.05
+
+                    tell application "System Events"
+                        key code 36
+                    end tell
+                    """
+
+                    let returnTask = Process()
+                    returnTask.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+                    returnTask.arguments = ["-e", returnKeyScript]
+                    returnTask.standardOutput = FileHandle.nullDevice
+                    returnTask.standardError = FileHandle.nullDevice
+
+                    try returnTask.run()
+                    returnTask.waitUntilExit()
+                    NSLog("[PTYManager] sendInput Return key sent for session %@", sessionID.uuidString)
+
+                    // Restore focus to File City using native Swift API on the main thread
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        NSApplication.shared.activate(ignoringOtherApps: true)
+                        if let window = NSApplication.shared.windows.first {
+                            window.makeKeyAndOrderFront(nil)
+                        }
+                    }
+                } else {
+                    NSLog("[PTYManager] sendInput result: status=%d, output='%@', error='%@'", task.terminationStatus, output, errorMsg)
+                }
+            } catch {
+                NSLog("[PTYManager] sendInput exception: %@", error.localizedDescription)
+            }
+        }
+    }
+
     private func startIdleTimer(sessionID: UUID) {
         // Just track that this session needs monitoring
         idleTimers[sessionID] = nil  // Placeholder
@@ -361,6 +487,146 @@ end tell
                 }
             }
         }
+    }
+
+    func setHighFrequencyPolling(for sessionID: UUID, enabled: Bool) {
+        if enabled {
+            selectedSessionID = sessionID
+            startForegroundPolling()
+        } else {
+            selectedSessionID = nil
+            stopForegroundPolling()
+        }
+    }
+
+    private func startForegroundPolling() {
+        stopForegroundPolling()
+
+        // Immediately fetch current output before starting polling
+        pollSelectedSession()
+
+        foregroundPollTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.pollSelectedSession()
+            }
+        }
+    }
+
+    private func stopForegroundPolling() {
+        foregroundPollTimer?.invalidate()
+        foregroundPollTimer = nil
+    }
+
+    private func pollSelectedSession() {
+        guard let sessionID = selectedSessionID,
+              sessions[sessionID] != nil else { return }
+
+        let script = """
+        tell application "iTerm2"
+            repeat with w in windows
+                repeat with t in tabs of w
+                    repeat with s in sessions of t
+                        try
+                            set ttyPath to tty of s
+                            if ttyPath is not "" then
+                                set fullContents to contents of s
+                                if (count of fullContents) > 10000 then
+                                    set sessionContents to text -10000 thru -1 of fullContents
+                                else
+                                    set sessionContents to fullContents
+                                end if
+                                return ttyPath & "|||" & sessionContents
+                            end if
+                        end try
+                    end repeat
+                end repeat
+            end repeat
+            return ""
+        end tell
+        """
+
+        let scriptToRun = script
+        appleScriptQueue.async { [weak self] in
+            let task = Process()
+            let pipe = Pipe()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            task.arguments = ["-e", scriptToRun]
+            task.standardOutput = pipe
+            task.standardError = FileHandle.nullDevice
+
+            do {
+                try task.run()
+                task.waitUntilExit()
+            } catch {
+                NSLog("[PTYManager] pollSelectedSession failed: %@", error.localizedDescription)
+                return
+            }
+
+            let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+
+            DispatchQueue.main.async {
+                self?.processSelectedSessionOutput(output: output, sessionID: sessionID)
+            }
+        }
+    }
+
+    private func processSelectedSessionOutput(output: String, sessionID: UUID) {
+        guard let session = sessions[sessionID] else { return }
+
+        let parts = output.components(separatedBy: "|||")
+        guard parts.count >= 2 else { return }
+
+        let ptyPath = parts[0]
+        let fullContents = parts[1]
+
+        // Only process if this is the correct session
+        guard session.ptyPath == ptyPath else { return }
+
+        processFullOutput(sessionID: sessionID, fullContents: fullContents)
+    }
+
+    private func processFullOutput(sessionID: UUID, fullContents: String) {
+        guard var session = sessions[sessionID] else { return }
+
+        // Strip ANSI codes for cleaner diff
+        let cleanContents = stripANSI(fullContents)
+
+        // If first poll, store the whole thing
+        if session.lastKnownSnapshot.isEmpty {
+            let lines = cleanContents.components(separatedBy: .newlines)
+            let meaningfulLines = lines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            session.outputHistory = meaningfulLines
+            session.lastKnownSnapshot = cleanContents
+            sessions[sessionID] = session
+            sessionOutputUpdated.send(sessionID)
+            return
+        }
+
+        // Find new content by comparing with last snapshot
+        if cleanContents.count > session.lastKnownSnapshot.count {
+            let newText = String(cleanContents.dropFirst(session.lastKnownSnapshot.count))
+            let newLines = newText.components(separatedBy: .newlines)
+                .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            session.outputHistory.append(contentsOf: newLines)
+
+            // Limit history to 5000 lines to prevent memory bloat
+            if session.outputHistory.count > 5000 {
+                session.outputHistory.removeFirst(session.outputHistory.count - 5000)
+            }
+
+            session.lastKnownSnapshot = cleanContents
+            sessions[sessionID] = session
+            sessionOutputUpdated.send(sessionID)
+        }
+    }
+
+    private func stripANSI(_ string: String) -> String {
+        // Remove ANSI escape sequences like \x1B[...m
+        string.replacingOccurrences(
+            of: "\\x1B\\[[0-9;]*[mK]|\\e\\[[0-9;]*[mK]",
+            with: "",
+            options: .regularExpression
+        )
     }
 
     /// Check all sessions in a single batched AppleScript call
@@ -466,14 +732,30 @@ end tell
             let contents = String(output.dropFirst("exists:".count))
             let newState = detectClaudeState(from: contents)
 
+            guard let currentState = sessions[sessionID]?.state else { return }
+
+            // Log state detection for debugging
+            if currentState != newState {
+                NSLog("[PTYManager] State detection: current=%d, new=%d for session %@", currentState.rawValue, newState.rawValue, sessionID.uuidString)
+                let lastChars = String(contents.suffix(200))
+                NSLog("[PTYManager] Last 200 chars: %@", lastChars)
+            }
+
             // Extract and store last output lines for hover display
             let lastLines = extractLastOutputLines(from: contents)
             sessions[sessionID]?.lastOutputLines = lastLines
 
-            guard let currentState = sessions[sessionID]?.state,
-                  currentState != .launching && currentState != .exiting else { return }
+            // Also accumulate full output history even during background polling
+            processFullOutput(sessionID: sessionID, fullContents: contents)
+
+            guard currentState != .launching && currentState != .exiting else { return }
 
             if currentState != newState {
+                // Cancel any pending idle transition when state changes
+                pendingIdleTransitions[sessionID]?.invalidate()
+                pendingIdleTransitions[sessionID] = nil
+
+                // Apply state change immediately
                 NSLog("[PTYManager] State change: %d -> %d, sending signal", currentState.rawValue, newState.rawValue)
                 sessions[sessionID]?.state = newState
                 sessionStateChanged.send(sessionID)
@@ -510,17 +792,24 @@ end tell
         // Get the last portion of the terminal content
         let recentContent = String(contents.suffix(2000))
 
-        // First, check if Claude is waiting for input (prompt at end)
-        // The prompt line looks like: ❯ followed by optional input
-        // Check the last few lines for the prompt
+        // Split into lines and find non-empty ones
         let lines = recentContent.components(separatedBy: .newlines)
-        let lastLines = lines.suffix(10).joined(separator: "\n")
+        let nonEmptyLines = lines.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
-        // If the very end shows the prompt, Claude is idle
-        // The prompt appears as "❯" possibly followed by user input
-        if lastLines.contains("❯") && !lastLines.contains("(esc to interrupt") {
+        guard !nonEmptyLines.isEmpty else {
             return .idle
         }
+
+        // HIGHEST PRIORITY: If the very last non-empty line starts with a prompt, Claude is IDLE
+        // This takes absolute precedence over any stale indicators from earlier
+        let lastLine = nonEmptyLines.last ?? ""
+        let trimmedLastLine = lastLine.trimmingCharacters(in: .whitespaces)
+        if trimmedLastLine.starts(with: "❯") {
+            return .idle
+        }
+
+        // Check the last 10 lines for active work indicators
+        let lastLines = nonEmptyLines.suffix(10).joined(separator: "\n")
 
         // Check for active work indicators in recent content
         // "(esc to interrupt" appears in the status line during activity
@@ -529,6 +818,7 @@ end tell
         }
 
         // Check for tool execution patterns (these show as ⏺ ToolName(...))
+        // Only count as GENERATING if BOTH tool pattern AND "Running" are present
         let toolPatterns = ["⏺ Read(", "⏺ Edit(", "⏺ Write(", "⏺ Bash(", "⏺ Grep(", "⏺ Glob(", "⏺ Task("]
         for pattern in toolPatterns {
             if lastLines.contains(pattern) && lastLines.contains("Running") {
@@ -543,6 +833,9 @@ end tell
     private func handleSessionExit(sessionID: UUID) {
         idleTimers[sessionID]?.invalidate()
         idleTimers.removeValue(forKey: sessionID)
+
+        pendingIdleTransitions[sessionID]?.invalidate()
+        pendingIdleTransitions.removeValue(forKey: sessionID)
 
         sessions[sessionID]?.state = .exiting
         sessionStateChanged.send(sessionID)

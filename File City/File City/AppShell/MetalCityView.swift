@@ -187,6 +187,23 @@ struct MetalCityView: NSViewRepresentable {
                     self?.renderer?.removeSatellite(sessionID: sessionID)
                 }
                 .store(in: &cancellables)
+
+            // Subscribe to selected Claude session changes
+            appState.$selectedClaudeSession
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] session in
+                    // Clear all selections first
+                    if let appState = self?.appState {
+                        for claudeSession in appState.claudeSessions {
+                            self?.renderer?.updateSatelliteSelection(sessionID: claudeSession.id, selected: false)
+                        }
+                    }
+                    // Set new selection
+                    if let session = session {
+                        self?.renderer?.updateSatelliteSelection(sessionID: session.id, selected: true)
+                    }
+                }
+                .store(in: &cancellables)
         }
 
         private var syncedSessionIDs: Set<UUID> = []
@@ -459,7 +476,7 @@ struct MetalCityView: NSViewRepresentable {
             // Check for satellite click first
             if let sessionID = renderer.pickSatellite(at: backingPoint, in: view.drawableSize) {
                 NSLog("[MetalCityView] Satellite click detected: %@", sessionID.uuidString)
-                appState?.focusClaudeSession(sessionID)
+                appState?.selectClaudeSession(sessionID)
                 return
             }
 

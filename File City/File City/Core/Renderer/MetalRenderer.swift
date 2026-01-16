@@ -1431,6 +1431,10 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         satelliteManager.remove(sessionID: sessionID)
     }
 
+    func updateSatelliteSelection(sessionID: UUID, selected: Bool) {
+        satelliteManager.setSelected(sessionID: sessionID, selected: selected)
+    }
+
     func clearSatellites() {
         satelliteManager.clear()
     }

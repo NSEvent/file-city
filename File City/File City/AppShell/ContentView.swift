@@ -45,6 +45,12 @@ struct ContentView: View {
                     if appState.isRootGitRepo && !appState.commitHistory.isEmpty && !appState.isFirstPerson {
                         TimeMachineSlider()
                     }
+                    // Claude interaction panel
+                    if appState.isClaudePanelVisible {
+                        ClaudeInteractionPanel()
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                            .animation(.easeInOut(duration: 0.3), value: appState.isClaudePanelVisible)
+                    }
                 }
                 // Minecraft-style crosshair in first-person mode
                 if appState.isFirstPerson && !appState.isPilotingPlane {
