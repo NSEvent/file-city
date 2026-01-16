@@ -502,8 +502,14 @@ struct MetalCityView: NSViewRepresentable {
                 return
             }
 
+            // If hovered over a beacon, select its building when clicked
+            if let beaconNodeID = hoveredBeaconNodeID,
+               let url = appState?.url(for: beaconNodeID) {
+                appState?.select(url)
+                SoundManager.shared.playClickSound()
+            }
             // If clicked on a building, select it; otherwise clear selection
-            if let block = renderer.pickBlock(at: backingPoint, in: view.drawableSize),
+            else if let block = renderer.pickBlock(at: backingPoint, in: view.drawableSize),
                let url = appState?.url(for: block.nodeID) {
                 appState?.select(url)
                 SoundManager.shared.playClickSound()
