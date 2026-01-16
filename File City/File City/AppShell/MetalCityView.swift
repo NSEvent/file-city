@@ -358,7 +358,7 @@ struct MetalCityView: NSViewRepresentable {
                     appState?.hoveredBeaconURL = nil
                     renderer.setHoveredPlane(index: nil)
                     // Play hover sound for satellite
-                    SoundManager.shared.playHoverSound()
+                    SoundManager.shared.playSatelliteHoverSound()
                 }
                 return
             } else if hoveredSatelliteSessionID != nil {
@@ -373,14 +373,14 @@ struct MetalCityView: NSViewRepresentable {
                     hoveredNodeID = nil
                     appState?.hoveredURL = nil
                     appState?.hoveredNodeID = nil
-                    SoundManager.shared.playHoverSound()
+                    SoundManager.shared.playOtherHoverSound()
                 }
                 if hoveredBeaconNodeID != nil {
                     hoveredBeaconNodeID = nil
                     appState?.hoveredGitStatus = nil
                     appState?.hoveredBeaconNodeID = nil
                     appState?.hoveredBeaconURL = nil
-                    SoundManager.shared.playHoverSound()
+                    SoundManager.shared.playOtherHoverSound()
                 }
                 return
             }
@@ -407,7 +407,7 @@ struct MetalCityView: NSViewRepresentable {
                         appState?.hoveredBeaconURL = nil
                     }
                     // Play hover sound for git status beacon
-                    SoundManager.shared.playHoverSound()
+                    SoundManager.shared.playOtherHoverSound()
                 }
                 renderer.setHoveredPlane(index: nil)
                 return
@@ -437,7 +437,7 @@ struct MetalCityView: NSViewRepresentable {
             appState?.hoveredBeaconNodeID = nil
             appState?.hoveredBeaconURL = nil
             // Play subtle hover sound for building
-            SoundManager.shared.playHoverSound()
+            SoundManager.shared.playOtherHoverSound()
         }
 
         func clearHover() {
@@ -491,7 +491,7 @@ struct MetalCityView: NSViewRepresentable {
             if let sessionID = renderer.pickSatellite(at: backingPoint, in: view.drawableSize) {
                 NSLog("[MetalCityView] Satellite click detected: %@", sessionID.uuidString)
                 appState?.selectClaudeSession(sessionID)
-                SoundManager.shared.playSatelliteSelectSound()
+                SoundManager.shared.playClickSound()
                 return
             }
 
