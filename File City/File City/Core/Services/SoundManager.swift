@@ -3,30 +3,47 @@ import AppKit
 final class SoundManager {
     static let shared = SoundManager()
 
+    private var soundPool: [NSSound] = []
+    private var currentSoundIndex = 0
+    private let soundPoolSize = 16
+
+    init() {
+        // Pre-load sound pool to allow simultaneous playback
+        for _ in 0..<soundPoolSize {
+            if let sound = NSSound(named: NSSound.Name("Glass")) {
+                soundPool.append(sound)
+            }
+        }
+    }
+
+    private func playSound() {
+        guard !soundPool.isEmpty else { return }
+        let sound = soundPool[currentSoundIndex]
+        currentSoundIndex = (currentSoundIndex + 1) % soundPool.count
+        sound.play()
+    }
+
     func playHoverSound() {
-        // Soft ping for hovering
         DispatchQueue.global(qos: .userInitiated).async {
-            NSSound(named: NSSound.Name("Glass"))?.play()
+            self.playSound()
         }
     }
 
     func playClickSound() {
-        // Two beeps for clicking
         DispatchQueue.global(qos: .userInitiated).async {
-            NSSound(named: NSSound.Name("Glass"))?.play()
+            self.playSound()
             Thread.sleep(forTimeInterval: 0.05)
-            NSSound(named: NSSound.Name("Glass"))?.play()
+            self.playSound()
         }
     }
 
     func playSatelliteSelectSound() {
-        // Three beeps for satellite selection (more distinctive)
         DispatchQueue.global(qos: .userInitiated).async {
-            NSSound(named: NSSound.Name("Glass"))?.play()
+            self.playSound()
             Thread.sleep(forTimeInterval: 0.08)
-            NSSound(named: NSSound.Name("Glass"))?.play()
+            self.playSound()
             Thread.sleep(forTimeInterval: 0.05)
-            NSSound(named: NSSound.Name("Glass"))?.play()
+            self.playSound()
         }
     }
 }
