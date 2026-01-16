@@ -108,74 +108,77 @@ private struct InfoOverlayView: View {
     @EnvironmentObject var appState: AppState
 
     var body: some View {
-        if let session = appState.hoveredClaudeSession {
-            // Claude session hover info
-            VStack(alignment: .leading, spacing: 6) {
-                // Header with state indicator
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(stateColor(for: session.state))
-                        .frame(width: 8, height: 8)
-                    Text("Claude Code")
-                        .font(.callout.weight(.semibold))
-                    Text("• \(stateText(for: session.state))")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-
-                // Working directory
-                Text(session.workingDirectory.path)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.head)
-
-                // Last output lines (live updating)
-                if let outputLines = appState.hoveredClaudeOutputLines, !outputLines.isEmpty {
-                    Divider()
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 2) {
-                            ForEach(Array(outputLines.enumerated()), id: \.offset) { _, line in
-                                Text(stripANSI(line))
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+        Group {
+            if let session = appState.hoveredClaudeSession {
+                // Claude session hover info
+                VStack(alignment: .leading, spacing: 6) {
+                    // Header with state indicator
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(stateColor(for: session.state))
+                            .frame(width: 8, height: 8)
+                        Text("Claude Code")
+                            .font(.callout.weight(.semibold))
+                        Text("• \(stateText(for: session.state))")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
                     }
-                    .frame(maxHeight: 200)
-                }
 
-                // Click hint
-                Text("Click to focus terminal")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-            .frame(maxWidth: 300)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .padding(12)
-            .transition(.opacity)
-        } else if let info = infoLines() {
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(info, id: \.self) { line in
-                    Text(line)
-                        .font(line == info.first ? .callout.weight(.semibold) : .caption)
-                        .foregroundStyle(.primary)
+                    // Working directory
+                    Text(session.workingDirectory.path)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .truncationMode(.head)
+
+                    // Last output lines (live updating)
+                    if let outputLines = appState.hoveredClaudeOutputLines, !outputLines.isEmpty {
+                        Divider()
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 2) {
+                                ForEach(Array(outputLines.enumerated()), id: \.offset) { _, line in
+                                    Text(stripANSI(line))
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(maxHeight: 200)
+                    }
+
+                    // Click hint
+                    Text("Click to focus terminal")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
+                .frame(maxWidth: 300)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(.ultraThinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .padding(12)
+                .transition(.opacity)
+            } else if let info = infoLines() {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(info, id: \.self) { line in
+                        Text(line)
+                            .font(line == info.first ? .callout.weight(.semibold) : .caption)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(.ultraThinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .padding(12)
+                .transition(.opacity)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .padding(12)
-            .transition(.opacity)
         }
+        .allowsHitTesting(false)
     }
 
     private func infoLines() -> [String]? {
