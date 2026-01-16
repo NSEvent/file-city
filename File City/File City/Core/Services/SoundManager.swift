@@ -20,6 +20,7 @@ final class SoundManager {
         guard !soundPool.isEmpty else { return }
         let sound = soundPool[currentSoundIndex]
         currentSoundIndex = (currentSoundIndex + 1) % soundPool.count
+        sound.stop()  // Stop any current playback to allow immediate restart
         sound.play()
     }
 
