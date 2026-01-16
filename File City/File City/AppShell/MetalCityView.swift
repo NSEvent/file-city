@@ -341,8 +341,13 @@ struct MetalCityView: NSViewRepresentable {
             if let sessionID = renderer.pickSatellite(at: backingPoint, in: view.drawableSize) {
                 NSLog("[MetalCityView] Satellite hover detected: %@", sessionID.uuidString)
                 if hoveredSatelliteSessionID != sessionID {
+                    // Clear previous hover
+                    if let previousID = hoveredSatelliteSessionID {
+                        renderer.updateSatelliteHover(sessionID: previousID, hovered: false)
+                    }
                     hoveredSatelliteSessionID = sessionID
                     appState?.setHoveredClaudeSession(sessionID)
+                    renderer.updateSatelliteHover(sessionID: sessionID, hovered: true)
                     // Clear other hover states
                     hoveredNodeID = nil
                     hoveredBeaconNodeID = nil
@@ -355,6 +360,7 @@ struct MetalCityView: NSViewRepresentable {
                 }
                 return
             } else if hoveredSatelliteSessionID != nil {
+                renderer.updateSatelliteHover(sessionID: hoveredSatelliteSessionID!, hovered: false)
                 hoveredSatelliteSessionID = nil
                 appState?.setHoveredClaudeSession(nil)
             }

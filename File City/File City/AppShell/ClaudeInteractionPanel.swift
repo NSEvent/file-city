@@ -3,6 +3,9 @@ import SwiftUI
 struct ClaudeInteractionPanel: View {
     @EnvironmentObject var appState: AppState
     @FocusState private var isInputFocused: Bool
+    @State private var lastSeenOutputCount: Int = 0
+    @State private var panelHeight: CGFloat = 300
+    @State private var dragStartHeight: CGFloat = 0
 
     var body: some View {
         guard let session = appState.selectedClaudeSession else {
@@ -11,7 +14,7 @@ struct ClaudeInteractionPanel: View {
 
         return AnyView(
             VStack(spacing: 0) {
-                // Header with close button and status
+                // Header with buttons and status
                 HStack(spacing: 8) {
                     Circle()
                         .fill(stateColor(for: session.state))
@@ -29,6 +32,28 @@ struct ClaudeInteractionPanel: View {
 
                     Spacer()
 
+                    // Open iTerm window button
+                    Button {
+                        appState.focusClaudeSession(session.id)
+                    } label: {
+                        Image(systemName: "terminal")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Open iTerm window")
+
+                    // Terminate button
+                    Button {
+                        appState.terminateClaudeSession(session.id)
+                        appState.deselectClaudeSession()
+                    } label: {
+                        Image(systemName: "stop.circle.fill")
+                            .foregroundStyle(.red)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Terminate this Claude instance")
+
+                    // Close panel button
                     Button {
                         appState.deselectClaudeSession()
                     } label: {
@@ -36,11 +61,37 @@ struct ClaudeInteractionPanel: View {
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.borderless)
+                    .help("Close this panel")
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
 
                 Divider()
+
+                // Resize handle at top
+                ZStack {
+                    Rectangle()
+                        .fill(Color.clear)
+                        .contentShape(Rectangle())
+                    Image(systemName: "ellipsis")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(height: 6)
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            if dragStartHeight == 0 {
+                                dragStartHeight = panelHeight
+                            }
+                            // Drag up (negative y) increases height, drag down (positive y) decreases height
+                            let newHeight = dragStartHeight - value.translation.height
+                            panelHeight = max(150, min(600, newHeight))
+                        }
+                        .onEnded { _ in
+                            dragStartHeight = 0
+                        }
+                )
 
                 // Scrollable conversation history
                 ScrollViewReader { proxy in
@@ -61,15 +112,19 @@ struct ClaudeInteractionPanel: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                     }
-                    .frame(maxHeight: 300)
-                    .onChange(of: session.outputHistory.count) { _ in
-                        // Auto-scroll to bottom on new output
-                        withAnimation {
-                            proxy.scrollTo("bottom", anchor: .bottom)
+                    .frame(height: panelHeight)
+                    .onChange(of: session.outputHistory.count) { newCount in
+                        // Only scroll if count actually increased
+                        if newCount > lastSeenOutputCount {
+                            lastSeenOutputCount = newCount
+                            withAnimation {
+                                proxy.scrollTo("bottom", anchor: .bottom)
+                            }
                         }
                     }
                     .onAppear {
-                        // Scroll to bottom when panel first appears
+                        // Initialize count and scroll to bottom when panel first appears
+                        lastSeenOutputCount = session.outputHistory.count
                         withAnimation {
                             proxy.scrollTo("bottom", anchor: .bottom)
                         }

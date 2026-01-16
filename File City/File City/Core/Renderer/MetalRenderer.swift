@@ -1435,6 +1435,10 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         satelliteManager.setSelected(sessionID: sessionID, selected: selected)
     }
 
+    func updateSatelliteHover(sessionID: UUID, hovered: Bool) {
+        satelliteManager.setHovered(sessionID: sessionID, hovered: hovered)
+    }
+
     func clearSatellites() {
         satelliteManager.clear()
     }

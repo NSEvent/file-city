@@ -88,7 +88,7 @@ final class AppState: ObservableObject {
 
     // Rate limiting for file activity animations
     private var lastAnimationSpawnTime: CFTimeInterval = 0
-    private let animationSpawnInterval: CFTimeInterval = 0.05  // Max 20 animations per second
+    private let animationSpawnInterval: CFTimeInterval = 0.5  // Max 2 animations per second (very conservative)
 
     private let sizeFormatter = ByteCountFormatter()
     private let dateFormatter: DateFormatter = {
@@ -247,6 +247,15 @@ final class AppState: ObservableObject {
             state: .launching
         )
         claudeSessions.append(session)
+
+        // Auto-select the newly launched satellite and focus File City
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.selectClaudeSession(sessionID)
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            if let window = NSApplication.shared.windows.first {
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
     }
 
     func focusClaudeSession(_ sessionID: UUID) {
@@ -290,6 +299,14 @@ final class AppState: ObservableObject {
         // Select new session
         if let index = claudeSessions.firstIndex(where: { $0.id == sessionID }) {
             claudeSessions[index].isSelected = true
+
+            // Fetch the latest output from PTY before showing the panel
+            if let ptySession = ptyManager.sessions[sessionID] {
+                // Sync the full current history from PTY
+                claudeSessions[index].outputHistory = ptySession.outputHistory
+                claudeSessions[index].lastKnownSnapshot = ptySession.lastKnownSnapshot
+            }
+
             selectedClaudeSession = claudeSessions[index]
             isClaudePanelVisible = true
             ptyManager.setHighFrequencyPolling(for: sessionID, enabled: true)
@@ -362,12 +379,30 @@ final class AppState: ObservableObject {
         guard let ptySession = ptyManager.sessions[sessionID] else { return }
         guard let index = claudeSessions.firstIndex(where: { $0.id == sessionID }) else { return }
 
-        // Sync output history from PTY to AppState
-        claudeSessions[index].outputHistory = ptySession.outputHistory
-        claudeSessions[index].lastKnownSnapshot = ptySession.lastKnownSnapshot
+        // Track if we made any changes
+        var didChange = false
 
-        // Update selected session if it matches
-        if selectedClaudeSession?.id == sessionID {
+        // Sync output history from PTY to AppState
+        // Check if there's any new content to add
+        if ptySession.outputHistory.count > claudeSessions[index].outputHistory.count {
+            // Only update with the new lines that were added
+            let newCount = ptySession.outputHistory.count - claudeSessions[index].outputHistory.count
+            let newLines = Array(ptySession.outputHistory.suffix(newCount))
+            claudeSessions[index].outputHistory.append(contentsOf: newLines)
+            didChange = true
+        } else if ptySession.outputHistory != claudeSessions[index].outputHistory {
+            // If counts don't match or content differs, sync the full list
+            claudeSessions[index].outputHistory = ptySession.outputHistory
+            didChange = true
+        }
+
+        if ptySession.lastKnownSnapshot != claudeSessions[index].lastKnownSnapshot {
+            claudeSessions[index].lastKnownSnapshot = ptySession.lastKnownSnapshot
+            didChange = true
+        }
+
+        // Only update selected session if there were actual changes
+        if didChange && selectedClaudeSession?.id == sessionID {
             selectedClaudeSession = claudeSessions[index]
         }
     }
@@ -1017,6 +1052,9 @@ final class AppState: ObservableObject {
         let now = activityNow()
         if now < ignoreActivityUntil { return }
 
+        // Completely ignore read operations - they cause hangs
+        if kind == .read { return }
+
         // Ignore internal git operations
         if isGitInternalPath(url) { return }
 
@@ -1031,15 +1069,10 @@ final class AppState: ObservableObject {
             initiatingSessionID: initiatingSessionID
         )
 
-        // Send activity notifications (throttled to prevent hangs during bulk operations)
+        // Send write animation notifications
         if let nodeID = resolveActivityNodeID(url: url) {
-            // Only spawn animations at a controlled rate
             if !shouldThrottleAnimation() {
-                if kind == .write {
-                    fileWriteSubject.send(nodeID)
-                } else if kind == .read {
-                    fileReadSubject.send(nodeID)
-                }
+                fileWriteSubject.send(nodeID)
             }
         }
 

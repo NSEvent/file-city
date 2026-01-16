@@ -60,6 +60,7 @@ final class FinderFavoritesReader {
     }
 
     /// Reads Finder favorites from the .sfl2/.sfl3/.sfl4 file
+    /// Note: Requires Full Disk Access permission to read ~/Library/Application Support/com.apple.sharedfilelist/
     static func readFavorites() -> [Favorite] {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
         let sharedFileListDir = homeDir.appendingPathComponent(

@@ -286,14 +286,15 @@ end tell
         pendingIdleTransitions[id]?.invalidate()
         pendingIdleTransitions.removeValue(forKey: id)
 
-        // Send interrupt to the terminal session
+        // Close the iTerm session directly
         let script = """
         tell application "iTerm2"
             repeat with w in windows
                 repeat with t in tabs of w
                     repeat with s in sessions of t
                         if tty of s is "\(session.ptyPath)" then
-                            tell s to write text "exit"
+                            close s
+                            return
                         end if
                     end repeat
                 end repeat
@@ -588,36 +589,57 @@ end tell
     private func processFullOutput(sessionID: UUID, fullContents: String) {
         guard var session = sessions[sessionID] else { return }
 
-        // Strip ANSI codes for cleaner diff
+        // Strip ANSI codes for cleaner comparison
         let cleanContents = stripANSI(fullContents)
 
-        // If first poll, store the whole thing
+        // Only process if content has actually changed
+        if cleanContents == session.lastKnownSnapshot {
+            return
+        }
+
+        // If this is the first poll, initialize with content from the last prompt onwards
         if session.lastKnownSnapshot.isEmpty {
             let lines = cleanContents.components(separatedBy: .newlines)
             let meaningfulLines = lines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-            session.outputHistory = meaningfulLines
+
+            // Find the last prompt to avoid old scrollback
+            if let lastPromptIndex = meaningfulLines.lastIndex(where: { $0.contains("❯") }) {
+                session.outputHistory = Array(meaningfulLines[lastPromptIndex...])
+            } else {
+                // No prompt found, use all meaningful lines
+                session.outputHistory = meaningfulLines
+            }
+
             session.lastKnownSnapshot = cleanContents
             sessions[sessionID] = session
             sessionOutputUpdated.send(sessionID)
             return
         }
 
-        // Find new content by comparing with last snapshot
-        if cleanContents.count > session.lastKnownSnapshot.count {
-            let newText = String(cleanContents.dropFirst(session.lastKnownSnapshot.count))
-            let newLines = newText.components(separatedBy: .newlines)
-                .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-            session.outputHistory.append(contentsOf: newLines)
+        // For subsequent polls, only add NEW content we haven't captured yet
+        let lines = cleanContents.components(separatedBy: .newlines)
+        let allMeaningfulLines = lines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
 
-            // Limit history to 5000 lines to prevent memory bloat
-            if session.outputHistory.count > 5000 {
-                session.outputHistory.removeFirst(session.outputHistory.count - 5000)
-            }
-
-            session.lastKnownSnapshot = cleanContents
-            sessions[sessionID] = session
-            sessionOutputUpdated.send(sessionID)
+        // Extract only lines that aren't already in our history
+        // Match by trimmed content to avoid whitespace differences
+        let newLines = allMeaningfulLines.filter { newLine in
+            !session.outputHistory.contains(where: { existing in
+                existing.trimmingCharacters(in: .whitespaces) == newLine.trimmingCharacters(in: .whitespaces)
+            })
         }
+
+        if !newLines.isEmpty {
+            session.outputHistory.append(contentsOf: newLines)
+        }
+
+        // Limit history to 5000 lines to prevent memory bloat
+        if session.outputHistory.count > 5000 {
+            session.outputHistory.removeFirst(session.outputHistory.count - 5000)
+        }
+
+        session.lastKnownSnapshot = cleanContents
+        sessions[sessionID] = session
+        sessionOutputUpdated.send(sessionID)
     }
 
     private func stripANSI(_ string: String) -> String {

@@ -19,6 +19,7 @@ final class SatelliteManager {
         var fadeProgress: Float
         var isExiting: Bool
         var isSelected: Bool = false
+        var isHovered: Bool = false
     }
 
     private var satellites: [Satellite] = []
@@ -83,6 +84,12 @@ final class SatelliteManager {
     func setSelected(sessionID: UUID, selected: Bool) {
         if let index = satellites.firstIndex(where: { $0.sessionID == sessionID }) {
             satellites[index].isSelected = selected
+        }
+    }
+
+    func setHovered(sessionID: UUID, hovered: Bool) {
+        if let index = satellites.firstIndex(where: { $0.sessionID == sessionID }) {
+            satellites[index].isHovered = hovered
         }
     }
 
@@ -215,11 +222,15 @@ final class SatelliteManager {
             let pos = satellitePosition(sat)
             var glowIntensity = calculateGlow(state: sat.state, stateStartTime: sat.stateStartTime, now: now)
             let fadeScale = sat.fadeProgress
-            let stateMaterial = glowMaterialID(for: sat.state)
+            var stateMaterial = glowMaterialID(for: sat.state)
 
-            // Add extra glow if selected
+            // Override material and boost glow for selected (highest priority)
             if sat.isSelected {
-                glowIntensity = min(1.0, glowIntensity + 0.4)
+                stateMaterial = 7  // Bright yellow/white for selected
+                glowIntensity = 1.0  // Max glow for selected
+            } else if sat.isHovered {
+                stateMaterial = 6  // Cyan for hovered
+                glowIntensity = min(1.0, glowIntensity + 0.4)  // Extra glow for hover
             }
 
             // Body rotation - face direction of travel

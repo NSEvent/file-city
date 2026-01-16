@@ -18,7 +18,8 @@ build:
 
 install: build
 	-pkill -x "$(PROCESS_NAME)" || true
-	open "$(APP_PATH)"
+	/usr/bin/ditto "$(APP_PATH)" "/Applications/$(WRAPPER_NAME)"
+	open "/Applications/$(WRAPPER_NAME)"
 
 app-path:
 	@echo "$(APP_PATH)"
