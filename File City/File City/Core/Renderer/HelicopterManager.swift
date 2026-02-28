@@ -465,16 +465,16 @@ final class HelicopterManager {
             let forward = SIMD3<Float>(-s, 0, c)
             let right = SIMD3<Float>(c, 0, s) // Local (1,0,0) -> (c, 0, s)
             
-            // Body
+            // Body (standard box, not plane shape which creates wings wider than rotors)
             instances.append(VoxelInstance(
                 position: heli.position,
                 scale: SIMD3<Float>(1.8, 1.4, 3.5),
                 rotationY: rotationY,
                 rotationX: 0,
                 rotationZ: 0,
-                materialID: 0, 
+                materialID: 0,
                 textureIndex: heli.textureIndex,
-                shapeID: 6
+                shapeID: 0
             ))
             
             // Tail
@@ -494,8 +494,9 @@ final class HelicopterManager {
             // Tail Rotor (perpendicular to main)
             // Position at the end of the tail boom (-2.1 - 1.6 = -3.7)
             let tailRotorPos = heli.position + forward * -3.7 + right * 0.25 + SIMD3<Float>(0, 0.6, 0)
-            let tailRotorSpin = Float(now * 40.0)
-            
+            // Use fmod to keep spin angle small for GPU sin/cos precision
+            let tailRotorSpin = Float(now.truncatingRemainder(dividingBy: 1000.0) * 40.0)
+
             instances.append(VoxelInstance(
                 position: tailRotorPos,
                 scale: SIMD3<Float>(0.1, 1.5, 0.2),
@@ -516,12 +517,14 @@ final class HelicopterManager {
                 textureIndex: -1,
                 shapeID: 0
             ))
-            
+
             // Main Rotor
-            let mainRotorSpin = Float(now * 25.0)
+            // Use fmod to keep spin angle small for GPU sin/cos precision
+            let mainRotorSpin = Float(now.truncatingRemainder(dividingBy: 1000.0) * 25.0)
+            let rotorY = heli.position.y + 1.0
             instances.append(VoxelInstance(
-                position: heli.position + SIMD3<Float>(0, 0.8, 0),
-                scale: SIMD3<Float>(7.0, 0.1, 0.5),
+                position: SIMD3<Float>(heli.position.x, rotorY, heli.position.z),
+                scale: SIMD3<Float>(7.0, 0.15, 0.5),
                 rotationY: mainRotorSpin,
                 rotationX: 0,
                 rotationZ: 0,
@@ -530,8 +533,8 @@ final class HelicopterManager {
                 shapeID: 0
             ))
             instances.append(VoxelInstance(
-                position: heli.position + SIMD3<Float>(0, 0.8, 0),
-                scale: SIMD3<Float>(0.5, 0.1, 7.0),
+                position: SIMD3<Float>(heli.position.x, rotorY, heli.position.z),
+                scale: SIMD3<Float>(0.5, 0.15, 7.0),
                 rotationY: mainRotorSpin,
                 rotationX: 0,
                 rotationZ: 0,
@@ -546,7 +549,7 @@ final class HelicopterManager {
              instances.append(VoxelInstance(
                 position: pkg.position,
                 scale: SIMD3<Float>(0.8, 0.8, 0.8),
-                rotationY: Float(now * 5.0),
+                rotationY: Float(now.truncatingRemainder(dividingBy: 1000.0) * 5.0),
                 rotationX: 0,
                 rotationZ: 0,
                 materialID: 0,
