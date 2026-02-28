@@ -2,7 +2,6 @@
 
 A native macOS app that renders your file system as a 3D city you can explore, fly through, and use to monitor AI coding agents in real time. Built with Swift and Metal.
 
-<!-- TODO: Add hero screenshot - isometric view of a project directory as a city -->
 ![File City Hero](screenshots/hero.png)
 
 ## What is this?
@@ -17,7 +16,6 @@ It was originally built as a visual orchestrator for Claude Code sessions — ea
 
 Directories are scanned and mapped onto a grid of buildings. Larger folders become taller skyscrapers with stacked tiers (base, mid, upper, crown), while small files are short structures. Building shapes, materials, and textures are deterministically generated from file paths, so the same project always looks the same.
 
-<!-- TODO: Add screenshot showing buildings of varying sizes, with skyscraper stacking visible -->
 ![City Layout](screenshots/city-layout.png)
 
 - **7 building shapes** — standard, tapered spires, pyramids, wedges, cylinders
@@ -27,18 +25,18 @@ Directories are scanned and mapped onto a grid of buildings. Larger folders beco
 
 ### Git Integration
 
-Git repositories get a beacon tower on their building. Green means clean, red means dirty. Hover over a beacon to see the branch name and a summary of changes.
+Every building that represents a git repository gets a beacon tower. Green means clean, orange blinking means dirty. Hover over a beacon to see the git status: branch name and a list of what changed.
 
-<!-- TODO: Add screenshot showing a beacon tower (green or red) on a building -->
 ![Git Beacons](screenshots/git-beacons.png)
 
 **Time Travel** — scrub a slider through your commit history (up to 200 commits) and watch the city rebuild itself at each point in time.
+
+![Git Time Machine](screenshots/git-timemachine.png)
 
 ### First-Person Exploration
 
 Press **F** to drop into first-person mode and walk through your file city at street level. Full FPS controls with collision detection — you can't walk through buildings, but you can jump onto rooftops.
 
-<!-- TODO: Add screenshot from first-person view, standing on a street looking up at buildings -->
 ![First Person](screenshots/first-person.png)
 
 | Control | Action |
@@ -62,7 +60,6 @@ Multiple planes fly above the city trailing banners that display the current dir
 2. Press **E** to board
 3. Pilot with full flight physics
 
-<!-- TODO: Add screenshot from the cockpit/third-person view while piloting a plane -->
 ![Plane Piloting](screenshots/plane-piloting.png)
 
 The flight model includes thrust, lift, drag, gravity, and banking turns. Pull off aerobatic maneuvers with double-tap controls:
@@ -78,7 +75,6 @@ The flight model includes thrust, lift, drag, gravity, and banking turns. Pull o
 
 The original motivation for File City. When Claude Code (or Codex, Gemini, Cursor) reads or writes files in your project, the city reacts in real time:
 
-<!-- TODO: Add screenshot/GIF showing a helicopter dropping a package on a building, or a beam shooting up -->
 ![Activity Monitoring](screenshots/activity-monitoring.png)
 
 - **File write** — a helicopter flies in, hovers above the target building, and drops a package. The package explodes on landing, and a construction worker pops out, slides down the building face, and starts working.
@@ -91,7 +87,6 @@ The activity monitor tracks process names, so you can see exactly which tool is 
 
 Each running Claude Code session appears as a satellite orbiting above the city. Satellites have solar panels, antenna dishes, and a status beacon that reflects the session state:
 
-<!-- TODO: Add screenshot showing satellites orbiting above the city -->
 ![Satellites](screenshots/satellites.png)
 
 | State | Visual |
